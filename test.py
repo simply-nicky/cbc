@@ -22,6 +22,5 @@ asf = cbc.asf_fit_parser('src/asf_q_fit_Au.txt')
 
 diffs = cbc.lattice_diff_gen(kouts, lattice_pts=lat_pts, asf=asf, waist=waist, wavelength=wavelength)
 start = timer()
-difflist = [next(diffs) for _ in range(int(1e0))]
+difflist = [next(diffs) for _ in range(10)]
 print(timer() - start)
-print(difflist[0])

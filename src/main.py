@@ -98,7 +98,7 @@ def lattice(a, b, c, Nx, Ny, Nz, origin=[0, 0, 0]):
     assert len(origin) ==3, 'origin argument is invalid, it must have 3 values'
     return [[x + origin[0], y + origin[1], z + origin[2]] for x in np.arange((-Nx + 1) / 2, (Nx + 1) / 2) * a for y in np.arange((-Ny + 1) / 2, (Ny + 1) / 2) * b for z in np.arange((-Nz + 1) / 2, (Nz + 1) / 2) * c]
 
-def lattice_diff(*kouts, lattice_pts, asf, waist, wavelength=1.5e-7):
+def lattice_diff(kouts, lattice_pts, asf, waist, wavelength=1.5e-7):
     """
     Return diffraction pattern intensity for given array of output wavevectors.
 
@@ -115,12 +115,12 @@ def lattice_diff(*kouts, lattice_pts, asf, waist, wavelength=1.5e-7):
     kins = np.array([kin(*pt, waist=waist, wavelength=wavelength) for pt in lattice_pts])
     for kout in kouts:
         asfs = np.array([asf(np.linalg.norm(kout - kin) / 2 / wavelength) for kin in kins]) 
-        exps = np.array([np.exp(np.dot(kout, pt) * 1j) for pt in lattice_pts])
+        exps = np.array([np.exp(2 * np.pi / wavelength * np.dot(kout, pt) * 1j) for pt in lattice_pts])
         vec = asfs * us * exps
         diff.append(vec.sum())
     return diff
 
-def lattice_diff_gen(*kouts, lattice_pts, asf, waist, wavelength=1.5e-7):
+def lattice_diff_gen(kouts, lattice_pts, asf, waist, wavelength=1.5e-7):
     """
     Yield diffraction pattern intensity for given array of output wavevectors.
 
@@ -136,7 +136,7 @@ def lattice_diff_gen(*kouts, lattice_pts, asf, waist, wavelength=1.5e-7):
     kins = np.array([kin(*pt, waist=waist, wavelength=wavelength) for pt in lattice_pts])
     for kout in kouts:
         asfs = np.array([asf(np.linalg.norm(kout - kin) / 2 / wavelength) for kin in kins]) 
-        exps = np.array([np.exp(np.dot(kout, pt) * 1j) for pt in lattice_pts])
+        exps = np.array([np.exp(2 * np.pi / wavelength * np.dot(kout, pt) * 1j) for pt in lattice_pts])
         vec = asfs * us * exps
         yield vec.sum()
 
