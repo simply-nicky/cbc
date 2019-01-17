@@ -89,7 +89,7 @@ def kin(x, y, z, waist=1e-4, wavelength=1.5e-7):
     R = z + zr**2 / z
     return [x, y, R] / np.sqrt(x * x + y * y + R * R)
 
-def kout(det_dist, Nx = 512, Ny = 512, pix_size = 55e-3):
+def kouts(det_dist, Nx = 512, Ny = 512, pix_size = 55e-3):
     """
     Return output wave vectors array for given detector at given distance from the sample.
 
@@ -97,11 +97,14 @@ def kout(det_dist, Nx = 512, Ny = 512, pix_size = 55e-3):
     Nx, Ny - numbers of pixels in x and y axes.
     pix_size - pixel size.
 
-    Return a np.array of all output wavevectors (kx, ky, kz).
+    Return a np.array of x and y coordinates of output wavevectors (kx, ky).
     """
     x_det = np.arange((-Nx + 1) / 2, (Nx + 1) / 2) * pix_size
     y_det = np.arange((-Ny + 1) / 2, (Ny + 1) / 2) * pix_size
-    return [[kx, ky, np.sqrt(1 - kx**2 - ky**2)] for kx in x_det / det_dist for ky in y_det / det_dist]
+    return [[kx, ky] for kx in x_det / det_dist for ky in y_det / det_dist]
+
+def kout_ext(kx, ky):
+    return [kx, ky, np.sqrt(1 - kx**2 - ky**2)]
 
 def kout_grid(det_dist, Nx = 512, Ny = 512, pix_size = 55e-3):
     """
@@ -111,12 +114,11 @@ def kout_grid(det_dist, Nx = 512, Ny = 512, pix_size = 55e-3):
     Nx, Ny - numbers of pixels in x and y axes.
     pix_size - pixel size.
 
-    Return three (Nx, Ny) np.arrays of kx, ky and kz output wavevector coordinates.
+    Return two (Nx, Ny) np.arrays of kx and ky output wavevector coordinates.
     """
     x_det = np.arange((-Nx + 1) / 2, (Nx + 1) / 2) * pix_size
     y_det = np.arange((-Ny + 1) / 2, (Ny + 1) / 2) * pix_size
-    kx, ky = np.meshgrid(x_det / det_dist, y_det / det_dist)
-    return kx, ky, np.sqrt(1 - kx**2 - ky**2)   
+    return np.meshgrid(x_det / det_dist, y_det / det_dist)  
 
 def lattice(a, b, c, Nx, Ny, Nz, origin=[0, 0, 0]):
     """
@@ -132,7 +134,7 @@ def lattice(a, b, c, Nx, Ny, Nz, origin=[0, 0, 0]):
 
 def diff(kouts, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
     """
-    Return diffraction pattern intensity for given array of output wavevectors.
+    Return diffraction pattern for given array of output wavevectors.
 
     kouts - tuple of output wavevectors
     lat_pts - coordinates of sample lattice atoms
@@ -148,17 +150,18 @@ def diff(kouts, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
     us = np.array([gaussian(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
     kins = np.array([kin(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
     for kout in kouts:
-        asfs = np.array([asf(np.linalg.norm(kout - kin) / 2 / wavelength) for kin in kins]) 
-        exps = np.array([np.exp(2 * np.pi / wavelength * np.dot(kout, pt) * 1j) for pt in lat_pts])
+        asfs = np.array([asf(np.linalg.norm(kout_ext(*kout) - kin) / 2 / wavelength) for kin in kins]) 
+        exps = np.array([np.exp(2 * np.pi / wavelength * np.dot(kout_ext(*kout), pt) * 1j) for pt in lat_pts])
         vec = asfs * us * exps
         diffs.append(np.sqrt(sigma) * constants.value('classical electron radius') * 1e3 * vec.sum())
     return diffs
 
-def diff_grid(kxs, kys, kzs, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
+def diff_grid(kxs, kys, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
     """
     Return diffraction pattern intensity for given array of output wavevectors.
 
-    kxs - x-coordinate of output wavevectors
+    kxs - x coordinates of output wavevectors
+    kys - y coordinates of output wavevectors
     lat_pts - coordinates of sample lattice atoms
     asf - atomic scattering factor for atoms in the sample
     waist - beam waist radius
@@ -167,20 +170,20 @@ def diff_grid(kxs, kys, kzs, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
 
     Return np.array of diffracted wave values with the same shape as kxs, kys and kzs.
     """
-    assert kxs.shape == kys.shape == kzs.shape, 'kx, ky and kz must have the same shape'
+    assert kxs.shape == kys.shape, 'kx and ky must have the same shape'
     from scipy import constants
     us = np.array([gaussian(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
     kins = np.array([kin(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
-    it = np.nditer([kxs, kys, kzs, None], op_flags = [['readonly'], ['readonly'], ['readonly'], ['writeonly', 'allocate']], op_dtypes = ['float64', 'float64', 'float64', 'complex128'])
-    for kx, ky, kz, diff in it:
-        kout = [kx, ky, kz]
+    it = np.nditer([kxs, kys, None], op_flags = [['readonly'], ['readonly'], ['writeonly', 'allocate']], op_dtypes = ['float64', 'float64', 'complex128'])
+    for kx, ky, diff in it:
+        kout = [kx, ky, np.sqrt(1 - kx**2 - ky**2)]
         asfs = np.array([asf(np.linalg.norm(kout - kin) / 2 / wavelength) for kin in kins])
         exps = np.array([np.exp(2 * np.pi / wavelength * np.dot(kout, pt) * 1j) for pt in lat_pts])
         vec = asfs * us * exps
         diff[...] = np.sqrt(sigma) * constants.value('classical electron radius') * 1e3 * vec.sum()
-    return it.operands[3]
+    return it.operands[-1]
 
-def make_grid(pts, funcvals=None):
+def make_grid(kouts, funcvals=None):
     """
     Return grid of coordinates (like in numpy.meshgrid) and corresponding function values grid based on list of points pts and list of function values funcvals.
     pts should be sorted the same way as nditer iterates through the grid array!
@@ -190,16 +193,17 @@ def make_grid(pts, funcvals=None):
 
     Return grid array for every axis and function values grid.
     """
-    coords = map(np.unique, np.array(pts).T)
+    coords = map(np.unique, np.array(kouts).T)
     grid = np.meshgrid(*coords)
-    funcgrid = np.zeros(grid[0].shape)
-    for f in np.nditer(funcgrid, op_flags = ['writeonly']):
-        f[...] = funcvals
+    funcgrid = np.zeros(grid[0].shape, dtype='complex128')
+    it = np.nditer(funcgrid, flags = ['f_index'], op_flags = ['writeonly'], op_dtypes = ['complex128'])
+    for f in it:
+        f[...] = funcvals[it.index]
     return grid, funcgrid
 
 def diff_gen(kouts, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
     """
-    Yield diffraction pattern intensity for given array of output wavevectors.
+    Yield diffraction pattern for given array of output wavevectors.
 
     kouts - tuple of output wavevectors
     lat_pts - coordinates of sample lattice atoms
@@ -208,22 +212,33 @@ def diff_gen(kouts, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
     sigma - the solid angle of a detector pixel
     wavelength - light wavelength
 
-    Return generator of diffracted light intensities for given kouts.
+    Generator function of diffracted lightwave velues for given kouts.
     """
     from scipy import constants
     us = np.array([gaussian(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
     kins = np.array([kin(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
     for kout in kouts:
-        asfs = np.array([asf(np.linalg.norm(kout - kin) / 2 / wavelength) for kin in kins]) 
-        exps = np.array([np.exp(2 * np.pi / wavelength * np.dot(kout, pt) * 1j) for pt in lat_pts])
+        asfs = np.array([asf(np.linalg.norm(kout_ext(*kout) - kin) / 2 / wavelength) for kin in kins]) 
+        exps = np.array([np.exp(2 * np.pi / wavelength * np.dot(kout_ext(*kout), pt) * 1j) for pt in lat_pts])
         vec = asfs * us * exps
         yield np.sqrt(sigma) * constants.value('classical electron radius') * 1e3 * vec.sum()
 
-def diff_work(kout, lat_pts, kins, us, asf_hw, asf_fit, wavelength, sigma):
+def diff_work(kout, lat_pts, kins, us, asf_hw, asf_fit, sigma, wavelength):
+    """
+    Worker function for difraction pattern for multiprocessing.
+
+    kouts - tuple of output wavevectors
+    lat_pts - coordinates of sample lattice atoms
+    kins - list of incoming wavevectors
+    us - list of gaussian beam wave values
+    asf_hw, asf_fit - atomic scattering files (see asf_advanced function)
+    sigma - the solid angle of a detector pixel
+    wavelength - light wavelength
+    """
     from scipy import constants
     asf = asf_advanced(asf_hw, asf_fit, wavelength)
-    asfs = np.array([asf(np.linalg.norm(kout - kin) / 2 / wavelength) for kin in kins]) 
-    exps = np.array([np.exp(2 * np.pi / wavelength * np.dot(kout, pt) * 1j) for pt in lat_pts])
+    asfs = np.array([asf(np.linalg.norm(kout_ext(*kout) - kin) / 2 / wavelength) for kin in kins]) 
+    exps = np.array([np.exp(2 * np.pi / wavelength * np.dot(kout_ext(*kout), pt) * 1j) for pt in lat_pts])
     vec = asfs * us * exps
     return np.sqrt(sigma) * constants.value('classical electron radius') * 1e3 * vec.sum()
 
