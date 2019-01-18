@@ -1,13 +1,15 @@
 """
-File: main.py (Python 3.X) - name and Python versions compatibility are temporal.
+File: functions.py (Python 2.X and 3.X) - name and Python versions compatibility are temporal.
 
-Main file for Convergent gaussian beam diffraction crystallography simulation. Every distance is in mm units.
-Dependencies: scipy, numpy and matplotlib packages.
+File with all functions for Convergent gaussian beam crystallography simulation. Every distance is in mm units.
+Dependencies: scipy and numpy.
 
 Made by Nikolay Ivanov, 2018-2019.
 """
 
 import numpy as np
+from scipy.interpolate import interp1d
+from scipy import constants
 
 def asf_parser(filename):
     """
@@ -16,7 +18,6 @@ def asf_parser(filename):
 
     filename - the filename with atomic scattering factor values, the file must be located in the same folder as this program
     """
-    from scipy.interpolate import interp1d
     x = []
     y = []
     for line in open(str(filename)):
@@ -33,7 +34,7 @@ def asf_fit_parser(filename):
     Input a txt file, than contains atomic scattering factor analytical fit coefficients (see https://it.iucr.org/Cb/ch6o1v0001/#table6o1o1o1 for more information).
     The file must contain a given list of coefficients: [a1, b1,.. an, bn,.. , c].
 
-    filename - the filename with atomic scattering factor fit coefficients, the file must be located in the same folder as this program.
+    filename - the filename with atomic scattering factor fit coefficients, the file must be located in the same folder as this program
     """
     coefs = []
     for line in open(str(filename)):
@@ -54,10 +55,9 @@ def asf_advanced(asf_hw, asf_fit, wavelength=1.5e-7):
     The files must be located in the same folder as this program.
 
     asf_hw - the filename with atomic scattering factor values for different photon energies
-    asf_fit - the filename with analytical fit coefficients.
+    asf_fit - the filename with analytical fit coefficients
     wavelength - light wavelength
     """
-    from scipy import constants
     asf_f = asf_parser(asf_hw)
     asf_fit_f = asf_fit_parser(asf_fit)
     en = constants.c * constants.h / constants.e / wavelength
@@ -67,9 +67,9 @@ def gaussian(x, y, z, waist=1e-4, wavelength=1.5e-7):
     """
     Return Gaussian beam amplitude for given coordinate (x, y, z).
 
-    x, y, z - coordinates.
-    waist - waist radius.
-    wavelength - light wavelength.
+    x, y, z - coordinates
+    waist - beam waist radius
+    wavelength - light wavelength
     """
     k = 2 * np.pi / wavelength
     zr = k * waist**2 / 2
@@ -81,58 +81,61 @@ def kin(x, y, z, waist=1e-4, wavelength=1.5e-7):
     """
     Return incoming wavevector of gaussian beam for given coordinate (x, y, z).
 
-    waist - beam waist radius.
-    wavelength - light wavelength.
+    waist - beam waist radius
+    wavelength - light wavelength
+
+    Return a list of three incoming wavevector coordinates.
     """
     k = 2 * np.pi / wavelength
     zr = k * waist**2 / 2
     R = z + zr**2 / z
     return [x, y, R] / np.sqrt(x * x + y * y + R * R)
 
-def kouts(det_dist, Nx = 512, Ny = 512, pix_size = 55e-3):
+def kouts(det_dist=54, detNx=512, detNy=512, pix_size=55e-3):
     """
     Return output wave vectors array for given detector at given distance from the sample.
 
-    det_dist - distance between detector and sample.
-    Nx, Ny - numbers of pixels in x and y axes.
-    pix_size - pixel size.
+    det_dist - distance between detector and sample
+    detNx, detNy - numbers of pixels in x and y axes
+    pix_size - pixel size
 
     Return a np.array of x and y coordinates of output wavevectors (kx, ky).
     """
-    x_det = np.arange((-Nx + 1) / 2, (Nx + 1) / 2) * pix_size
-    y_det = np.arange((-Ny + 1) / 2, (Ny + 1) / 2) * pix_size
+    x_det = np.arange((-detNx + 1) / 2, (detNx + 1) / 2) * pix_size
+    y_det = np.arange((-detNy + 1) / 2, (detNy + 1) / 2) * pix_size
     return [[kx, ky] for kx in x_det / det_dist for ky in y_det / det_dist]
 
 def kout_ext(kx, ky):
     return [kx, ky, np.sqrt(1 - kx**2 - ky**2)]
 
-def kout_grid(det_dist, Nx = 512, Ny = 512, pix_size = 55e-3):
+def kout_grid(det_dist=54, detNx=512, detNy=512, pix_size=55e-3):
     """
     Return output wave vectors array for given detector at given distance from the sample.
 
-    det_dist - distance between detector and sample.
-    Nx, Ny - numbers of pixels in x and y axes.
-    pix_size - pixel size.
+    det_dist - distance between detector and sample
+    detNx, detNy - numbers of pixels in x and y axes
+    pix_size - pixel size
 
-    Return two (Nx, Ny) np.arrays of kx and ky output wavevector coordinates.
+    Return two (detNx, detNy) np.arrays of kx and ky output wavevector coordinates.
     """
-    x_det = np.arange((-Nx + 1) / 2, (Nx + 1) / 2) * pix_size
-    y_det = np.arange((-Ny + 1) / 2, (Ny + 1) / 2) * pix_size
+    x_det = np.arange((-detNx + 1) / 2, (detNx + 1) / 2) * pix_size
+    y_det = np.arange((-detNy + 1) / 2, (detNy + 1) / 2) * pix_size
     return np.meshgrid(x_det / det_dist, y_det / det_dist)  
 
-def lattice(a, b, c, Nx, Ny, Nz, origin=[0, 0, 0]):
+def lattice(a, b, c, Nx, Ny, Nz, lat_orig=[0, 0, 0]):
     """
     Return atom coordinates of a cristalline sample.
 
-    Nx, Ny, Nz - numbers of unit cells in a sample.
-    a, b, c - unit cell edge lengths.
+    Nx, Ny, Nz - numbers of unit cells in a sample
+    a, b, c - unit cell edge lengths
+    lat_orig - lattice origin point
 
     Return a np.array of all atom positions in a sample.
     """
-    assert len(origin) ==3, 'origin argument is invalid, it must have 3 values'
-    return [[x + origin[0], y + origin[1], z + origin[2]] for x in np.arange((-Nx + 1) / 2, (Nx + 1) / 2) * a for y in np.arange((-Ny + 1) / 2, (Ny + 1) / 2) * b for z in np.arange((-Nz + 1) / 2, (Nz + 1) / 2) * c]
+    assert len(lat_orig) ==3, 'origin argument is invalid, it must have 3 values'
+    return [[x + lat_orig[0], y + lat_orig[1], z + lat_orig[2]] for x in np.arange((-Nx + 1) / 2, (Nx + 1) / 2) * a for y in np.arange((-Ny + 1) / 2, (Ny + 1) / 2) * b for z in np.arange((-Nz + 1) / 2, (Nz + 1) / 2) * c]
 
-def diff(kouts, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
+def diff_list(kouts, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
     """
     Return diffraction pattern for given array of output wavevectors.
 
@@ -145,7 +148,6 @@ def diff(kouts, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
 
     Return list of diffracted wave values for given kouts.
     """
-    from scipy import constants
     diffs = []
     us = np.array([gaussian(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
     kins = np.array([kin(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
@@ -168,10 +170,9 @@ def diff_grid(kxs, kys, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
     sigma - the solid angle of a detector pixel
     wavelength - light wavelength
 
-    Return np.array of diffracted wave values with the same shape as kxs, kys and kzs.
+    Return np.array of diffracted wave values with the same shape as kxs and kys.
     """
     assert kxs.shape == kys.shape, 'kx and ky must have the same shape'
-    from scipy import constants
     us = np.array([gaussian(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
     kins = np.array([kin(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
     it = np.nditer([kxs, kys, None], op_flags = [['readonly'], ['readonly'], ['writeonly', 'allocate']], op_dtypes = ['float64', 'float64', 'complex128'])
@@ -191,7 +192,7 @@ def make_grid(kouts, funcvals=None):
     pts - list of points
     funcvals - function values
 
-    Return grid array for every axis and function values grid.
+    Return grid array for every axis and a grid of function values.
     """
     coords = map(np.unique, np.array(kouts).T)
     grid = np.meshgrid(*coords)
@@ -199,7 +200,7 @@ def make_grid(kouts, funcvals=None):
     it = np.nditer(funcgrid, flags = ['f_index'], op_flags = ['writeonly'], op_dtypes = ['complex128'])
     for f in it:
         f[...] = funcvals[it.index]
-    return grid, funcgrid
+    return (*grid, funcgrid)
 
 def diff_gen(kouts, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
     """
@@ -214,7 +215,6 @@ def diff_gen(kouts, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
 
     Generator function of diffracted lightwave velues for given kouts.
     """
-    from scipy import constants
     us = np.array([gaussian(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
     kins = np.array([kin(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
     for kout in kouts:
@@ -235,7 +235,6 @@ def diff_work(kout, lat_pts, kins, us, asf_hw, asf_fit, sigma, wavelength):
     sigma - the solid angle of a detector pixel
     wavelength - light wavelength
     """
-    from scipy import constants
     asf = asf_advanced(asf_hw, asf_fit, wavelength)
     asfs = np.array([asf(np.linalg.norm(kout_ext(*kout) - kin) / 2 / wavelength) for kin in kins]) 
     exps = np.array([np.exp(2 * np.pi / wavelength * np.dot(kout_ext(*kout), pt) * 1j) for pt in lat_pts])
