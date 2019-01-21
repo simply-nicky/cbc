@@ -1,7 +1,7 @@
 """
 Convergent beam crystallography module.
 
-Compatible with Python 3.X.
+Compatible with Python 2.X and 3.X.
 """
 
 from __future__ import print_function

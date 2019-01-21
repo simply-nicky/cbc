@@ -1,5 +1,5 @@
 """
-File: wrapper.py (Python 3.X) - name and Python versions compatibility are temporal.
+File: wrapper.py (Python 2.X and 3.X) - name and Python versions compatibility are temporal.
 
 Class wrapper module for convergent beam crystallography simulation.
 Dependencies: numpy, matplotlib abd h5py.
@@ -68,7 +68,7 @@ class diff(object):
         """
         self.lat_pts = lattice(**self.lat_args.__dict__)
         _kxs, _kys = kout_grid(**self.kout_args.__dict__)
-        _asf = asf_advanced(**self.asf_args.__dict__, wavelength=self.wavelength)
+        _asf = asf_advanced(wavelength=self.wavelength, **self.asf_args.__dict__)
         _diffs = diff_grid(_kxs, _kys, self.lat_pts, asf=_asf, waist=self.waist, sigma=self.sigma, wavelength=self.wavelength)
         return diff_res(_kxs, _kys, _diffs, self.lat_args, self.kout_args, self.asf_args, self.waist, self.wavelength)
 
@@ -80,7 +80,7 @@ class diff(object):
         _kouts = kouts(**self.kout_args.__dict__)
         _us = np.array([gaussian(*pt, waist=self.waist, wavelength=self.wavelength) for pt in self.lat_pts])
         _kins = np.array([kin(*pt, waist=self.waist, wavelength=self.wavelength) for pt in self.lat_pts])
-        _worker = partial(diff_work, lat_pts=self.lat_pts, kins=_kins, us=_us, **self.asf_args.__dict__, sigma=self.sigma, wavelength=self.wavelength)
+        _worker = partial(diff_work, lat_pts=self.lat_pts, kins=_kins, us=_us, sigma=self.sigma, wavelength=self.wavelength, **self.asf_args.__dict__)
         with concurrent.futures.ProcessPoolExecutor() as executor:
             _diff_list = [diff for diff in executor.map(_worker, _kouts)]
         return diff_res(*make_grid(_kouts, _diff_list), lat_args=self.lat_args, kout_args=self.kout_args, asf_args=self.asf_args, waist=self.waist, wavelength=self.wavelength)
@@ -105,8 +105,9 @@ class diff_res(diff):
         _diff_args = _filediff.create_group('arguments')
         _diff_args.create_dataset('wavelength', data=self.wavelength)
         _diff_args.create_dataset('beam waist radius', data=self.waist)
-        for (key, value) in dict(**self.lat_args.__dict__, **self.asf_args.__dict__, **self.kout_args.__dict__).items():
-            _diff_args.create_dataset(key, data=value)
+        for args in (self.lat_args, self.asf_args, self.kout_args):
+            for (key, value) in args.__dict__.items():
+                _diff_args.create_dataset(key, data=value)
         _diff_res = _filediff.create_group('results')
         _diff_res.create_dataset('x coordinate of output wavevectors', data=self.kxs)
         _diff_res.create_dataset('y coordinate of output wavevectors', data=self.kys)

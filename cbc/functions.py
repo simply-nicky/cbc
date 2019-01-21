@@ -101,8 +101,8 @@ def kouts(det_dist=54, detNx=512, detNy=512, pix_size=55e-3):
 
     Return a np.array of x and y coordinates of output wavevectors (kx, ky).
     """
-    x_det = np.arange((-detNx + 1) / 2, (detNx + 1) / 2) * pix_size
-    y_det = np.arange((-detNy + 1) / 2, (detNy + 1) / 2) * pix_size
+    x_det = np.arange((-detNx + 1) / 2.0, (detNx + 1) / 2.0) * pix_size
+    y_det = np.arange((-detNy + 1) / 2.0, (detNy + 1) / 2.0) * pix_size
     return [[kx, ky] for kx in x_det / det_dist for ky in y_det / det_dist]
 
 def kout_ext(kx, ky):
@@ -118,8 +118,8 @@ def kout_grid(det_dist=54, detNx=512, detNy=512, pix_size=55e-3):
 
     Return two (detNx, detNy) np.arrays of kx and ky output wavevector coordinates.
     """
-    x_det = np.arange((-detNx + 1) / 2, (detNx + 1) / 2) * pix_size
-    y_det = np.arange((-detNy + 1) / 2, (detNy + 1) / 2) * pix_size
+    x_det = np.arange((-detNx + 1) / 2.0, (detNx + 1) / 2.0) * pix_size
+    y_det = np.arange((-detNy + 1) / 2.0, (detNy + 1) / 2.0) * pix_size
     return np.meshgrid(x_det / det_dist, y_det / det_dist)  
 
 def lattice(a, b, c, Nx, Ny, Nz, lat_orig=[0, 0, 0]):
@@ -133,7 +133,7 @@ def lattice(a, b, c, Nx, Ny, Nz, lat_orig=[0, 0, 0]):
     Return a np.array of all atom positions in a sample.
     """
     assert len(lat_orig) ==3, 'origin argument is invalid, it must have 3 values'
-    return [[x + lat_orig[0], y + lat_orig[1], z + lat_orig[2]] for x in np.arange((-Nx + 1) / 2, (Nx + 1) / 2) * a for y in np.arange((-Ny + 1) / 2, (Ny + 1) / 2) * b for z in np.arange((-Nz + 1) / 2, (Nz + 1) / 2) * c]
+    return [[x + lat_orig[0], y + lat_orig[1], z + lat_orig[2]] for x in np.arange((-Nx + 1) / 2.0, (Nx + 1) / 2.0) * a for y in np.arange((-Ny + 1) / 2.0, (Ny + 1) / 2.0) * b for z in np.arange((-Nz + 1) / 2.0, (Nz + 1) / 2.0) * c]
 
 def diff_list(kouts, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
     """
@@ -152,7 +152,7 @@ def diff_list(kouts, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
     us = np.array([gaussian(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
     kins = np.array([kin(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
     for kout in kouts:
-        asfs = np.array([asf(np.linalg.norm(kout_ext(*kout) - kin) / 2 / wavelength) for kin in kins]) 
+        asfs = np.array([asf(np.linalg.norm(kout_ext(*kout) - kin) / 2.0 / wavelength) for kin in kins]) 
         exps = np.array([np.exp(2 * np.pi / wavelength * np.dot(kout_ext(*kout), pt) * 1j) for pt in lat_pts])
         vec = asfs * us * exps
         diffs.append(np.sqrt(sigma) * constants.value('classical electron radius') * 1e3 * vec.sum())
@@ -200,7 +200,8 @@ def make_grid(kouts, funcvals=None):
     it = np.nditer(funcgrid, flags = ['f_index'], op_flags = ['writeonly'], op_dtypes = ['complex128'])
     for f in it:
         f[...] = funcvals[it.index]
-    return (*grid, funcgrid)
+    grid.append(funcgrid)
+    return tuple(grid)
 
 def diff_gen(kouts, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
     """
@@ -218,7 +219,7 @@ def diff_gen(kouts, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
     us = np.array([gaussian(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
     kins = np.array([kin(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
     for kout in kouts:
-        asfs = np.array([asf(np.linalg.norm(kout_ext(*kout) - kin) / 2 / wavelength) for kin in kins]) 
+        asfs = np.array([asf(np.linalg.norm(kout_ext(*kout) - kin) / 2.0 / wavelength) for kin in kins]) 
         exps = np.array([np.exp(2 * np.pi / wavelength * np.dot(kout_ext(*kout), pt) * 1j) for pt in lat_pts])
         vec = asfs * us * exps
         yield np.sqrt(sigma) * constants.value('classical electron radius') * 1e3 * vec.sum()
