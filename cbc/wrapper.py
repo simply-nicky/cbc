@@ -9,11 +9,9 @@ Made by Nikolay Ivanov, 2018-2019.
 
 from .functions import asf_advanced, gaussian, lattice, make_grid, kin, kouts, kout_grid, diff_grid, diff_work
 import numpy as np
-import concurrent.futures
+import os, concurrent.futures, h5py, datetime, logging
 from functools import partial
 import matplotlib.pyplot as plt
-import h5py
-import datetime
 
 class lat_args(object): 
     """
@@ -30,7 +28,7 @@ class lat_args(object):
 
 class kout_args(object):
     """
-    kouts function arguments class
+    kouts function arguments class.
 
     det_dist - distance between detector and sample
     detNx, detNy - numbers of pixels in x and y axes
@@ -41,7 +39,7 @@ class kout_args(object):
 
 class asf_args(object):
     """
-    asf_advanced function arguments class
+    asf_advanced function arguments class.
 
     asf_hw - the filename with atomic scattering factor values for different photon energies
     asf_fit - the filename with analytical fit coefficients
@@ -49,33 +47,70 @@ class asf_args(object):
     def __init__(self, asf_hw='cbc/asf_hw_Au.txt', asf_fit='cbc/asf_q_fit_Au_2.txt'):
         self.asf_hw, self.asf_fit = asf_hw, asf_fit
 
-class diff(object):
+class setup_args(object):
+    """
+    diff_setup arguments class.
+
+    timenow - starting time
+    handler - hadler for logger
+    level - logger level
+    relpath - path to save results
+    """
+    def __init__(self, timenow=datetime.datetime.now(), handler = None, level=logging.INFO, relpath=''):
+        self.level, self.time, self.path = level, timenow, os.path.join(os.path.dirname(__file__), relpath)
+        if handler is None:
+            handler = logging.FileHandler(self.time.strftime('%d-%m-%Y_%H-%M') + '.log')
+        handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        self.handler = handler
+
+
+class diff_setup(object):
+    """
+    Diffraction setup class.
+    Initializes logger, path where to save results and starting time.
+    """
+    def __init__(self, setup_args=setup_args()):
+        self.time, self.path, self.logger = setup_args.time, setup_args.path, logging.getLogger(self.__class__.__name__)
+        self.logger.addHandler(setup_args.handler)
+        self.logger.level = setup_args.level
+        self.logger.info('Initializing diff_setup')
+
+class diff(diff_setup):
     """
     Diffraction simulation arguments class.
 
-    lat_args, kout_args and asf_args - class objects
+    self_args, lat_args, kout_args and asf_args - class objects
     waist - beam waist radius
     wavelength - light wavelength
     """
-    def __init__(self, lat_args=lat_args(), kout_args=kout_args(), asf_args=asf_args(), waist=2e-5, wavelength=1.5e-7):
+    def __init__(self, setup_args=setup_args(), lat_args=lat_args(), kout_args=kout_args(), asf_args=asf_args(), waist=2e-5, wavelength=1.5e-7):
+        super(diff, self).__init__(setup_args)
         lat_args.lat_orig = [0, 0, lat_args.Nx * lat_args.c / wavelength * np.pi * waist]
         self.waist, self.wavelength, self.sigma = waist, wavelength, kout_args.pix_size**2 / kout_args.det_dist**2
-        self.lat_args, self.kout_args, self.asf_args = lat_args, kout_args, asf_args
-    
+        self.lat_args, self.kout_args, self.asf_args = lat_args, kout_args, asf_args   
     def diff_grid(self):
         """
         Calculate diffraction results.
         """
+        self.logger.info('Starting serial calculation of diffraction pattern with following parameters:')
+        for args in (self.lat_args, self.kout_args):
+            for (key, value) in args.__dict__.items():
+                self.logger.info('%-9s=%+28s' % (key, value))
         self.lat_pts = lattice(**self.lat_args.__dict__)
         _kxs, _kys = kout_grid(**self.kout_args.__dict__)
         _asf = asf_advanced(wavelength=self.wavelength, **self.asf_args.__dict__)
         _diffs = diff_grid(_kxs, _kys, self.lat_pts, asf=_asf, waist=self.waist, sigma=self.sigma, wavelength=self.wavelength)
-        return diff_res(_kxs, _kys, _diffs, self.lat_args, self.kout_args, self.asf_args, self.waist, self.wavelength)
+        self.logger.info('The calculation has ended, %d diffraction pattern values total' % _diffs.size)
+        return diff_res(_kxs, _kys, _diffs, self.time, self.path, self.logger, self.lat_args, self.kout_args, self.asf_args, self.waist, self.wavelength)
 
     def diff_pool(self):
         """
         Calculate diffraction results concurrently.
         """
+        self.logger.info('Starting concurrent calculation of diffraction pattern with following parameters:')
+        for args in (self.lat_args, self.kout_args):
+            for (key, value) in args.__dict__.items():
+                self.logger.info('%-9s=%+28s' % (key, value))
         self.lat_pts = lattice(**self.lat_args.__dict__)
         _kouts = kouts(**self.kout_args.__dict__)
         _us = np.array([gaussian(*pt, waist=self.waist, wavelength=self.wavelength) for pt in self.lat_pts])
@@ -83,7 +118,8 @@ class diff(object):
         _worker = partial(diff_work, lat_pts=self.lat_pts, kins=_kins, us=_us, sigma=self.sigma, wavelength=self.wavelength, **self.asf_args.__dict__)
         with concurrent.futures.ProcessPoolExecutor() as executor:
             _diff_list = [diff for diff in executor.map(_worker, _kouts)]
-        return diff_res(*make_grid(_kouts, _diff_list), lat_args=self.lat_args, kout_args=self.kout_args, asf_args=self.asf_args, waist=self.waist, wavelength=self.wavelength)
+        self.logger.info('The calculation has ended, %d diffraction pattern values total' % len(_diff_list))
+        return diff_res(*make_grid(_kouts, _diff_list), time=self.time, path=self.path, logger=self.logger, lat_args=self.lat_args, kout_args=self.kout_args, asf_args=self.asf_args, waist=self.waist, wavelength=self.wavelength)
 
 class diff_res(diff):
     """
@@ -91,17 +127,20 @@ class diff_res(diff):
 
     kxs, kys - x and y coordinates of output wavevectors
     diffs - diffracted wave values for given kxs and kys
+    time, path, logger, lat_args, kout_args, asf_args, waist, wavelength - attributes inherited from diff class
     """
-    def __init__(self, kxs, kys, diffs, lat_args, kout_args, asf_args, waist, wavelength):
-        super(diff_res, self).__init__(lat_args, kout_args, asf_args, waist, wavelength)
+    def __init__(self, kxs, kys, diffs, time, path, logger, lat_args, kout_args, asf_args, waist, wavelength):
         self.kxs, self.kys, self.diffs = kxs, kys, diffs
+        self.time, self.path, self.logger, self.lat_args, self.kout_args, self.asf_args, self.waist, self.wavelength = time, path, logger, lat_args, kout_args, asf_args, waist, wavelength
 
     def plot(self):
+        self.logger.info('Plotting the results')
         plt.contourf(self.kxs, self.kys, np.abs(self.diffs))
         plt.show()
 
     def write(self):
-        _filediff = h5py.File('diff_' + datetime.datetime.now().strftime('%d-%m-%Y_%H_%M') + '.hdf5', 'w')
+        self.logger.info('Writing the results')
+        _filediff = h5py.File('diff_' + datetime.datetime.now().strftime('%d-%m-%Y_%H-%M') + '.hdf5', 'w')
         _diff_args = _filediff.create_group('arguments')
         _diff_args.create_dataset('wavelength', data=self.wavelength)
         _diff_args.create_dataset('beam waist radius', data=self.waist)
@@ -112,3 +151,4 @@ class diff_res(diff):
         _diff_res.create_dataset('x coordinate of output wavevectors', data=self.kxs)
         _diff_res.create_dataset('y coordinate of output wavevectors', data=self.kys)
         _diff_res.create_dataset('diffracted lightwave values', data=self.diffs)
+        self.logger.info('Writing is completed')
