@@ -7,7 +7,7 @@ Dependencies: numpy, matplotlib abd h5py.
 Made by Nikolay Ivanov, 2018-2019.
 """
 
-from .functions import asf_advanced, gaussian, lattice, make_grid, kin, kouts, kout_grid, diff_grid, diff_work
+from .functions import asf_advanced, gaussian, lattice, make_grid, kin, kouts, kout_grid, diff_grid, diff_list, diff_work
 import numpy as np
 import os, concurrent.futures, h5py, datetime, logging
 from functools import partial

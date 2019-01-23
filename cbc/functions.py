@@ -10,6 +10,8 @@ Made by Nikolay Ivanov, 2018-2019.
 import numpy as np
 from scipy.interpolate import interp1d
 from scipy import constants
+from timeit import default_timer as timer
+from functools import partial
 
 def asf_parser(filename):
     """
@@ -45,7 +47,8 @@ def asf_fit_parser(filename):
         except:
             continue
     assert len(coefs) % 2 == 1, 'the fit coefficients file is invalid, there must be odd number of coefficients'
-    return lambda s: sum((a * np.exp(-b * s**2) for (a, b) in zip(coefs[0:-1:2], coefs[1:-1:2]))) + coefs[-1]
+    bcoefs, acoefs = np.array(coefs[1:-1:2]), np.array(coefs[0:-1:2])
+    return lambda s: sum(acoefs * np.exp(-s**2 * bcoefs)) + coefs[-1]
 
 def asf_advanced(asf_hw, asf_fit, wavelength=1.5e-7):
     """
@@ -58,10 +61,11 @@ def asf_advanced(asf_hw, asf_fit, wavelength=1.5e-7):
     asf_fit - the filename with analytical fit coefficients
     wavelength - light wavelength
     """
-    asf_f = asf_parser(asf_hw)
-    asf_fit_f = asf_fit_parser(asf_fit)
     en = constants.c * constants.h / constants.e / wavelength
-    return lambda s: asf_f(en) + asf_fit_f(s) - asf_fit_f(0)
+    asf_0 = asf_parser(asf_hw)(en)
+    asf_fit_f = asf_fit_parser(asf_fit)
+    asf_fit_0 = asf_fit_f(0)
+    return lambda s: asf_0 + asf_fit_f(s) - asf_fit_0
 
 def gaussian(x, y, z, waist=1e-4, wavelength=1.5e-7):
     """
@@ -74,7 +78,7 @@ def gaussian(x, y, z, waist=1e-4, wavelength=1.5e-7):
     k = 2 * np.pi / wavelength
     zr = k * waist**2 / 2
     wz = waist * np.sqrt(1.0 + (z / zr)**2)
-    R = z + zr**2 / z
+    R =  + zr**2 / z
     return np.sqrt(2 / np.pi) * wz**-1 * np.exp(-(x * x + y * y) / wz**2) * np.exp(-k * z * 1j + np.arctan(z / zr) * 1j) * np.exp(-k * (x * x + y * y) * 1j / 2 / R)
 
 def kin(x, y, z, waist=1e-4, wavelength=1.5e-7):
@@ -133,7 +137,10 @@ def lattice(a, b, c, Nx, Ny, Nz, lat_orig=[0, 0, 0]):
     Return a np.array of all atom positions in a sample.
     """
     assert len(lat_orig) ==3, 'origin argument is invalid, it must have 3 values'
-    return [[x + lat_orig[0], y + lat_orig[1], z + lat_orig[2]] for x in np.arange((-Nx + 1) / 2.0, (Nx + 1) / 2.0) * a for y in np.arange((-Ny + 1) / 2.0, (Ny + 1) / 2.0) * b for z in np.arange((-Nz + 1) / 2.0, (Nz + 1) / 2.0) * c]
+    xval = a * np.arange((-Nx + 1) / 2.0, (Nx + 1) / 2.0)
+    yval = b * np.arange((-Ny + 1) / 2.0, (Ny + 1) / 2.0)
+    zval = c * np.arange((-Nz + 1) / 2.0, (Nz + 1) / 2.0)
+    return np.add([[x, y, z] for x in xval for y in yval for z in zval], lat_orig)
 
 def diff_list(kouts, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
     """
@@ -148,14 +155,17 @@ def diff_list(kouts, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
 
     Return list of diffracted wave values for given kouts.
     """
+    start = timer()
     diffs = []
     us = np.array([gaussian(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
     kins = np.array([kin(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
     for kout in kouts:
-        asfs = np.array([asf(np.linalg.norm(kout_ext(*kout) - kin) / 2.0 / wavelength) for kin in kins]) 
-        exps = np.array([np.exp(2 * np.pi / wavelength * np.dot(kout_ext(*kout), pt) * 1j) for pt in lat_pts])
-        vec = asfs * us * exps
-        diffs.append(np.sqrt(sigma) * constants.value('classical electron radius') * 1e3 * vec.sum())
+        qs = np.add(-kins, kout_ext(*kout)) / 2.0 / wavelength
+        asfs = asf(np.linalg.norm(qs))
+        exps = np.exp(2 * np.pi / wavelength * np.dot(lat_pts, kout_ext(*kout)) * 1j)
+        diffs.append(np.sqrt(sigma) * constants.value('classical electron radius') * 1e3 * np.sum(asfs * us * exps))
+    print(timer() - start)
+    print(diffs)
     return diffs
 
 def diff_grid(kxs, kys, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
@@ -178,10 +188,10 @@ def diff_grid(kxs, kys, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
     it = np.nditer([kxs, kys, None], op_flags = [['readonly'], ['readonly'], ['writeonly', 'allocate']], op_dtypes = ['float64', 'float64', 'complex128'])
     for kx, ky, diff in it:
         kout = [kx, ky, np.sqrt(1 - kx**2 - ky**2)]
-        asfs = np.array([asf(np.linalg.norm(kout - kin) / 2 / wavelength) for kin in kins])
-        exps = np.array([np.exp(2 * np.pi / wavelength * np.dot(kout, pt) * 1j) for pt in lat_pts])
-        vec = asfs * us * exps
-        diff[...] = np.sqrt(sigma) * constants.value('classical electron radius') * 1e3 * vec.sum()
+        qs = np.add(-kins, kout) / 2.0 / wavelength
+        asfs = asf(np.linalg.norm(qs))
+        exps = np.exp(2 * np.pi / wavelength * np.dot(lat_pts, kout) * 1j)
+        diff[...] = np.sqrt(sigma) * constants.value('classical electron radius') * 1e3 * np.sum(asfs * us * exps)
     return it.operands[-1]
 
 def make_grid(kouts, funcvals=None):
@@ -219,10 +229,10 @@ def diff_gen(kouts, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
     us = np.array([gaussian(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
     kins = np.array([kin(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
     for kout in kouts:
-        asfs = np.array([asf(np.linalg.norm(kout_ext(*kout) - kin) / 2.0 / wavelength) for kin in kins]) 
-        exps = np.array([np.exp(2 * np.pi / wavelength * np.dot(kout_ext(*kout), pt) * 1j) for pt in lat_pts])
-        vec = asfs * us * exps
-        yield np.sqrt(sigma) * constants.value('classical electron radius') * 1e3 * vec.sum()
+        qs = np.add(-kins, kout) / 2.0 / wavelength
+        asfs = asf(np.linalg.norm(qs))
+        exps = np.exp(2 * np.pi / wavelength * np.dot(lat_pts, kout_ext(*kout)) * 1j)
+        yield np.sqrt(sigma) * constants.value('classical electron radius') * 1e3 * np.sum(asfs * us * exps)
 
 def diff_work(kout, lat_pts, kins, us, asf_hw, asf_fit, sigma, wavelength):
     """
@@ -237,10 +247,10 @@ def diff_work(kout, lat_pts, kins, us, asf_hw, asf_fit, sigma, wavelength):
     wavelength - light wavelength
     """
     asf = asf_advanced(asf_hw, asf_fit, wavelength)
-    asfs = np.array([asf(np.linalg.norm(kout_ext(*kout) - kin) / 2 / wavelength) for kin in kins]) 
-    exps = np.array([np.exp(2 * np.pi / wavelength * np.dot(kout_ext(*kout), pt) * 1j) for pt in lat_pts])
-    vec = asfs * us * exps
-    return np.sqrt(sigma) * constants.value('classical electron radius') * 1e3 * vec.sum()
+    qs = np.add(-kins, kout_ext(*kout)) / 2.0 / wavelength
+    asfs = asf(np.linalg.norm(qs))
+    exps = np.exp(2 * np.pi / wavelength * np.dot(lat_pts, kout_ext(*kout)) * 1j)
+    return np.sqrt(sigma) * constants.value('classical electron radius') * 1e3 * np.sum(asfs * us * exps)
 
 def selftest(filename, filename_fit, filename_fit2):
     """
