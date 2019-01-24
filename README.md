@@ -14,3 +14,19 @@ Required dependencies:
 - SciPy
 - matplotlib
 - h5py
+
+## cbc strusture
+
+The library itself consists of two modules:
+
+- functions.py - a module with all functions for convergent gaussian beam crystallography simulation
+- wrapper.py - class wrapper for settting up and running diffraction simulations as well as plotting and writing into HDF5 file diffraction results
+
+Also therea re couple of usage examples:
+
+- diff-run.py - conducting diffraction simulation and saving results to HDF5 file
+- read.py - reading and ploting diffraction results
+
+## upcoming things to do
+
+- consider more complex samples, protein crystalls
