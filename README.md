@@ -6,7 +6,7 @@ https://e-reports-ext.llnl.gov/pdf/314988.pdf
 
 ## compilation
 
-It's a package called cbc, with which you can program the simulation. See usage examples: [go to cbc structure](##_cbc_structure)
+It's a package called cbc, with which you can program the simulation. See usage examples: [go to cbc structure](#cbc-structure)
 
 Required dependencies:
 
