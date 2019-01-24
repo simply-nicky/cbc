@@ -63,7 +63,6 @@ class setup_args(object):
         handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
         self.handler = handler
 
-
 class diff_setup(object):
     """
     Diffraction setup class.

@@ -160,7 +160,7 @@ def diff_list(kouts, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
     us = np.array([gaussian(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
     kins = np.array([kin(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
     for kout in kouts:
-        qs = np.add(-kins, kout_ext(*kout)) / 2.0 / wavelength
+        qs = np.add(-1 * kins, kout_ext(*kout)) / 2.0 / wavelength
         asfs = asf(np.linalg.norm(qs))
         exps = np.exp(2 * np.pi / wavelength * np.dot(lat_pts, kout_ext(*kout)) * 1j)
         diffs.append(np.sqrt(sigma) * constants.value('classical electron radius') * 1e3 * np.sum(asfs * us * exps))
@@ -188,7 +188,7 @@ def diff_grid(kxs, kys, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
     it = np.nditer([kxs, kys, None], op_flags = [['readonly'], ['readonly'], ['writeonly', 'allocate']], op_dtypes = ['float64', 'float64', 'complex128'])
     for kx, ky, diff in it:
         kout = [kx, ky, np.sqrt(1 - kx**2 - ky**2)]
-        qs = np.add(-kins, kout) / 2.0 / wavelength
+        qs = np.add(-1 * kins, kout) / 2.0 / wavelength
         asfs = asf(np.linalg.norm(qs))
         exps = np.exp(2 * np.pi / wavelength * np.dot(lat_pts, kout) * 1j)
         diff[...] = np.sqrt(sigma) * constants.value('classical electron radius') * 1e3 * np.sum(asfs * us * exps)
@@ -229,7 +229,7 @@ def diff_gen(kouts, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
     us = np.array([gaussian(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
     kins = np.array([kin(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
     for kout in kouts:
-        qs = np.add(-kins, kout) / 2.0 / wavelength
+        qs = np.add(-1 * kins, kout) / 2.0 / wavelength
         asfs = asf(np.linalg.norm(qs))
         exps = np.exp(2 * np.pi / wavelength * np.dot(lat_pts, kout_ext(*kout)) * 1j)
         yield np.sqrt(sigma) * constants.value('classical electron radius') * 1e3 * np.sum(asfs * us * exps)
