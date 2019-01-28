@@ -44,7 +44,7 @@ class asf_args(object):
     asf_hw - the filename with atomic scattering factor values for different photon energies
     asf_fit - the filename with analytical fit coefficients
     """
-    def __init__(self, asf_hw='cbc/asf_hw_Au.txt', asf_fit='cbc/asf_q_fit_Au_2.txt'):
+    def __init__(self, asf_hw='cbc/asf/Au/asf_hw.txt', asf_fit='cbc/asf/Au/asf_q_fit.txt'):
         self.asf_hw, self.asf_fit = asf_hw, asf_fit
 
 class setup_args(object):
@@ -56,17 +56,18 @@ class setup_args(object):
     level - logger level
     relpath - path to save results
     """
-    def __init__(self, timenow=datetime.datetime.now(), handler = None, level=logging.INFO, relpath=''):
-        self.level, self.time, self.path = level, timenow, os.path.join(os.path.dirname(__file__), relpath)
+    def __init__(self, timenow=datetime.datetime.now(), handler = None, level=logging.INFO, relpath='results'):
+        parpath = os.path.join(os.path.dirname(__file__), os.path.pardir)
+        self.level, self.time, self.path = level, timenow, os.path.join(parpath, relpath)
         if handler is None:
-            handler = logging.FileHandler(self.time.strftime('%d-%m-%Y_%H-%M') + '.log')
+            handler = logging.FileHandler(os.path.join(self.path, self.time.strftime('%d-%m-%Y_%H-%M') + '.log'))
         handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
         self.handler = handler
 
 class diff_setup(object):
     """
     Diffraction setup class.
-    Initializes logger, path where to save results and starting time.
+    Initializes logger, the path where to save results and starting time.
     """
     def __init__(self, setup_args=setup_args()):
         self.time, self.path, self.logger = setup_args.time, setup_args.path, logging.getLogger(self.__class__.__name__)
@@ -139,7 +140,7 @@ class diff_res(diff):
 
     def write(self):
         self.logger.info('Writing the results')
-        _filediff = h5py.File('diff_' + datetime.datetime.now().strftime('%d-%m-%Y_%H-%M') + '.hdf5', 'w')
+        _filediff = h5py.File(os.path.join(self.path, 'diff_' + self.time.strftime('%d-%m-%Y_%H-%M') + '.hdf5'), 'w')
         _diff_args = _filediff.create_group('arguments')
         _diff_args.create_dataset('wavelength', data=self.wavelength)
         _diff_args.create_dataset('beam waist radius', data=self.waist)

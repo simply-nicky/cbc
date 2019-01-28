@@ -1,4 +1,0 @@
-Coefficients for analytical approximation to the scattering factors
-Data for Au
-a1              b1              a2              b2              a3              b3              a4              b4              c
-1.688190E+01	4.611000E-01	1.859130E+01	8.621600E+00	2.555820E+01	1.482600E+00	5.860000E+00	3.639560E+01	1.206580E+01

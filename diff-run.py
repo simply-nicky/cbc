@@ -21,7 +21,7 @@ if __name__ == "__main__":
     det_dist = 54
 
     start = timer()
-    diff = cbc.diff(kout_args=cbc.kout_args(det_dist=det_dist, detNx=detNx, detNy=detNy, pix_size=pix_size), lat_args=cbc.lat_args(a=a, b=b, c=c, Nx=Nx, Ny=Ny, Nz=Nz), waist=waist, wavelength=wavelength)
+    diff = cbc.diff(setup_args=cbc.setup_args(relpath='results'), kout_args=cbc.kout_args(det_dist=det_dist, detNx=detNx, detNy=detNy, pix_size=pix_size), lat_args=cbc.lat_args(a=a, b=b, c=c, Nx=Nx, Ny=Ny, Nz=Nz), waist=waist, wavelength=wavelength)
     diffres = diff.diff_pool()
     print(timer() - start)
     start = timer()

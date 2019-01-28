@@ -1,7 +1,7 @@
 """
 File: functions.py (Python 2.X and 3.X) - name and Python versions compatibility are temporal.
 
-File with all functions for Convergent gaussian beam crystallography simulation. Every distance is in mm units.
+Module with all functions for Convergent gaussian beam crystallography simulation. Every distance is in mm units.
 Dependencies: scipy and numpy.
 
 Made by Nikolay Ivanov, 2018-2019.
@@ -61,7 +61,7 @@ def asf_advanced(asf_hw, asf_fit, wavelength=1.5e-7):
     asf_fit - the filename with analytical fit coefficients
     wavelength - light wavelength
     """
-    en = constants.c * constants.h / constants.e / wavelength
+    en = constants.c * constants.h / constants.e / wavelength * 1e3     #photon energy in eV
     asf_0 = asf_parser(asf_hw)(en)
     asf_fit_f = asf_fit_parser(asf_fit)
     asf_fit_0 = asf_fit_f(0)
@@ -155,7 +155,6 @@ def diff_list(kouts, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
 
     Return list of diffracted wave values for given kouts.
     """
-    start = timer()
     diffs = []
     us = np.array([gaussian(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
     kins = np.array([kin(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
@@ -164,8 +163,6 @@ def diff_list(kouts, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
         asfs = asf(np.linalg.norm(qs))
         exps = np.exp(2 * np.pi / wavelength * np.dot(lat_pts, kout_ext(*kout)) * 1j)
         diffs.append(np.sqrt(sigma) * constants.value('classical electron radius') * 1e3 * np.sum(asfs * us * exps))
-    print(timer() - start)
-    print(diffs)
     return diffs
 
 def diff_grid(kxs, kys, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
@@ -252,17 +249,16 @@ def diff_work(kout, lat_pts, kins, us, asf_hw, asf_fit, sigma, wavelength):
     exps = np.exp(2 * np.pi / wavelength * np.dot(lat_pts, kout_ext(*kout)) * 1j)
     return np.sqrt(sigma) * constants.value('classical electron radius') * 1e3 * np.sum(asfs * us * exps)
 
-def selftest(filename, filename_fit, filename_fit2):
+def selftest(filename, filename_fit):
     """
     Plot atomic scattering factor as well it's analytical fit.
     """
     import matplotlib.pyplot as plt
     asf = asf_parser(filename)
     asf_fit = asf_fit_parser(filename_fit)
-    asf_fit2 = asf_fit_parser(filename_fit2)
     x = np.linspace(0, 6, num=101, endpoint=True)
-    plt.plot(x, asf(x), 'r-', x, asf_fit(x), 'b-', x, asf_fit2(x), 'g-')
+    plt.plot(x, asf(x), 'r-', x, asf_fit(x), 'b-')
     plt.show()
 
 if __name__ == "__main__":
-    selftest('asf_q_Au.txt', 'asf_q_fit_Au.txt', 'asf_q_fit_Au_2.txt')
+    selftest('asf/asf_q_Au.txt', 'asf/asf_q_fit_Au.txt')

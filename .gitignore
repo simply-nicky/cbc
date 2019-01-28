@@ -1,3 +1,5 @@
 # Diffraction pattern results
+results/
 *.hdf5
 *.png
+*.eps
