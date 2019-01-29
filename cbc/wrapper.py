@@ -13,6 +13,13 @@ import os, concurrent.futures, h5py, datetime, logging
 from functools import partial
 import matplotlib.pyplot as plt
 
+try:
+    from logging import NullHandler
+except ImportError:
+    class NullHandler(logging.Handler):
+        def emit(self, record):
+            pass
+
 class lat_args(object): 
     """
     lattice function arguments class.
@@ -56,11 +63,9 @@ class setup_args(object):
     level - logger level
     relpath - path to save results
     """
-    def __init__(self, timenow=datetime.datetime.now(), handler = None, level=logging.INFO, relpath='results'):
+    def __init__(self, timenow=datetime.datetime.now(), handler = NullHandler(), level=logging.INFO, relpath='results'):
         parpath = os.path.join(os.path.dirname(__file__), os.path.pardir)
         self.level, self.time, self.path = level, timenow, os.path.join(parpath, relpath)
-        if handler is None:
-            handler = logging.FileHandler(os.path.join(self.path, self.time.strftime('%d-%m-%Y_%H-%M') + '.log'))
         handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
         self.handler = handler
 
@@ -85,9 +90,12 @@ class diff(diff_setup):
     """
     def __init__(self, setup_args=setup_args(), lat_args=lat_args(), kout_args=kout_args(), asf_args=asf_args(), waist=2e-5, wavelength=1.5e-7):
         super(diff, self).__init__(setup_args)
-        lat_args.lat_orig = [0, 0, lat_args.Nx * lat_args.c / wavelength * np.pi * waist]
         self.waist, self.wavelength, self.sigma = waist, wavelength, kout_args.pix_size**2 / kout_args.det_dist**2
         self.lat_args, self.kout_args, self.asf_args = lat_args, kout_args, asf_args   
+    
+    def move_lat(self):
+        self.lat_args.lat_orig = [0, 0, max(self.lat_args.Nx * self.lat_args.a, self.lat_args.Ny * self.lat_args.b, self.lat_args.Nz * self.lat_args.c) / self.wavelength * np.pi * self.waist]
+
     def diff_grid(self):
         """
         Calculate diffraction results.
