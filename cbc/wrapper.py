@@ -9,7 +9,7 @@ Made by Nikolay Ivanov, 2018-2019.
 
 from .functions import asf_advanced, gaussian, lattice, make_grid, kin, kouts, kout_grid, diff_grid, diff_list, diff_work
 import numpy as np
-import os, concurrent.futures, h5py, datetime, logging
+import os, concurrent.futures, h5py, datetime, logging, errno
 from functools import partial
 import matplotlib.pyplot as plt
 
@@ -79,6 +79,7 @@ class diff_setup(object):
         self.logger.addHandler(setup_args.handler)
         self.logger.level = setup_args.level
         self.logger.info('Initializing diff_setup')
+        self.logger.info('output path is %s' % self.path)
 
 class diff(diff_setup):
     """
@@ -148,6 +149,10 @@ class diff_res(diff):
 
     def write(self):
         self.logger.info('Writing the results')
+        try:
+            os.makedirs(self.path)
+        except OSError as e:
+            if e.errno != errno.EEXIST: raise
         _filediff = h5py.File(os.path.join(self.path, 'diff_' + self.time.strftime('%d-%m-%Y_%H-%M') + '.hdf5'), 'w')
         _diff_args = _filediff.create_group('arguments')
         _diff_args.create_dataset('wavelength', data=self.wavelength)

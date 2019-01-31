@@ -3,9 +3,11 @@
 File: converter.py
 
 Converting atomic scattering data module.
+Can be used as a script in terminal.
 """
 import numpy as np
 import os
+from . import utils
 
 def asf_converter(filename):
     if not os.path.isfile(os.path.abspath(filename)): 
@@ -42,24 +44,17 @@ def asf_fit_converter(filename):
     new_file.write('\t'.join(('%E' % coeff for coeff in coeffs)))
     new_file.close()
 
-def verbose_call(v, func, *args):
-    if v:
-        print('Reading file(s) ' + ' '.join(args))
-        func(*args)
-        print('Done!')
-    else:
-        func(*args)
-
 if __name__ == "__main__":
     import sys, argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("type", type=str, choices=['asf', 'asf_fit'], help="choose between given converters")
+    parser = argparse.ArgumentParser(description='Convert atomic scattering data files')
+    parser.add_argument("type", "-t", type=str, choices=['asf', 'asf_fit'], help="choose between given converters")
     parser.add_argument("path", type=str, help="the path to the asf file")
-    parser.add_argument("-v", "--verbosity", action="store_true")
+    parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
+    
     if args.type == 'asf':
-        verbose_call(args.verbosity, asf_converter, args.path)
+        utils.verbose_call(args.verbose, asf_converter, args.path)
     elif args.type == 'asf_fit':
-        verbose_call(args.verbosity, asf_fit_converter, args.path)
+        utils.verbose_call(args.verbose, asf_fit_converter, args.path)
     else:
         raise ValueError('wrong type argument')
