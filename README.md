@@ -15,7 +15,7 @@ Required dependencies:
 - matplotlib
 - h5py
 
-## cbc strusture
+## cbc structure
 
 The library itself consists of two modules and an utility package:
 
