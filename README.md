@@ -21,7 +21,7 @@ The library itself consists of two modules and an utility package:
 
 - functions.py - a module with all functions for convergent gaussian beam crystallography simulation
 - wrapper.py - class wrapper for settting up and running diffraction simulations as well as plotting and writing into HDF5 file diffraction results
-- utility package:
+- utils - utility package:
     - utilfuncs.py - utility functions for convergent beam diffraction project
 
 Also there are couple of usage examples:
