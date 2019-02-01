@@ -50,7 +50,7 @@ def asf_fit_parser(filename):
     bcoefs, acoefs = np.array(coefs[1:-1:2]), np.array(coefs[0:-1:2])
     return lambda s: sum(acoefs * np.exp(-s**2 * bcoefs)) + coefs[-1]
 
-def asf_advanced(asf_hw, asf_fit, wavelength=1.5e-7):
+def asf(asf_hw, asf_fit, wavelength=1.5e-7):
     """
     Input two txt files, the first one contains atomic scattering factor for different photon energy and the second one contains analytical fit coefficients (see https://it.iucr.org/Cb/ch6o1v0001/#table6o1o1o1 for more information).
     The first file must contain two columns, the first is the argument and the second is f in el/atoms.
@@ -62,10 +62,9 @@ def asf_advanced(asf_hw, asf_fit, wavelength=1.5e-7):
     wavelength - light wavelength
     """
     en = constants.c * constants.h / constants.e / wavelength * 1e3     #photon energy in eV
-    asf_0 = asf_parser(asf_hw)(en)
-    asf_fit_f = asf_fit_parser(asf_fit)
-    asf_fit_0 = asf_fit_f(0)
-    return lambda s: asf_0 + asf_fit_f(s) - asf_fit_0
+    asf_q = asf_fit_parser(asf_fit)
+    asf_0 = asf_parser(asf_hw)(en) - asf_q(0)
+    return lambda s: asf_0 + asf_q(s)
 
 def gaussian(x, y, z, waist=1e-4, wavelength=1.5e-7):
     """
@@ -239,13 +238,13 @@ def diff_work(kout, lat_pts, kins, us, asf_hw, asf_fit, sigma, wavelength):
     lat_pts - coordinates of sample lattice atoms
     kins - list of incoming wavevectors
     us - list of gaussian beam wave values
-    asf_hw, asf_fit - atomic scattering files (see asf_advanced function)
+    asf_hw, asf_fit - atomic scattering files (see asf function)
     sigma - the solid angle of a detector pixel
     wavelength - light wavelength
     """
-    asf = asf_advanced(asf_hw, asf_fit, wavelength)
+    _asf = asf(asf_hw, asf_fit, wavelength)
     qs = np.add(-kins, kout_ext(*kout)) / 2.0 / wavelength / 1e7
-    asfs = np.array([asf(norm) for norm in np.sqrt((qs * qs).sum(axis=1))])
+    asfs = np.array([_asf(norm) for norm in np.sqrt((qs * qs).sum(axis=1))])
     exps = np.exp(2 * np.pi / wavelength * np.dot(lat_pts, kout_ext(*kout)) * 1j)
     return np.sqrt(sigma) * constants.value('classical electron radius') * 1e3 * np.sum(asfs * us * exps)
 

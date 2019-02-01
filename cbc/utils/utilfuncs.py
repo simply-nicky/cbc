@@ -3,6 +3,8 @@ File: utilfuncs.py (Python 2.X and 3.X)
 
 Utility functions for convergent beam diffraction project.
 """
+from __future__ import print_function
+
 import os
 from timeit import default_timer as timer
 import matplotlib.pyplot as plt
@@ -18,7 +20,7 @@ def verbose_call(v, func, *args):
     Returns results of function func.
     """
     if v:
-        print('Parsing argument(s):\n' + '\n'.join((str(arg) for arg in args)))
+        print('Parsing argument(s):', *args, sep='\n')
         start = timer()
         res = func(*args)
         print('%s is done\nEstimated time: %f' % (func.__name__, (timer() - start)))

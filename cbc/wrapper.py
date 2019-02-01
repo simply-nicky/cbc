@@ -7,7 +7,7 @@ Dependencies: numpy, matplotlib abd h5py.
 Made by Nikolay Ivanov, 2018-2019.
 """
 
-from .functions import asf_advanced, gaussian, lattice, make_grid, kin, kouts, kout_grid, diff_grid, diff_list, diff_work
+from .functions import asf, gaussian, lattice, make_grid, kin, kouts, kout_grid, diff_grid, diff_list, diff_work
 import numpy as np
 import os, concurrent.futures, h5py, datetime, logging, errno
 from functools import partial
@@ -46,7 +46,7 @@ class kout_args(object):
 
 class asf_args(object):
     """
-    asf_advanced function arguments class.
+    asf function arguments class.
 
     asf_hw - the filename with atomic scattering factor values for different photon energies
     asf_fit - the filename with analytical fit coefficients
@@ -107,7 +107,7 @@ class diff(diff_setup):
                 self.logger.info('%-9s=%+28s' % (key, value))
         self.lat_pts = lattice(**self.lat_args.__dict__)
         _kxs, _kys = kout_grid(**self.kout_args.__dict__)
-        _asf = asf_advanced(wavelength=self.wavelength, **self.asf_args.__dict__)
+        _asf = asf(wavelength=self.wavelength, **self.asf_args.__dict__)
         _diffs = diff_grid(_kxs, _kys, self.lat_pts, asf=_asf, waist=self.waist, sigma=self.sigma, wavelength=self.wavelength)
         self.logger.info('The calculation has ended, %d diffraction pattern values total' % _diffs.size)
         return diff_res(_kxs, _kys, _diffs, self.time, self.path, self.logger, self.lat_args, self.kout_args, self.asf_args, self.waist, self.wavelength)
