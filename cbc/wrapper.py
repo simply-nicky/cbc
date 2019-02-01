@@ -7,7 +7,7 @@ Dependencies: numpy, matplotlib abd h5py.
 Made by Nikolay Ivanov, 2018-2019.
 """
 
-from .functions import asf, gaussian, lattice, make_grid, kin, kouts, kout_grid, diff_grid, diff_list, diff_work
+from .functions import rotation_matrix, asf, gaussian, lattice, make_grid, kin, kouts, kout_grid, diff_grid, diff_list, diff_work
 import numpy as np
 import os, concurrent.futures, h5py, datetime, logging, errno
 from functools import partial
@@ -28,10 +28,11 @@ class lat_args(object):
     a, b, c - unit cell edge lengths
     lat_orig - lattice origin point
     """
-    def __init__(self, a=2e-5, b=2.5e-5, c=3e-5, Nx=20, Ny=20, Nz=20, lat_orig=[0,0,0]):
+    lat_orig = np.zeros(3)
+
+    def __init__(self, a=2e-5, b=2.5e-5, c=3e-5, Nx=20, Ny=20, Nz=20):
         self.a, self.b, self.c = a, b, c
         self.Nx, self.Ny, self.Nz = Nx, Ny, Nz
-        self.lat_orig = lat_orig
 
 class kout_args(object):
     """
@@ -92,10 +93,19 @@ class diff(diff_setup):
     def __init__(self, setup_args=setup_args(), lat_args=lat_args(), kout_args=kout_args(), asf_args=asf_args(), waist=2e-5, wavelength=1.5e-7):
         super(diff, self).__init__(setup_args)
         self.waist, self.wavelength, self.sigma = waist, wavelength, kout_args.pix_size**2 / kout_args.det_dist**2
-        self.lat_args, self.kout_args, self.asf_args = lat_args, kout_args, asf_args   
+        self.lat_args, self.kout_args, self.asf_args = lat_args, kout_args, asf_args
+        self.lat_pts = lattice(**self.lat_args.__dict__)
+
+    def rotate_lat(self, axis, theta):
+        self.lat_pts -= self.lat_args.lat_orig
+        self.lat_pts = np.tensordot(self.lat_pts, rotation_matrix(axis, theta), axes=(1,1))
+        self.lat_pts += self.lat_args.lat_orig
     
-    def move_lat(self):
-        self.lat_args.lat_orig = [0, 0, max(self.lat_args.Nx * self.lat_args.a, self.lat_args.Ny * self.lat_args.b, self.lat_args.Nz * self.lat_args.c) / self.wavelength * np.pi * self.waist]
+    def move_lat(self, z=None):
+        if z is None:
+            z = max(self.lat_args.Nx * self.lat_args.a, self.lat_args.Ny * self.lat_args.b, self.lat_args.Nz * self.lat_args.c) / self.wavelength * np.pi * self.waist
+        self.lat_args.lat_orig = [0, 0, z]
+        self.lat_pts += [0, 0, z]
 
     def diff_grid(self):
         """
@@ -105,7 +115,6 @@ class diff(diff_setup):
         for args in (self.lat_args, self.kout_args):
             for (key, value) in args.__dict__.items():
                 self.logger.info('%-9s=%+28s' % (key, value))
-        self.lat_pts = lattice(**self.lat_args.__dict__)
         _kxs, _kys = kout_grid(**self.kout_args.__dict__)
         _asf = asf(wavelength=self.wavelength, **self.asf_args.__dict__)
         _diffs = diff_grid(_kxs, _kys, self.lat_pts, asf=_asf, waist=self.waist, sigma=self.sigma, wavelength=self.wavelength)
@@ -120,7 +129,6 @@ class diff(diff_setup):
         for args in (self.lat_args, self.kout_args):
             for (key, value) in args.__dict__.items():
                 self.logger.info('%-9s=%+28s' % (key, value))
-        self.lat_pts = lattice(**self.lat_args.__dict__)
         _kouts = kouts(**self.kout_args.__dict__)
         _us = np.array([gaussian(*pt, waist=self.waist, wavelength=self.wavelength) for pt in self.lat_pts])
         _kins = np.array([kin(*pt, waist=self.waist, wavelength=self.wavelength) for pt in self.lat_pts])

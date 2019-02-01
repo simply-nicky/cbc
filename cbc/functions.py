@@ -10,8 +10,25 @@ Made by Nikolay Ivanov, 2018-2019.
 import numpy as np
 from scipy.interpolate import interp1d
 from scipy import constants
-from timeit import default_timer as timer
+from math import sqrt, cos, sin
 from functools import partial
+
+def rotation_matrix(axis, theta):
+    """
+    Return the rotation matrix associated with counterclockwise rotation about the given axis by theta radians.
+
+    axis - rotation axis
+    theta - rotation angle
+    """
+    axis = np.asarray(axis)
+    axis = axis / sqrt(np.dot(axis, axis))
+    a = cos(theta / 2.0)
+    b, c, d = -axis * sin(theta / 2.0)
+    aa, bb, cc, dd = a * a, b * b, c * c, d * d
+    bc, ad, ac, ab, bd, cd = b * c, a * d, a * c, a * b, b * d, c * d
+    return np.array([[aa + bb - cc - dd, 2 * (bc + ad), 2 * (bd - ac)],
+                     [2 * (bc - ad), aa + cc - bb - dd, 2 * (cd + ab)],
+                     [2 * (bd + ac), 2 * (cd - ab), aa + dd - bb - cc]])
 
 def asf_parser(filename):
     """
@@ -76,9 +93,9 @@ def gaussian(x, y, z, waist=1e-4, wavelength=1.5e-7):
     """
     k = 2 * np.pi / wavelength
     zr = k * waist**2 / 2
-    wz = waist * np.sqrt(1.0 + (z / zr)**2)
+    wz = waist * sqrt(1.0 + (z / zr)**2)
     R =  + zr**2 / z
-    return np.sqrt(2 / np.pi) * wz**-1 * np.exp(-(x * x + y * y) / wz**2) * np.exp(-k * z * 1j + np.arctan(z / zr) * 1j) * np.exp(-k * (x * x + y * y) * 1j / 2 / R)
+    return sqrt(2 / np.pi) * wz**-1 * np.exp(-(x * x + y * y) / wz**2) * np.exp(-k * z * 1j + np.arctan(z / zr) * 1j) * np.exp(-k * (x * x + y * y) * 1j / 2 / R)
 
 def kin(x, y, z, waist=1e-4, wavelength=1.5e-7):
     """
@@ -92,7 +109,7 @@ def kin(x, y, z, waist=1e-4, wavelength=1.5e-7):
     k = 2 * np.pi / wavelength
     zr = k * waist**2 / 2
     R = z + zr**2 / z
-    return [x, y, R] / np.sqrt(x * x + y * y + R * R)
+    return np.array([x, y, R]) / sqrt(x * x + y * y + R * R)
 
 def kouts(det_dist=54, detNx=512, detNy=512, pix_size=55e-3):
     """
@@ -109,7 +126,7 @@ def kouts(det_dist=54, detNx=512, detNy=512, pix_size=55e-3):
     return [[kx, ky] for kx in x_det / det_dist for ky in y_det / det_dist]
 
 def kout_ext(kx, ky):
-    return [kx, ky, np.sqrt(1 - kx**2 - ky**2)]
+    return [kx, ky, sqrt(1 - kx**2 - ky**2)]
 
 def kout_grid(det_dist=54, detNx=512, detNy=512, pix_size=55e-3):
     """
@@ -159,9 +176,9 @@ def diff_list(kouts, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
     kins = np.array([kin(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
     for kout in kouts:
         qs = np.add(-1 * kins, kout_ext(*kout)) / 2.0 / wavelength / 1e7
-        asfs = np.array([asf(norm) for norm in np.sqrt((qs * qs).sum(axis=1))])
+        asfs = np.array([asf(sqrt(absv)) for absv in (qs * qs).sum(axis=1)])
         exps = np.exp(2 * np.pi / wavelength * np.dot(lat_pts, kout_ext(*kout)) * 1j)
-        diffs.append(np.sqrt(sigma) * constants.value('classical electron radius') * 1e3 * np.sum(asfs * us * exps))
+        diffs.append(sqrt(sigma) * constants.value('classical electron radius') * 1e3 * np.sum(asfs * us * exps))
     return diffs
 
 def diff_grid(kxs, kys, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
@@ -183,11 +200,11 @@ def diff_grid(kxs, kys, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
     kins = np.array([kin(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
     it = np.nditer([kxs, kys, None], op_flags = [['readonly'], ['readonly'], ['writeonly', 'allocate']], op_dtypes = ['float64', 'float64', 'complex128'])
     for kx, ky, diff in it:
-        kout = [kx, ky, np.sqrt(1 - kx**2 - ky**2)]
+        kout = [kx, ky, sqrt(1 - kx**2 - ky**2)]
         qs = np.add(-1 * kins, kout) / 2.0 / wavelength / 1e7
-        asfs = np.array([asf(norm) for norm in np.sqrt((qs * qs).sum(axis=1))])
+        asfs = np.array([asf(sqrt(absv)) for absv in (qs * qs).sum(axis=1)])
         exps = np.exp(2 * np.pi / wavelength * np.dot(lat_pts, kout) * 1j)
-        diff[...] = np.sqrt(sigma) * constants.value('classical electron radius') * 1e3 * np.sum(asfs * us * exps)
+        diff[...] = sqrt(sigma) * constants.value('classical electron radius') * 1e3 * np.sum(asfs * us * exps)
     return it.operands[-1]
 
 def make_grid(kouts, funcvals=None):
@@ -226,9 +243,9 @@ def diff_gen(kouts, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
     kins = np.array([kin(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
     for kout in kouts:
         qs = np.add(-1 * kins, kout) / 2.0 / wavelength / 1e7
-        asfs = np.array([asf(norm) for norm in np.sqrt((qs * qs).sum(axis=1))])
+        asfs = np.array([asf(sqrt(absv)) for absv in (qs * qs).sum(axis=1)])
         exps = np.exp(2 * np.pi / wavelength * np.dot(lat_pts, kout_ext(*kout)) * 1j)
-        yield np.sqrt(sigma) * constants.value('classical electron radius') * 1e3 * np.sum(asfs * us * exps)
+        yield sqrt(sigma) * constants.value('classical electron radius') * 1e3 * np.sum(asfs * us * exps)
 
 def diff_work(kout, lat_pts, kins, us, asf_hw, asf_fit, sigma, wavelength):
     """
@@ -244,9 +261,9 @@ def diff_work(kout, lat_pts, kins, us, asf_hw, asf_fit, sigma, wavelength):
     """
     _asf = asf(asf_hw, asf_fit, wavelength)
     qs = np.add(-kins, kout_ext(*kout)) / 2.0 / wavelength / 1e7
-    asfs = np.array([_asf(norm) for norm in np.sqrt((qs * qs).sum(axis=1))])
+    asfs = np.array([_asf(sqrt(absv)) for absv in (qs * qs).sum(axis=1)])
     exps = np.exp(2 * np.pi / wavelength * np.dot(lat_pts, kout_ext(*kout)) * 1j)
-    return np.sqrt(sigma) * constants.value('classical electron radius') * 1e3 * np.sum(asfs * us * exps)
+    return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * np.sum(asfs * us * exps)
 
 def selftest(filename, filename_fit):
     """
