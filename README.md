@@ -1,8 +1,7 @@
 # Convergent gaussian beam crystallography project
 Simulation for convergent gaussian beam diffration on a crystalline sample written in Python. Code is compatible with Python 2.X and 3.X.
 
-For more information regarding the theory behind this see the article written by Prof. Henry Chapman:
-https://e-reports-ext.llnl.gov/pdf/314988.pdf
+For more information regarding the theory behind this see [the article written by Prof. Henry Chapman](https://e-reports-ext.llnl.gov/pdf/314988.pdf).
 
 ## compilation
 
@@ -24,7 +23,7 @@ The library itself consists of two modules and an utility package:
 - utils - utility package:
     - utilfuncs.py - utility functions for convergent beam diffraction project
 
-Also there are couple of usage examples:
+Also there is a couple of usage examples:
 
 - diff-run.py - conducting diffraction simulation and saving results to HDF5 file
 - diff-slides.py - calculating and saving diffraction pattern series
