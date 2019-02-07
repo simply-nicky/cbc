@@ -10,7 +10,7 @@ Made by Nikolay Ivanov, 2018-2019.
 import numpy as np
 from scipy.interpolate import interp1d
 from scipy import constants
-from math import sqrt, cos, sin
+from math import sqrt, cos, sin, exp
 from functools import partial
 
 def rotation_matrix(axis, theta):
@@ -30,86 +30,102 @@ def rotation_matrix(axis, theta):
                      [2 * (bc - ad), aa + cc - bb - dd, 2 * (cd + ab)],
                      [2 * (bd + ac), 2 * (cd - ab), aa + dd - bb - cc]])
 
-def asf_parser(filename):
+def asf_coeffs(asf_fit):
     """
-    Input a txt file, that contains atomic scattering factor f [el/atoms] depending on scattering wavevector or photon energy (see https://it.iucr.org/Cb/ch6o1v0001/#table6o1o1o1 for more information).
-    The file must contain two columns, the first is the argument and the second is f in el/atoms.
+    Return atomic scattering factor fit coefficients from an asf_fit file.
 
-    filename - the filename with atomic scattering factor values, the file must be located in the same folder as this program
+    asf_fit - atomic scattering factor fit filename
     """
-    x = []
-    y = []
-    for line in open(str(filename)):
+    coeffs = []
+    for line in open(asf_fit):
+        parts = line.split()
+        try:
+            for part in parts:
+                coeffs.append(float(part))
+        except:
+            continue
+    assert len(coeffs) % 2 == 1, 'the fit coefficients file is invalid, there must be odd number of coefficients'
+    return np.asarray(coeffs)
+
+def asf_correct(asf_coeffs, asf_hw, wavelength):
+    """
+    Correct atomic scattering factor fit coefficients based on atomic scattering measured for given wavelength.
+
+    asf_coeffs - atomic scattering factor fit coefficients
+    asf_hw - filename for the file with atomic scattering factor values for different wavelengths
+    wavelength - light wavelength
+    """
+    en = constants.c * constants.h / constants.e / wavelength * 1e3     #photon energy in eV
+    x, y = [], []
+    for line in open(asf_hw):
         parts = line.split()
         try:
             x.append(float(parts[0]))
             y.append(float(parts[1]))
         except:
             continue
-    return interp1d(x, y, kind='cubic')
-
-def asf_fit_parser(filename):
+    asf_coeffs[-1] = interp1d(x, y, kind='cubic')(en)
+    
+def asf_val(s, asf_coeffs):
     """
-    Input a txt file, than contains atomic scattering factor analytical fit coefficients (see https://it.iucr.org/Cb/ch6o1v0001/#table6o1o1o1 for more information).
-    The file must contain a given list of coefficients: [a1, b1,.. an, bn,.. , c].
+    Return atomic scattering factor value for given sin(theta) / lambda value.
 
-    filename - the filename with atomic scattering factor fit coefficients, the file must be located in the same folder as this program
+    s - sin(theta) / lambda [Angstrom^-1]
+    asf_coeffs - atomic scattering factor fit coefficients
     """
-    coefs = []
-    for line in open(str(filename)):
-        parts = line.split()
-        try:
-            for part in parts:
-                coefs.append(float(part))
-        except:
-            continue
-    assert len(coefs) % 2 == 1, 'the fit coefficients file is invalid, there must be odd number of coefficients'
-    bcoefs, acoefs = np.array(coefs[1:-1:2]), np.array(coefs[0:-1:2])
-    return lambda s: sum(acoefs * np.exp(-s**2 * bcoefs)) + coefs[-1]
+    val = 0
+    for acoeff, bcoeff in zip(asf_coeffs[0:-1:2], asf_coeffs[1:-1:2]):
+        val += acoeff * exp(-s**2 * bcoeff)
+    return val + asf_coeffs[-1]
 
-def asf(asf_hw, asf_fit, wavelength=1.5e-7):
+def asf_vals(ss, asf_coeffs):
     """
-    Input two txt files, the first one contains atomic scattering factor for different photon energy and the second one contains analytical fit coefficients (see https://it.iucr.org/Cb/ch6o1v0001/#table6o1o1o1 for more information).
-    The first file must contain two columns, the first is the argument and the second is f in el/atoms.
-    The second file must contain a given list of coefficients: [a1, b1,.. an, bn,.. , c].
-    The files must be located in the same folder as this program.
+    Return a numpy ndarray of atomic scattering factor values for given sin(theta) / lambda value.
 
-    asf_hw - the filename with atomic scattering factor values for different photon energies
-    asf_fit - the filename with analytical fit coefficients
-    wavelength - light wavelength
+    ss - sin(theta) / lambda [Angstrom^-1] numpy ndarray
+    asf_coeffs - atomic scattering factor fit coefficients
     """
-    en = constants.c * constants.h / constants.e / wavelength * 1e3     #photon energy in eV
-    asf_q = asf_fit_parser(asf_fit)
-    asf_0 = asf_parser(asf_hw)(en) - asf_q(0)
-    return lambda s: asf_0 + asf_q(s)
+    acoeffs, bcoeffs = asf_coeffs[0:-1:2], asf_coeffs[1:-1:2]
+    return (acoeffs * np.exp(-np.multiply.outer(ss**2, bcoeffs))).sum(axis=-1) + asf_coeffs[-1]     # -ss[:, :, np.newaxis]**2 * bcoeffs[np.newaxis, :]
 
-def gaussian(x, y, z, waist=1e-4, wavelength=1.5e-7):
+def gaussian(pts, waist=1e-4, wavelength=1.5e-7):
     """
-    Return Gaussian beam amplitude for given coordinate (x, y, z).
+    Return a np.array of gaussian beam amplitudes for given array of points.
 
-    x, y, z - coordinates
+    pts - array of points
     waist - beam waist radius
     wavelength - light wavelength
     """
     k = 2 * np.pi / wavelength
-    zr = k * waist**2 / 2
-    wz = waist * sqrt(1.0 + (z / zr)**2)
-    R =  + zr**2 / z
-    return sqrt(2 / np.pi) * wz**-1 * np.exp(-(x * x + y * y) / wz**2) * np.exp(-k * z * 1j + np.arctan(z / zr) * 1j) * np.exp(-k * (x * x + y * y) * 1j / 2 / R)
+    xs, ys, zs = pts.T
+    return sqrt(2 / np.pi) / waist * np.exp(1j * k * zs) / (1 + 2j * zs / k / waist**2) * np.exp(-(xs**2 + ys**2) / waist**2 / (1 + 2j * zs / k / waist**2))
 
-def kin(x, y, z, waist=1e-4, wavelength=1.5e-7):
+def gaussian_f(kxs, kys, z=0, waist=1e-4, wavelength=1.5e-7):
+    """
+    Return a np.array of gaussian Fourier transform beam amplitudes for given arrays of spatial frequency coordinates kxs, kys and propagation coordinate z.
+
+    kxs, kys - arrays of spatial frequencies
+    z - propogation coordinate
+    waist - beam waist radius
+    wavelength - light wavelength
+    """
+    k = 2 * np.pi / wavelength
+    return sqrt(2 / np.pi) * waist / 4 / np.pi * np.exp(1j * k * z) * np.exp(-(kxs**2 + kys**2) * k**2 * (waist**2 / 4 + 1j * z / 2 / k))
+
+def kins(pts, waist=1e-4, wavelength=1.5e-7):
     """
     Return incoming wavevector of gaussian beam for given coordinate (x, y, z).
 
     waist - beam waist radius
     wavelength - light wavelength
 
-    Return a list of three incoming wavevector coordinates.
+    Return a np.array of three incoming wavevector coordinates.
     """
     k = 2 * np.pi / wavelength
     zr = k * waist**2 / 2
-    R = z + zr**2 / z
-    return np.array([x, y, R]) / sqrt(x * x + y * y + R * R)
+    xs, ys, zs = pts.T
+    Rs = zs + zr**2 / zs
+    return np.dstack((xs, ys, Rs))[0] / np.sqrt(xs**2 + ys**2 + Rs**2)[:, np.newaxis]
 
 def kouts(det_dist=54, detNx=512, detNy=512, pix_size=55e-3):
     """
@@ -123,10 +139,7 @@ def kouts(det_dist=54, detNx=512, detNy=512, pix_size=55e-3):
     """
     x_det = np.arange((-detNx + 1) / 2.0, (detNx + 1) / 2.0) * pix_size
     y_det = np.arange((-detNy + 1) / 2.0, (detNy + 1) / 2.0) * pix_size
-    return [[kx, ky] for kx in x_det / det_dist for ky in y_det / det_dist]
-
-def kout_ext(kx, ky):
-    return [kx, ky, sqrt(1 - kx**2 - ky**2)]
+    return np.array([[kx, ky] for kx in x_det / det_dist for ky in y_det / det_dist])
 
 def kout_grid(det_dist=54, detNx=512, detNy=512, pix_size=55e-3):
     """
@@ -152,43 +165,20 @@ def lattice(a, b, c, Nx, Ny, Nz, lat_orig=[0, 0, 0]):
 
     Return a np.array of all atom positions in a sample.
     """
-    assert len(lat_orig) ==3, 'origin argument is invalid, it must have 3 values'
+    assert len(lat_orig) == 3, 'origin argument is invalid, it must have 3 values'
     xval = a * np.arange((-Nx + 1) / 2.0, (Nx + 1) / 2.0)
     yval = b * np.arange((-Ny + 1) / 2.0, (Ny + 1) / 2.0)
     zval = c * np.arange((-Nz + 1) / 2.0, (Nz + 1) / 2.0)
     return np.add([[x, y, z] for x in xval for y in yval for z in zval], lat_orig)
 
-def diff_list(kouts, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
-    """
-    Return diffraction pattern for given array of output wavevectors.
-
-    kouts - tuple of output wavevectors
-    lat_pts - coordinates of sample lattice atoms
-    asf - atomic scattering factor for atoms in the sample
-    waist - beam waist radius
-    sigma - the solid angle of a detector pixel
-    wavelength - light wavelength
-
-    Return list of diffracted wave values for given kouts.
-    """
-    diffs = []
-    us = np.array([gaussian(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
-    kins = np.array([kin(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
-    for kout in kouts:
-        qs = np.add(-1 * kins, kout_ext(*kout)) / 2.0 / wavelength / 1e7
-        asfs = np.array([asf(sqrt(absv)) for absv in (qs * qs).sum(axis=1)])
-        exps = np.exp(2 * np.pi / wavelength * np.dot(lat_pts, kout_ext(*kout)) * 1j)
-        diffs.append(sqrt(sigma) * constants.value('classical electron radius') * 1e3 * np.sum(asfs * us * exps))
-    return diffs
-
-def diff_grid(kxs, kys, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
+def diff_grid(kxs, kys, lat_pts, asf_coeffs, waist, sigma, wavelength=1.5e-7):
     """
     Return diffraction pattern intensity for given array of output wavevectors.
 
     kxs - x coordinates of output wavevectors
     kys - y coordinates of output wavevectors
     lat_pts - coordinates of sample lattice atoms
-    asf - atomic scattering factor for atoms in the sample
+    asf_coeffs - atomic scattering factor fit coefficients
     waist - beam waist radius
     sigma - the solid angle of a detector pixel
     wavelength - light wavelength
@@ -196,18 +186,15 @@ def diff_grid(kxs, kys, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
     Return np.array of diffracted wave values with the same shape as kxs and kys.
     """
     assert kxs.shape == kys.shape, 'kx and ky must have the same shape'
-    us = np.array([gaussian(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
-    kins = np.array([kin(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
-    it = np.nditer([kxs, kys, None], op_flags = [['readonly'], ['readonly'], ['writeonly', 'allocate']], op_dtypes = ['float64', 'float64', 'complex128'])
-    for kx, ky, diff in it:
-        kout = [kx, ky, sqrt(1 - kx**2 - ky**2)]
-        qs = np.add(-1 * kins, kout) / 2.0 / wavelength / 1e7
-        asfs = np.array([asf(sqrt(absv)) for absv in (qs * qs).sum(axis=1)])
-        exps = np.exp(2 * np.pi / wavelength * np.dot(lat_pts, kout) * 1j)
-        diff[...] = sqrt(sigma) * constants.value('classical electron radius') * 1e3 * np.sum(asfs * us * exps)
-    return it.operands[-1]
+    _us = gaussian(lat_pts, waist, wavelength)
+    _kins = kins(lat_pts, waist, wavelength)
+    _kouts = np.concatenate((kxs[:, :, np.newaxis], kys[:, :, np.newaxis], np.sqrt(1 - kxs**2 - kys**2)[:, :, np.newaxis]), axis=2)
+    _qs = np.add(_kouts[:, :, np.newaxis], -1 * _kins) / 2.0 / wavelength / 1e7
+    _asfs = asf_vals(np.sqrt((_qs**2).sum(axis=-1)), asf_coeffs)
+    _exps = np.exp(2 * np.pi / wavelength * np.dot(_kouts, lat_pts.T) * 1j)
+    return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * (_asfs * _exps * _us).sum(axis=-1)   
 
-def make_grid(kouts, funcvals=None):
+def make_grid(kouts, fvals=None):
     """
     Return grid of coordinates (like in numpy.meshgrid) and corresponding function values grid based on list of points pts and list of function values funcvals.
     pts should be sorted the same way as nditer iterates through the grid array!
@@ -217,64 +204,77 @@ def make_grid(kouts, funcvals=None):
 
     Return grid array for every axis and a grid of function values.
     """
-    coords = map(np.unique, np.array(kouts).T)
-    grid = np.meshgrid(*coords)
-    funcgrid = np.zeros(grid[0].shape, dtype='complex128')
-    it = np.nditer(funcgrid, flags = ['f_index'], op_flags = ['writeonly'], op_dtypes = ['complex128'])
-    for f in it:
-        f[...] = funcvals[it.index]
-    grid.append(funcgrid)
-    return tuple(grid)
+    kxvals, kyvals = np.unique(kouts.T[0]), np.unique(kouts.T[1])
+    kxs, kys = np.meshgrid(kxvals, kyvals)
+    fgrid = np.array(fvals).reshape(kxs.shape, order='F')
+    return (kxs, kys, fgrid)
 
-def diff_gen(kouts, lat_pts, asf, waist, sigma, wavelength=1.5e-7):
+def diff_gen(kouts, lat_pts, asf_coeffs, waist, sigma, wavelength=1.5e-7):
     """
     Yield diffraction pattern for given array of output wavevectors.
 
     kouts - tuple of output wavevectors
     lat_pts - coordinates of sample lattice atoms
-    asf - atomic scattering factor for atoms in the sample
+    asf_coeffs - atomic scattering factor fit coefficients
     waist - beam waist radius
     sigma - the solid angle of a detector pixel
     wavelength - light wavelength
 
     Generator function of diffracted lightwave velues for given kouts.
     """
-    us = np.array([gaussian(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
-    kins = np.array([kin(*pt, waist=waist, wavelength=wavelength) for pt in lat_pts])
+    _us = gaussian(lat_pts, waist, wavelength)
+    _kins = kins(lat_pts, waist, wavelength)
     for kout in kouts:
-        qs = np.add(-1 * kins, kout) / 2.0 / wavelength / 1e7
-        asfs = np.array([asf(sqrt(absv)) for absv in (qs * qs).sum(axis=1)])
-        exps = np.exp(2 * np.pi / wavelength * np.dot(lat_pts, kout_ext(*kout)) * 1j)
-        yield sqrt(sigma) * constants.value('classical electron radius') * 1e3 * np.sum(asfs * us * exps)
+        kx, ky = kout
+        kout_ext = np.array([kx, ky, sqrt(1 - kx**2 - ky**2)])
+        qs = np.add(-1 * _kins, kout_ext) / 2.0 / wavelength / 1e7
+        asfs = np.array([asf_val(sqrt(absv), asf_coeffs) for absv in (qs * qs).sum(axis=1)])
+        exps = np.exp(2 * np.pi / wavelength * np.dot(lat_pts, kout_ext) * 1j)
+        yield sqrt(sigma) * constants.value('classical electron radius') * 1e3 * np.sum(asfs * _us * exps)
 
-def diff_work(kout, lat_pts, kins, us, asf_hw, asf_fit, sigma, wavelength):
+def diff_work(kouts, lat_pts, asf_coeffs, us, kins, sigma, wavelength=1.5e-7):
     """
-    Worker function for difraction pattern for multiprocessing.
+    Return diffraction pattern for given array of output wavevectors.
 
     kouts - tuple of output wavevectors
     lat_pts - coordinates of sample lattice atoms
-    kins - list of incoming wavevectors
-    us - list of gaussian beam wave values
-    asf_hw, asf_fit - atomic scattering files (see asf function)
+    asf_coeffs - atomic scattering factor fit coefficients
+    waist - beam waist radius
     sigma - the solid angle of a detector pixel
     wavelength - light wavelength
-    """
-    _asf = asf(asf_hw, asf_fit, wavelength)
-    qs = np.add(-kins, kout_ext(*kout)) / 2.0 / wavelength / 1e7
-    asfs = np.array([_asf(sqrt(absv)) for absv in (qs * qs).sum(axis=1)])
-    exps = np.exp(2 * np.pi / wavelength * np.dot(lat_pts, kout_ext(*kout)) * 1j)
-    return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * np.sum(asfs * us * exps)
 
-def selftest(filename, filename_fit):
+    Return list of diffracted wave values for given kouts.
     """
-    Plot atomic scattering factor as well it's analytical fit.
+    kxs, kys = kouts.T
+    kouts = np.dstack((kxs, kys, np.sqrt(1 - kxs**2 - kys**2)))[0]
+    qs = np.add(kouts[:, np.newaxis], -1 * kins) / 2.0 / wavelength / 1e7
+    asfs = asf_vals(np.sqrt((qs*qs).sum(axis=-1)), asf_coeffs)
+    exps = np.exp(2 * np.pi / wavelength * np.dot(kouts, lat_pts.T) * 1j)
+    return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * (asfs * exps * us).sum(axis=-1)
+
+def diff_plane(kouts, lat_pts, asf_coeffs, us, kins, sigma, wavelength=1.5e-7):
     """
-    import matplotlib.pyplot as plt
-    asf = asf_parser(filename)
-    asf_fit = asf_fit_parser(filename_fit)
-    x = np.linspace(0, 6, num=101, endpoint=True)
-    plt.plot(x, asf(x), 'r-', x, asf_fit(x), 'b-')
-    plt.show()
+    Return diffraction pattern for given array of output wavevectors.
+
+    kouts - tuple of output wavevectors
+    lat_pts - coordinates of sample lattice atoms
+    asf_coeffs - atomic scattering factor fit coefficients
+    waist - beam waist radius
+    sigma - the solid angle of a detector pixel
+    wavelength - light wavelength
+
+    Return list of diffracted wave values for given kouts.
+    """
+    koutxs, koutys = kouts.T
+    kinxs, kinys = kins.T
+    _kouts = np.dstack((koutxs, koutys, np.sqrt(1 - koutxs**2 - koutys**2)))[0]
+    _kins = np.dstack((kinxs, kinys, np.sqrt(1 - kinxs**2 - kinys**2)))[0]
+    _qs = np.add(_kouts[:, np.newaxis], -1 * _kins)
+    _asfs = asf_vals(np.sqrt(((_qs / 2.0 / wavelength / 1e7)**2).sum(axis=-1)), asf_coeffs)
+    _phins = np.exp(-2 * np.pi / wavelength * np.tensordot(_kins, lat_pts.T, axes=1) * 1j)
+    _phouts = np.exp(2 * np.pi / wavelength * np.tensordot(_kouts, lat_pts.T, axes=1) * 1j)
+    _exps = (_phouts[:, np.newaxis] * _phins).sum(axis=-1)
+    return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * (np.abs(_asfs * us * _exps)).sum(axis=-1)
 
 if __name__ == "__main__":
-    selftest('asf/asf_q_Au.txt', 'asf/asf_q_fit_Au.txt')
+    pass

@@ -7,10 +7,11 @@ Dependencies: numpy, matplotlib abd h5py.
 Made by Nikolay Ivanov, 2018-2019.
 """
 
-from .functions import rotation_matrix, asf, gaussian, lattice, make_grid, kin, kouts, kout_grid, diff_grid, diff_list, diff_work
+from .functions import rotation_matrix, asf_coeffs, asf_correct, asf_val, gaussian, gaussian_f, lattice, make_grid, kins, kouts, kout_grid, diff_grid, diff_work, diff_plane
 import numpy as np
 import os, concurrent.futures, h5py, datetime, logging, errno
 from functools import partial
+from multiprocessing import cpu_count
 import matplotlib.pyplot as plt
 
 try:
@@ -19,6 +20,14 @@ except ImportError:
     class NullHandler(logging.Handler):
         def emit(self, record):
             pass
+
+class ASF(object):
+    def __init__(self, asf_fit='cbc/asf/Au/asf_q_fit.txt', asf_hw='cbc/asf/Au/asf_hw.txt', wavelength=1.5e-7):
+        self.coeffs = asf_coeffs(asf_fit)
+        asf_correct(self.coeffs, asf_hw, wavelength)
+
+    def __call__(self, s):
+        return asf_val(s, self.coeffs)
 
 class lat_args(object): 
     """
@@ -107,34 +116,60 @@ class diff(diff_setup):
         self.lat_args.lat_orig = [0, 0, z]
         self.lat_pts += [0, 0, z]
 
-    def diff_grid(self):
+    def diff(self):
         """
-        Calculate diffraction results.
+        Serially calculate diffraction results in a grid.
         """
         self.logger.info('Starting serial calculation of diffraction pattern with following parameters:')
         for args in (self.lat_args, self.kout_args):
             for (key, value) in args.__dict__.items():
                 self.logger.info('%-9s=%+28s' % (key, value))
         _kxs, _kys = kout_grid(**self.kout_args.__dict__)
-        _asf = asf(wavelength=self.wavelength, **self.asf_args.__dict__)
-        _diffs = diff_grid(_kxs, _kys, self.lat_pts, asf=_asf, waist=self.waist, sigma=self.sigma, wavelength=self.wavelength)
+        _asf_coeffs = ASF(wavelength=self.wavelength, **self.asf_args.__dict__).coeffs
+        _diffs = diff_grid(_kxs, _kys, self.lat_pts, asf_coeffs=_asf_coeffs, waist=self.waist, sigma=self.sigma, wavelength=self.wavelength)
         self.logger.info('The calculation has ended, %d diffraction pattern values total' % _diffs.size)
         return diff_res(_kxs, _kys, _diffs, self.time, self.path, self.logger, self.lat_args, self.kout_args, self.asf_args, self.waist, self.wavelength)
 
-    def diff_pool(self):
+    def diff_pool(self, chunk_size=2**8):
         """
-        Calculate diffraction results concurrently.
+        Concurrently calculate diffraction pattern.
         """
         self.logger.info('Starting concurrent calculation of diffraction pattern with following parameters:')
         for args in (self.lat_args, self.kout_args):
             for (key, value) in args.__dict__.items():
                 self.logger.info('%-9s=%+28s' % (key, value))
         _kouts = kouts(**self.kout_args.__dict__)
-        _us = np.array([gaussian(*pt, waist=self.waist, wavelength=self.wavelength) for pt in self.lat_pts])
-        _kins = np.array([kin(*pt, waist=self.waist, wavelength=self.wavelength) for pt in self.lat_pts])
-        _worker = partial(diff_work, lat_pts=self.lat_pts, kins=_kins, us=_us, sigma=self.sigma, wavelength=self.wavelength, **self.asf_args.__dict__)
+        _us = gaussian(self.lat_pts, self.waist, self.wavelength)
+        _asf_coeffs = ASF(wavelength=self.wavelength, **self.asf_args.__dict__).coeffs
+        _kins = kins(self.lat_pts, self.waist, self.wavelength)
+        _worker = partial(diff_work, lat_pts=self.lat_pts, kins=_kins, us=_us, asf_coeffs=_asf_coeffs, sigma=self.sigma, wavelength=self.wavelength)
+        _n = max(cpu_count(), len(_kouts) / chunk_size)
+        _diff_list = []
         with concurrent.futures.ProcessPoolExecutor() as executor:
-            _diff_list = [diff for diff in executor.map(_worker, _kouts)]
+            for diff in executor.map(_worker, np.array_split(_kouts, _n)):
+                _diff_list.extend(diff)
+        self.logger.info('The calculation has ended, %d diffraction pattern values total' % len(_diff_list))
+        return diff_res(*make_grid(_kouts, _diff_list), time=self.time, path=self.path, logger=self.logger, lat_args=self.lat_args, kout_args=self.kout_args, asf_args=self.asf_args, waist=self.waist, wavelength=self.wavelength)
+    
+    def diff_noinfr(self, chunk_size=2**6, knum=10):
+        """
+        Concurrently calculate diffraction patttern with no interference.
+        """
+        self.logger.info('Starting concurrent calculation of diffraction pattern with no interference with following parameters:')
+        for args in (self.lat_args, self.kout_args):
+            for (key, value) in args.__dict__.items():
+                self.logger.info('%-9s=%+28s' % (key, value))
+        _kouts = kouts(**self.kout_args.__dict__)
+        _kvals = np.linspace(-4 * self.wavelength**2 / np.pi**2 / self.waist**2, 4 * self.wavelength**2 / np.pi**2 / self.waist**2, num=knum, endpoint=True)
+        _kins = np.array([[kx, ky] for kx in _kvals for ky in _kvals])
+        _us = np.abs(gaussian_f(_kins[:, 0], _kins[:, 1], self.lat_args.lat_orig[-1], self.waist, self.wavelength))
+        _asf_coeffs = ASF(wavelength=self.wavelength, **self.asf_args.__dict__).coeffs
+        _worker = partial(diff_plane, kins=_kins, lat_pts=self.lat_pts, us=_us, asf_coeffs=_asf_coeffs, sigma=self.sigma, wavelength=self.wavelength)
+        _n = max(cpu_count(), len(_kouts) / chunk_size)
+        _diff_list = []
+        with concurrent.futures.ProcessPoolExecutor() as executor:
+            for diff in executor.map(_worker, np.array_split(_kouts, _n)):
+                _diff_list.extend(diff)
         self.logger.info('The calculation has ended, %d diffraction pattern values total' % len(_diff_list))
         return diff_res(*make_grid(_kouts, _diff_list), time=self.time, path=self.path, logger=self.logger, lat_args=self.lat_args, kout_args=self.kout_args, asf_args=self.asf_args, waist=self.waist, wavelength=self.wavelength)
 
