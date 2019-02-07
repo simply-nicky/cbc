@@ -196,7 +196,7 @@ class diff_res(diff):
             os.makedirs(self.path)
         except OSError as e:
             if e.errno != errno.EEXIST: raise
-        _filediff = h5py.File(os.path.join(self.path, 'diff_' + self.time.strftime('%d-%m-%Y_%H-%M') + '.hdf5'), 'w')
+        _filediff = h5py.File(os.path.join(self.path, 'diff_' + datetime.datetime.now().strftime('%d-%m-%Y_%H-%M-%S') + '.hdf5'), 'w')
         _diff_args = _filediff.create_group('arguments')
         _diff_args.create_dataset('wavelength', data=self.wavelength)
         _diff_args.create_dataset('beam waist radius', data=self.waist)
