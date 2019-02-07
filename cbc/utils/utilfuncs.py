@@ -9,6 +9,17 @@ import os
 from timeit import default_timer as timer
 import matplotlib.pyplot as plt
 
+def make_filename(path, filename, i=2):
+    name, ext = os.path.splitext(filename)
+    newname = name + "_{:d}".format(i) + ext
+    if not os.path.isfile(os.path.join(path, filename)):
+        return filename    
+    elif os.path.isfile(os.path.join(path, newname)):
+        make_filename(filename, i + 1)
+    else:
+        return newname
+
+
 def verbose_call(v, func, *args):
     """
     Call function func with given arguments args verbose if v is True and silent if V is False.

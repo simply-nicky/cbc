@@ -8,8 +8,8 @@ Made by Nikolay Ivanov, 2018-2019.
 """
 
 from .functions import rotation_matrix, asf_coeffs, asf_correct, asf_val, gaussian, gaussian_f, lattice, make_grid, kins, kouts, kout_grid, diff_grid, diff_work, diff_plane
-import numpy as np
-import os, concurrent.futures, h5py, datetime, logging, errno
+from . import utils
+import numpy as np, os, concurrent.futures, h5py, datetime, logging, errno
 from functools import partial
 from multiprocessing import cpu_count
 import matplotlib.pyplot as plt
@@ -191,12 +191,15 @@ class diff_res(diff):
         plt.show()
 
     def write(self):
-        self.logger.info('Writing the results')
+        self.logger.info('Writing the results:')
+        self.logger.info('Folder: %s' % self.path)
         try:
             os.makedirs(self.path)
         except OSError as e:
             if e.errno != errno.EEXIST: raise
-        _filediff = h5py.File(os.path.join(self.path, 'diff_' + datetime.datetime.now().strftime('%d-%m-%Y_%H-%M-%S') + '.hdf5'), 'w')
+        _filename = utils.make_filename(self.path, 'diff_' + datetime.datetime.now().strftime('%d-%m-%Y_%H-%M-%S') + '.hdf5')
+        self.logger.info('Filename: %s' % _filename)
+        _filediff = h5py.File(os.path.join(self.path, _filename), 'w')
         _diff_args = _filediff.create_group('arguments')
         _diff_args.create_dataset('wavelength', data=self.wavelength)
         _diff_args.create_dataset('beam waist radius', data=self.waist)
@@ -207,4 +210,5 @@ class diff_res(diff):
         _diff_res.create_dataset('x coordinate of output wavevectors', data=self.kxs)
         _diff_res.create_dataset('y coordinate of output wavevectors', data=self.kys)
         _diff_res.create_dataset('diffracted lightwave values', data=self.diffs)
+        _filediff.close()
         self.logger.info('Writing is completed')
