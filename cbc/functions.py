@@ -98,19 +98,20 @@ def gaussian(pts, waist=1e-4, wavelength=1.5e-7):
     """
     k = 2 * np.pi / wavelength
     xs, ys, zs = pts.T
-    return sqrt(2 / np.pi) / waist * np.exp(1j * k * zs) / (1 + 2j * zs / k / waist**2) * np.exp(-(xs**2 + ys**2) / waist**2 / (1 + 2j * zs / k / waist**2))
+    return np.pi**-1 * waist**-2 * np.exp(1j * k * zs) / (1 + 2j * zs / k / waist**2) * np.exp(-(xs**2 + ys**2) / waist**2 / (1 + 2j * zs / k / waist**2))
 
-def gaussian_f(kxs, kys, z=0, waist=1e-4, wavelength=1.5e-7):
+def gaussian_f(kins, z=0, waist=1e-4, wavelength=1.5e-7):
     """
-    Return a np.array of gaussian Fourier transform beam amplitudes for given arrays of spatial frequency coordinates kxs, kys and propagation coordinate z.
+    Return a np.array of gaussian Fourier transform beam amplitudes for given arrays of spatial frequencies kins and propagation coordinate z.
 
-    kxs, kys - arrays of spatial frequencies
+    kins - array of spatial frequencies
     z - propogation coordinate
     waist - beam waist radius
     wavelength - light wavelength
     """
     k = 2 * np.pi / wavelength
-    return sqrt(2 / np.pi) * waist / 4 / np.pi * np.exp(1j * k * z) * np.exp(-(kxs**2 + kys**2) * k**2 * (waist**2 / 4 + 1j * z / 2 / k))
+    kxs, kys = kins.T
+    return (2 * np.pi)**-2 * np.exp(1j * k * z) * np.exp(-(kxs**2 + kys**2) * k**2 * (waist**2 / 4 + 1j * z / 2 / k))
 
 def kins(pts, waist=1e-4, wavelength=1.5e-7):
     """
@@ -126,6 +127,11 @@ def kins(pts, waist=1e-4, wavelength=1.5e-7):
     xs, ys, zs = pts.T
     Rs = zs + zr**2 / zs
     return np.dstack((xs, ys, Rs))[0] / np.sqrt(xs**2 + ys**2 + Rs**2)[:, np.newaxis]
+
+def kins_grid(rad=1, num=10):
+    _kvals, _kdx = np.linspace(-rad, rad, num=num, endpoint=True, retstep=True)
+    _kins = np.array([[kx, ky] for kx in _kvals for ky in _kvals])
+    return (_kins[_kins[:,0]**2 + _kins[:,1]**2 < rad**2], _kdx)
 
 def kouts(det_dist=54, detNx=512, detNy=512, pix_size=55e-3):
     """
