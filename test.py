@@ -8,15 +8,13 @@ if __name__ == "__main__":
     a, b, c = 2e-5, 2.5e-5, 3e-5
     Nx, Ny, Nz = 20, 20, 20
 
-    detNx, detNy = 32, 32
+    detNx, detNy = 4, 4
     pix_size = 55e-3 / 4
     det_dist = 54
 
-    axis = np.random.rand(3)
-    theta = 2 * np.pi * np.random.random()
+    # axis = np.random.rand(3)
+    # theta = 2 * np.pi * np.random.random()
 
     logpath = os.path.join('logs', str(datetime.date.today()) + '.log')
     diff = cbc.diff(setup_args=cbc.setup_args(handler=logging.FileHandler(logpath), relpath='results/'), kout_args=cbc.kout_args(det_dist=det_dist, detNx=detNx, detNy=detNy, pix_size=pix_size), lat_args=cbc.lat_args(a=a, b=b, c=c, Nx=Nx, Ny=Ny, Nz=Nz), waist=waist, wavelength=wavelength)
-    val1 = np.abs(cbc.gaussian_f(np.array([0, wavelength / np.pi / waist]), waist=waist))
-    val2 = np.abs(cbc.gaussian_f(np.array([0,0]), waist=waist))
-    print(val2, val1, val1/val2)
+    diff.diff_noinfr()
