@@ -101,7 +101,7 @@ class diff(diff_setup):
     """
     def __init__(self, setup_args=setup_args(), lat_args=lat_args(), kout_args=kout_args(), asf_args=asf_args(), waist=2e-5, wavelength=1.5e-7):
         super(diff, self).__init__(setup_args)
-        self.waist, self.wavelength, self.sigma = waist, wavelength, kout_args.pix_size**2 / kout_args.det_dist**2
+        self.waist, self.wavelength, self.sigma, self.thdiv = waist, wavelength, kout_args.pix_size**2 / kout_args.det_dist**2, wavelength / np.pi / waist
         self.lat_args, self.kout_args, self.asf_args = lat_args, kout_args, asf_args
         self.lat_pts = lattice(**self.lat_args.__dict__)
 
@@ -112,7 +112,7 @@ class diff(diff_setup):
     
     def move_lat(self, z=None):
         if z is None:
-            z = max(self.lat_args.Nx * self.lat_args.a, self.lat_args.Ny * self.lat_args.b, self.lat_args.Nz * self.lat_args.c) / self.wavelength * np.pi * self.waist
+            z = max(self.lat_args.Nx * self.lat_args.a, self.lat_args.Ny * self.lat_args.b, self.lat_args.Nz * self.lat_args.c) / self.thdiv
         self.lat_args.lat_orig = [0, 0, z]
         self.lat_pts += [0, 0, z]
 
@@ -160,7 +160,7 @@ class diff(diff_setup):
             for (key, value) in args.__dict__.items():
                 self.logger.info('%-9s=%+28s' % (key, value))
         _kouts = kouts(**self.kout_args.__dict__)
-        _kins, _kdx = kins_grid(4 * self.wavelength / np.pi / self.waist, knum)
+        _kins, _kdx = kins_grid(2 * self.thdiv, knum)
         _us = np.abs(gaussian_f(_kins, self.lat_args.lat_orig[-1], self.waist, self.wavelength))
         _asf_coeffs = ASF(wavelength=self.wavelength, **self.asf_args.__dict__).coeffs
         _worker = partial(diff_plane, kins=_kins, lat_pts=self.lat_pts, us=_us, asf_coeffs=_asf_coeffs, sigma=self.sigma, wavelength=self.wavelength)
