@@ -13,7 +13,7 @@ if __name__ == "__main__":
     a, b, c = 2e-5, 2.5e-5, 3e-5
     Nx, Ny, Nz = 20, 20, 20
 
-    detNx, detNy = 512, 512
+    detNx, detNy = 1024, 1024
     pix_size = 55e-3 / 4
     det_dist = 54
 
