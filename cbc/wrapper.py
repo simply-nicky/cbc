@@ -151,7 +151,7 @@ class diff(diff_setup):
         self.logger.info('The calculation has ended, %d diffraction pattern values total' % len(_diff_list))
         return diff_res(*make_grid(_kouts, _diff_list), time=self.time, path=self.path, logger=self.logger, lat_args=self.lat_args, kout_args=self.kout_args, asf_args=self.asf_args, waist=self.waist, wavelength=self.wavelength)
     
-    def diff_noinfr(self, chunk_size=2**6, knum=10):
+    def diff_noinfr(self, chunk_size=2**6, knum=20):
         """
         Concurrently calculate diffraction patttern with no interference.
         """
@@ -160,7 +160,7 @@ class diff(diff_setup):
             for (key, value) in args.__dict__.items():
                 self.logger.info('%-9s=%+28s' % (key, value))
         _kouts = kouts(**self.kout_args.__dict__)
-        _kins, _kdx = kins_grid(1, knum)
+        _kins, _kdx = kins_grid(2 * self.wavelength / np.pi / self.waist, knum)
         _us = np.abs(gaussian_f(_kins, self.lat_args.lat_orig[-1], self.waist, self.wavelength))
         _asf_coeffs = ASF(wavelength=self.wavelength, **self.asf_args.__dict__).coeffs
         _worker = partial(diff_plane, kins=_kins, lat_pts=self.lat_pts, us=_us, asf_coeffs=_asf_coeffs, sigma=self.sigma, wavelength=self.wavelength)
