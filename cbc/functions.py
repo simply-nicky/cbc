@@ -9,7 +9,7 @@ Made by Nikolay Ivanov, 2018-2019.
 
 import numpy as np
 from scipy.interpolate import interp1d
-from scipy import constants
+from scipy import signal, constants
 from math import sqrt, cos, sin, exp
 from functools import partial
 
@@ -113,6 +113,11 @@ def gaussian_f(kins, z=0, waist=1e-4, wavelength=1.5e-7):
     kxs, kys = kins.T
     return (2 * np.pi)**-2 * np.exp(1j * k * z) * np.exp(-(kxs**2 + kys**2) * k**2 * (waist**2 / 4 + 1j * z / 2 / k))
 
+def normal(mu, sigma, N):
+    rs = np.random.normal(mu, sigma, N)
+    phis = 2 * np.pi * np.random.rand(N)
+    return np.dstack((rs * np.cos(phis), rs * np.sin(phis)))[0]
+
 def kins(pts, waist=1e-4, wavelength=1.5e-7):
     """
     Return incoming wavevector of gaussian beam for given coordinate (x, y, z).
@@ -176,6 +181,10 @@ def lattice(a, b, c, Nx, Ny, Nz, lat_orig=[0, 0, 0]):
     yval = b * np.arange((-Ny + 1) / 2.0, (Ny + 1) / 2.0)
     zval = c * np.arange((-Nz + 1) / 2.0, (Nz + 1) / 2.0)
     return np.add([[x, y, z] for x in xval for y in yval for z in zval], lat_orig)
+
+def window(Nx, Ny, Nz):
+    wx, wy, wz = map(signal.bohman, (Nx, Ny, Nz))
+    return np.array([x * y * z for x in wx for y in wy for z in wz])
 
 def diff_grid(kxs, kys, lat_pts, asf_coeffs, waist, sigma, wavelength=1.5e-7):
     """
@@ -258,7 +267,7 @@ def diff_work(kouts, lat_pts, asf_coeffs, us, kins, sigma, wavelength=1.5e-7):
     exps = np.exp(2 * np.pi / wavelength * np.dot(kouts, lat_pts.T) * 1j)
     return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * (asfs * exps * us).sum(axis=-1)
 
-def diff_plane(kouts, lat_pts, asf_coeffs, us, kins, sigma, wavelength=1.5e-7):
+def diff_plane(kouts, lat_pts, window, us, asf_coeffs, kins, sigma, wavelength=1.5e-7):
     """
     Return diffraction pattern for given array of output wavevectors.
 
@@ -275,12 +284,12 @@ def diff_plane(kouts, lat_pts, asf_coeffs, us, kins, sigma, wavelength=1.5e-7):
     kinxs, kinys = kins.T
     _kouts = np.dstack((koutxs, koutys, np.sqrt(1 - koutxs**2 - koutys**2)))[0]
     _kins = np.dstack((kinxs, kinys, np.sqrt(1 - kinxs**2 - kinys**2)))[0]
-    _qs = np.add(_kouts[:, np.newaxis], -1 * _kins)
-    _asfs = asf_vals(np.sqrt(((_qs / 2.0 / wavelength / 1e7)**2).sum(axis=-1)), asf_coeffs)
-    _phins = np.cos(-2 * np.pi / wavelength * np.tensordot(_kins, lat_pts.T, axes=1))
-    _phouts = np.cos(2 * np.pi / wavelength * np.tensordot(_kouts, lat_pts.T, axes=1))
-    _exps = (_phouts[:, np.newaxis] * _phins).sum(axis=-1)
-    return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * (np.abs(_asfs * us * _exps)).sum(axis=-1)
+    _qs = np.add(_kouts[:, np.newaxis], -1 * _kins) / 2.0 / wavelength / 1e7
+    _asfs = asf_vals(np.sqrt((_qs**2).sum(axis=-1)), asf_coeffs)
+    _phins = np.exp(-2 * np.pi / wavelength * np.dot(_kins, lat_pts.T) * 1j) * window
+    _phouts = np.exp(2 * np.pi / wavelength * np.dot(_kouts, lat_pts.T) * 1j) 
+    _exps = np.abs((_phouts[:, np.newaxis] * _phins).sum(axis=-1))
+    return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * (_asfs * us * _exps).sum(axis=-1)
 
 if __name__ == "__main__":
     pass

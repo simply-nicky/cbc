@@ -7,7 +7,7 @@ Dependencies: numpy, matplotlib abd h5py.
 Made by Nikolay Ivanov, 2018-2019.
 """
 
-from .functions import rotation_matrix, asf_coeffs, asf_correct, asf_val, gaussian, gaussian_f, lattice, make_grid, kins, kins_grid, kouts, kout_grid, diff_grid, diff_work, diff_plane
+from .functions import rotation_matrix, asf_coeffs, asf_correct, asf_val, gaussian, gaussian_f, lattice, make_grid, kins, kins_grid, kouts, kout_grid, diff_grid, diff_work, diff_plane, window, normal
 from . import utils
 import numpy as np, os, concurrent.futures, h5py, datetime, logging, errno
 from functools import partial
@@ -160,15 +160,18 @@ class diff(diff_setup):
             for (key, value) in args.__dict__.items():
                 self.logger.info('%-9s=%+28s' % (key, value))
         _kouts = kouts(**self.kout_args.__dict__)
-        _kins, _kdx = kins_grid(2 * self.thdiv, knum)
+        # _kins, _kdx = kins_grid(2 * self.thdiv, knum)
+        _kins = normal(0, self.thdiv, knum)
+        _ws = window(self.lat_args.Nx, self.lat_args.Ny, self.lat_args.Nz)
         _us = np.abs(gaussian_f(_kins, self.lat_args.lat_orig[-1], self.waist, self.wavelength))
         _asf_coeffs = ASF(wavelength=self.wavelength, **self.asf_args.__dict__).coeffs
-        _worker = partial(diff_plane, kins=_kins, lat_pts=self.lat_pts, us=_us, asf_coeffs=_asf_coeffs, sigma=self.sigma, wavelength=self.wavelength)
+        _worker = partial(diff_plane, kins=_kins, lat_pts=self.lat_pts, window=_ws, us=_us, asf_coeffs=_asf_coeffs, sigma=self.sigma, wavelength=self.wavelength)
+        # _diff_list = _worker(_kouts)
         _n = max(cpu_count(), len(_kouts) / chunk_size)
         _diff_list = []
         with concurrent.futures.ProcessPoolExecutor() as executor:
             for diff in executor.map(_worker, np.array_split(_kouts, _n)):
-                _diff_list.extend(_kdx**2 * diff)
+                _diff_list.extend(diff)
         self.logger.info('The calculation has ended, %d diffraction pattern values total' % len(_diff_list))
         return diff_res(*make_grid(_kouts, _diff_list), time=self.time, path=self.path, logger=self.logger, lat_args=self.lat_args, kout_args=self.kout_args, asf_args=self.asf_args, waist=self.waist, wavelength=self.wavelength)
 
