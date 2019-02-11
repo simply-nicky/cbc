@@ -5,9 +5,39 @@ Utility functions for convergent beam diffraction project.
 """
 from __future__ import print_function
 
-import os
+import os, numpy as np, numba as nb
 from timeit import default_timer as timer
 import matplotlib.pyplot as plt
+
+@nb.njit(nb.complex128[:,:](nb.complex128[:,:], nb.complex128[:,:]), fastmath=True)
+def couterdot(A, B):
+    a = A.shape[0]
+    b, c = B.shape
+    C = np.empty((a, b), dtype=np.complex128)
+    A = np.ascontiguousarray(A)
+    B = np.ascontiguousarray(B)
+    for i in range(a):
+        for j in range(b):
+            dC = np.complex128(0.0)
+            for k in range(c):
+                dC += A[i,k] * B[j,k]
+            C[i,j] = dC
+    return C
+
+@nb.njit(nb.float64[:,:](nb.float64[:,:], nb.float64[:,:]), fastmath=True)
+def outerdot(A, B):
+    a = A.shape[0]
+    b, c = B.shape
+    C = np.empty((a, b), dtype=np.float64)
+    A = np.ascontiguousarray(A)
+    B = np.ascontiguousarray(B)
+    for i in range(a):
+        for j in range(b):
+            dC = 0.0
+            for k in range(c):
+                dC += A[i,k] * B[j,k]
+            C[i,j] = dC
+    return C
 
 def make_filename(path, filename, i=2):
     name, ext = os.path.splitext(filename)
@@ -18,7 +48,6 @@ def make_filename(path, filename, i=2):
         make_filename(filename, i + 1)
     else:
         return newname
-
 
 def verbose_call(v, func, *args):
     """

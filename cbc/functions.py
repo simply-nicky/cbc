@@ -12,6 +12,7 @@ from scipy.interpolate import interp1d
 from scipy import signal, constants
 from math import sqrt, cos, sin, exp
 from functools import partial
+from . import utils
 
 def rotation_matrix(axis, theta):
     """
@@ -291,10 +292,10 @@ def diff_plane(kouts, lat_pts, window, us, asf_coeffs, kins, sigma, wavelength=1
     _kins = np.dstack((kinxs, kinys, np.sqrt(1 - kinxs**2 - kinys**2)))[0]
     _qs = np.add(_kouts[:, np.newaxis], -1 * _kins) / 2.0 / wavelength / 1e7
     _asfs = asf_vals(np.sqrt((_qs**2).sum(axis=-1)), asf_coeffs)
-    _phins = np.exp(-2 * np.pi / wavelength * np.dot(_kins, lat_pts.T) * 1j)
-    _phouts = np.exp(2 * np.pi / wavelength * np.dot(_kouts, lat_pts.T) * 1j) 
-    _exps = np.abs((_phouts[:, np.newaxis] * _phins).sum(axis=-1))
-    return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * (_asfs * _exps).sum(axis=-1)
+    _phins = np.exp(-2 * np.pi / wavelength * utils.outerdot(_kins, lat_pts) * 1j)
+    _phouts = np.exp(2 * np.pi / wavelength * utils.outerdot(_kouts, lat_pts) * 1j) 
+    _exps = np.abs(utils.couterdot(_phouts, _phins))
+    return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * (_asfs * _exps * us).sum(axis=-1)
 
 if __name__ == "__main__":
     pass
