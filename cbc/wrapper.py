@@ -7,7 +7,7 @@ Dependencies: numpy, matplotlib abd h5py.
 Made by Nikolay Ivanov, 2018-2019.
 """
 
-from .functions import rotation_matrix, asf_coeffs, asf_correct, asf_val, gaussian, gaussian_f, lattice, make_grid, kins, kins_grid, kouts, kout_grid, diff_grid, diff_work, diff_plane, window, normal
+from .functions import rotation_matrix, asf_coeffs, asf_correct, asf_val, gaussian, gaussian_f, lattice, make_grid, kins, kins_grid, kouts, kout_grid, diff_grid, diff_work, diff_plane, window, normal, uniform
 from . import utils
 import numpy as np, os, concurrent.futures, h5py, datetime, logging, errno
 from functools import partial
@@ -160,8 +160,17 @@ class diff(diff_setup):
             for (key, value) in args.__dict__.items():
                 self.logger.info('%-9s=%+28s' % (key, value))
         _kouts = kouts(**self.kout_args.__dict__)
+
         # _kins, _kdx = kins_grid(2 * self.thdiv, knum)
-        _kins = normal(0, self.thdiv, knum)
+
+        # _kins = normal(0, self.thdiv, knum)
+
+        _kins = uniform(knum)
+
+        # _kins = kins(self.lat_pts, self.waist, self.wavelength)
+        # np.random.shuffle(_kins)
+        # _kins = _kins[0:knum, 0:2]
+
         _ws = window(self.lat_args.Nx, self.lat_args.Ny, self.lat_args.Nz)
         _us = np.abs(gaussian_f(_kins, self.lat_args.lat_orig[-1], self.waist, self.wavelength))
         _asf_coeffs = ASF(wavelength=self.wavelength, **self.asf_args.__dict__).coeffs

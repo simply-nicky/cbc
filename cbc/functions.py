@@ -118,6 +118,11 @@ def normal(mu, sigma, N):
     phis = 2 * np.pi * np.random.rand(N)
     return np.dstack((rs * np.cos(phis), rs * np.sin(phis)))[0]
 
+def uniform(N, a=0, b=1):
+    rs = (b - a) * np.random.rand(N) + a
+    phis = 2 * np.pi * np.random.rand(N)
+    return np.dstack((rs * np.cos(phis), rs * np.sin(phis)))[0]
+
 def kins(pts, waist=1e-4, wavelength=1.5e-7):
     """
     Return incoming wavevector of gaussian beam for given coordinate (x, y, z).
@@ -286,10 +291,10 @@ def diff_plane(kouts, lat_pts, window, us, asf_coeffs, kins, sigma, wavelength=1
     _kins = np.dstack((kinxs, kinys, np.sqrt(1 - kinxs**2 - kinys**2)))[0]
     _qs = np.add(_kouts[:, np.newaxis], -1 * _kins) / 2.0 / wavelength / 1e7
     _asfs = asf_vals(np.sqrt((_qs**2).sum(axis=-1)), asf_coeffs)
-    _phins = np.exp(-2 * np.pi / wavelength * np.dot(_kins, lat_pts.T) * 1j) * window
+    _phins = np.exp(-2 * np.pi / wavelength * np.dot(_kins, lat_pts.T) * 1j)
     _phouts = np.exp(2 * np.pi / wavelength * np.dot(_kouts, lat_pts.T) * 1j) 
     _exps = np.abs((_phouts[:, np.newaxis] * _phins).sum(axis=-1))
-    return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * (_asfs * us * _exps).sum(axis=-1)
+    return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * (_asfs * _exps).sum(axis=-1)
 
 if __name__ == "__main__":
     pass
