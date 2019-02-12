@@ -53,16 +53,6 @@ class kout_args(object):
     def __init__(self, det_dist=54, detNx=512, detNy=512, pix_size=55e-3):
         self.det_dist, self.detNx, self.detNy, self.pix_size = det_dist, detNx, detNy, pix_size
 
-class asf_args(object):
-    """
-    asf function arguments class.
-
-    asf_hw - the filename with atomic scattering factor values for different photon energies
-    asf_fit - the filename with analytical fit coefficients
-    """
-    def __init__(self, asf_hw='cbc/asf/Au/asf_hw.txt', asf_fit='cbc/asf/Au/asf_q_fit.txt'):
-        self.asf_hw, self.asf_fit = asf_hw, asf_fit
-
 class setup_args(object):
     """
     diff_setup arguments class.
@@ -98,10 +88,10 @@ class diff(diff_setup):
     waist - beam waist radius
     wavelength - light wavelength
     """
-    def __init__(self, setup_args=setup_args(), lat_args=lat_args(), kout_args=kout_args(), asf_args=asf_args(), waist=2e-5, wavelength=1.5e-7):
+    def __init__(self, setup_args=setup_args(), lat_args=lat_args(), kout_args=kout_args(), waist=2e-5, wavelength=1.5e-7, elem='Au'):
         super(diff, self).__init__(setup_args)
-        self.waist, self.wavelength, self.sigma, self.thdiv = waist, wavelength, kout_args.pix_size**2 / kout_args.det_dist**2, wavelength / np.pi / waist
-        self.lat_args, self.kout_args, self.asf_args = lat_args, kout_args, asf_args
+        self.waist, self.wavelength, self.sigma, self.thdiv, self.elem = waist, wavelength, kout_args.pix_size**2 / kout_args.det_dist**2, wavelength / np.pi / waist, elem
+        self.lat_args, self.kout_args = lat_args, kout_args
         self.lat_pts = lattice(**self.lat_args.__dict__)
 
     def rotate_lat(self, axis, theta):
@@ -124,10 +114,10 @@ class diff(diff_setup):
             for (key, value) in args.__dict__.items():
                 self.logger.info('%-9s=%+28s' % (key, value))
         _kxs, _kys = kout_grid(**self.kout_args.__dict__)
-        _asf_coeffs = ASF(wavelength=self.wavelength, **self.asf_args.__dict__).coeffs
+        _asf_coeffs = asf_coeffs(self.elem, self.wavelength)
         _diffs = diff_grid(_kxs, _kys, self.lat_pts, asf_coeffs=_asf_coeffs, waist=self.waist, sigma=self.sigma, wavelength=self.wavelength)
         self.logger.info('The calculation has ended, %d diffraction pattern values total' % _diffs.size)
-        return diff_res(_kxs, _kys, _diffs, self.time, self.path, self.logger, self.lat_args, self.kout_args, self.asf_args, self.waist, self.wavelength)
+        return diff_res(_kxs, _kys, _diffs, self.time, self.path, self.logger, self.lat_args, self.kout_args, self.waist, self.wavelength, self.elem)
 
     def diff_pool(self, chunk_size=2**8):
         """
@@ -139,7 +129,7 @@ class diff(diff_setup):
                 self.logger.info('%-9s=%+28s' % (key, value))
         _kouts = kouts(**self.kout_args.__dict__)
         _us = gaussian(self.lat_pts, self.waist, self.wavelength)
-        _asf_coeffs = ASF(wavelength=self.wavelength, **self.asf_args.__dict__).coeffs
+        _asf_coeffs = asf_coeffs(self.elem, self.wavelength)
         _kins = kins(self.lat_pts, self.waist, self.wavelength)
         _worker = partial(diff_work, lat_pts=self.lat_pts, kins=_kins, us=_us, asf_coeffs=_asf_coeffs, sigma=self.sigma, wavelength=self.wavelength)
         _n = max(cpu_count(), len(_kouts) / chunk_size)
@@ -148,7 +138,7 @@ class diff(diff_setup):
             for diff in executor.map(_worker, np.array_split(_kouts, _n)):
                 _diff_list.extend(diff)
         self.logger.info('The calculation has ended, %d diffraction pattern values total' % len(_diff_list))
-        return diff_res(*make_grid(_kouts, _diff_list), time=self.time, path=self.path, logger=self.logger, lat_args=self.lat_args, kout_args=self.kout_args, asf_args=self.asf_args, waist=self.waist, wavelength=self.wavelength)
+        return diff_res(*make_grid(_kouts, _diff_list), time=self.time, path=self.path, logger=self.logger, lat_args=self.lat_args, kout_args=self.kout_args, waist=self.waist, wavelength=self.wavelength, elem=self.elem)
     
     def diff_noinfr(self, _kins, chunk_size=2**6):
         """
@@ -159,9 +149,9 @@ class diff(diff_setup):
             for (key, value) in args.__dict__.items():
                 self.logger.info('%-9s=%+28s' % (key, value))
         _kouts = kouts(**self.kout_args.__dict__)
-        _ws = window(self.lat_args.Nx, self.lat_args.Ny, self.lat_args.Nz)
         _us = np.abs(gaussian_f(_kins, self.lat_args.lat_orig[-1], self.waist, self.wavelength))
-        _asf_coeffs = ASF(wavelength=self.wavelength, **self.asf_args.__dict__).coeffs
+        _asf_coeffs = asf_coeffs(self.elem, self.wavelength)
+        _ws = window(self.lat_args.Nx, self.lat_args.Ny, self.lat_args.Nz)
         _worker = partial(diff_plane, kins=_kins, lat_pts=self.lat_pts, window=_ws, us=_us, asf_coeffs=_asf_coeffs, sigma=self.sigma, wavelength=self.wavelength)
         
         # _diff_list = _worker(_kouts)
@@ -173,7 +163,7 @@ class diff(diff_setup):
                 _diff_list.extend(diff)
 
         self.logger.info('The calculation has ended, %d diffraction pattern values total' % len(_diff_list))
-        return diff_res(*make_grid(_kouts, _diff_list), time=self.time, path=self.path, logger=self.logger, lat_args=self.lat_args, kout_args=self.kout_args, asf_args=self.asf_args, waist=self.waist, wavelength=self.wavelength)
+        return diff_res(*make_grid(_kouts, _diff_list), time=self.time, path=self.path, logger=self.logger, lat_args=self.lat_args, kout_args=self.kout_args, waist=self.waist, wavelength=self.wavelength, elem=self.elem)
 
 class diff_res(diff):
     """
@@ -183,9 +173,9 @@ class diff_res(diff):
     diffs - diffracted wave values for given kxs and kys
     time, path, logger, lat_args, kout_args, asf_args, waist, wavelength - attributes inherited from diff class
     """
-    def __init__(self, kxs, kys, diffs, time, path, logger, lat_args, kout_args, asf_args, waist, wavelength):
+    def __init__(self, kxs, kys, diffs, time, path, logger, lat_args, kout_args, waist, wavelength, elem):
         self.kxs, self.kys, self.diffs = kxs, kys, diffs
-        self.time, self.path, self.logger, self.lat_args, self.kout_args, self.asf_args, self.waist, self.wavelength = time, path, logger, lat_args, kout_args, asf_args, waist, wavelength
+        self.time, self.path, self.logger, self.lat_args, self.kout_args, self.waist, self.wavelength, self.elem = time, path, logger, lat_args, kout_args, waist, wavelength, elem
 
     def plot(self):
         self.logger.info('Plotting the results')
