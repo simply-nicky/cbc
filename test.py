@@ -31,5 +31,5 @@ if __name__ == "__main__":
     start = timer()
     diffress = [diff.diff_noinfr(kins) for kins in (kins1, kins2, kins3, kins4)] 
     print('Estimated time: %f' % (timer() - start))
-    # for diffres in diffress:
-    #     diffres.write()
+    for diffres in diffress:
+        diffres.write()
