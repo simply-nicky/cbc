@@ -194,8 +194,9 @@ class diff_res(diff):
         _filediff = h5py.File(os.path.join(self.path, _filename), 'w')
         _diff_args = _filediff.create_group('arguments')
         _diff_args.create_dataset('wavelength', data=self.wavelength)
+        _diff_args.create_dataset('sample\'s material', data=self.elem)
         _diff_args.create_dataset('beam waist radius', data=self.waist)
-        for args in (self.lat_args, self.asf_args, self.kout_args):
+        for args in (self.lat_args, self.kout_args):
             for (key, value) in args.__dict__.items():
                 _diff_args.create_dataset(key, data=value)
         _diff_res = _filediff.create_group('results')
