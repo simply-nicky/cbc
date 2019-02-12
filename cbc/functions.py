@@ -295,7 +295,7 @@ def diff_plane(kouts, lat_pts, window, us, asf_coeffs, kins, sigma, wavelength=1
     _phins = np.exp(-2 * np.pi / wavelength * utils.outerdot(_kins, lat_pts) * 1j)
     _phouts = np.exp(2 * np.pi / wavelength * utils.outerdot(_kouts, lat_pts) * 1j) 
     _exps = np.abs(utils.couterdot(_phouts, _phins))
-    return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * (_asfs * _exps * us).sum(axis=-1)
+    return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * (_asfs * _exps).sum(axis=-1)
 
 if __name__ == "__main__":
     pass
