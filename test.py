@@ -8,10 +8,10 @@ if __name__ == "__main__":
     a, b, c = 2e-5, 2.5e-5, 3e-5
     Nx, Ny, Nz = 20, 20, 20
 
-    detNx, detNy = 32, 32
+    detNx, detNy = 512, 512
     pix_size = 55e-3 / 4
     det_dist = 54
-    knum = 100
+    knum = 1000
 
     # axis = np.random.rand(3)
     # theta = 2 * np.pi * np.random.random()
