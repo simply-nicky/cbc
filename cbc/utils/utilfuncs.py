@@ -45,7 +45,7 @@ def make_filename(path, filename, i=2):
     if not os.path.isfile(os.path.join(path, filename)):
         return filename    
     elif os.path.isfile(os.path.join(path, newname)):
-        make_filename(filename, i + 1)
+        return make_filename(path, filename, i + 1)
     else:
         return newname
 
