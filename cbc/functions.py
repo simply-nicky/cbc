@@ -292,7 +292,7 @@ def diff_plane(kouts, lat_pts, window, us, asf_coeffs, kins, sigma, wavelength=1
     _kins = np.dstack((kinxs, kinys, np.sqrt(1 - kinxs**2 - kinys**2)))[0]
     _qs = np.add(_kouts[:, np.newaxis], -1 * _kins) / 2.0 / wavelength / 1e7
     _asfs = asf_vals(np.sqrt((_qs**2).sum(axis=-1)), asf_coeffs)
-    _phins = np.exp(-2 * np.pi / wavelength * utils.outerdot(_kins, lat_pts) * 1j)
+    _phins = np.exp(-2 * np.pi / wavelength * utils.outerdot(_kins, lat_pts) * 1j) * window
     _phouts = np.exp(2 * np.pi / wavelength * utils.outerdot(_kouts, lat_pts) * 1j) 
     _exps = np.abs(utils.couterdot(_phouts, _phins))
     return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * (_asfs * _exps).sum(axis=-1)
