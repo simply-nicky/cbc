@@ -1,4 +1,0 @@
-Coefficients for analytical approximation to the scattering factors
-Data for С
-a1              b1              a2              b2              a3              b3              a4              b4              a5              b5              c
-2.657506E+00	1.478076E+01	1.078079E+00	7.767750E-01	1.490909E+00	4.208684E+01	-4.241070E+00	-2.940000E-04	7.137910E-01	2.395350E-01	4.297983E+00

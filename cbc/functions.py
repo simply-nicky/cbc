@@ -14,58 +14,20 @@ from math import sqrt, cos, sin, exp
 from functools import partial
 from . import utils
 
-def rotation_matrix(axis, theta):
+def asf_coeffs(elem = 'Au', wavelength=1.5e-7):
     """
-    Return the rotation matrix associated with counterclockwise rotation about the given axis by theta radians.
+    Return Wasmeier and Kirfel atomic scattering factor fit coefficients. for a given chemical element elem.
+    Coefficients are put in a list as follows: [a1,  a2,  a3,  a4,  a5,  c,  b1,  b2,  b3,  b4,  b5].
+    c coefficient is corrected based on Henke asf value for a given wavelength.
 
-    axis - rotation axis
-    theta - rotation angle
-    """
-    axis = np.asarray(axis)
-    axis = axis / sqrt(np.dot(axis, axis))
-    a = cos(theta / 2.0)
-    b, c, d = -axis * sin(theta / 2.0)
-    aa, bb, cc, dd = a * a, b * b, c * c, d * d
-    bc, ad, ac, ab, bd, cd = b * c, a * d, a * c, a * b, b * d, c * d
-    return np.array([[aa + bb - cc - dd, 2 * (bc + ad), 2 * (bd - ac)],
-                     [2 * (bc - ad), aa + cc - bb - dd, 2 * (cd + ab)],
-                     [2 * (bd + ac), 2 * (cd - ab), aa + dd - bb - cc]])
-
-def asf_coeffs(asf_fit):
-    """
-    Return atomic scattering factor fit coefficients from an asf_fit file.
-
-    asf_fit - atomic scattering factor fit filename
-    """
-    coeffs = []
-    for line in open(asf_fit):
-        parts = line.split()
-        try:
-            for part in parts:
-                coeffs.append(float(part))
-        except:
-            continue
-    assert len(coeffs) % 2 == 1, 'the fit coefficients file is invalid, there must be odd number of coefficients'
-    return np.asarray(coeffs)
-
-def asf_correct(asf_coeffs, asf_hw, wavelength):
-    """
-    Correct atomic scattering factor fit coefficients based on atomic scattering measured for given wavelength.
-
-    asf_coeffs - atomic scattering factor fit coefficients
-    asf_hw - filename for the file with atomic scattering factor values for different wavelengths
+    elem - the abbreviation of a chemical element
     wavelength - light wavelength
     """
     en = constants.c * constants.h / constants.e / wavelength * 1e3     #photon energy in eV
-    x, y = [], []
-    for line in open(asf_hw):
-        parts = line.split()
-        try:
-            x.append(float(parts[0]))
-            y.append(float(parts[1]))
-        except:
-            continue
-    asf_coeffs[-1] = interp1d(x, y, kind='cubic')(en)
+    _asf_coeffs = utils.asf.waskif[elem]
+    ens, f1s = utils.asf.henke[elem][0:2]
+    _asf_coeffs[5] = interp1d(ens, f1s, kind='cubic')(en) - _asf_coeffs[:5].sum()
+    return _asf_coeffs
     
 def asf_val(s, asf_coeffs):
     """
@@ -75,9 +37,9 @@ def asf_val(s, asf_coeffs):
     asf_coeffs - atomic scattering factor fit coefficients
     """
     val = 0
-    for acoeff, bcoeff in zip(asf_coeffs[0:-1:2], asf_coeffs[1:-1:2]):
+    for acoeff, bcoeff in zip(asf_coeffs[:5], asf_coeffs[6:]):
         val += acoeff * exp(-s**2 * bcoeff)
-    return val + asf_coeffs[-1]
+    return val + asf_coeffs[5]
 
 def asf_vals(ss, asf_coeffs):
     """
@@ -86,8 +48,8 @@ def asf_vals(ss, asf_coeffs):
     ss - sin(theta) / lambda [Angstrom^-1] numpy ndarray
     asf_coeffs - atomic scattering factor fit coefficients
     """
-    acoeffs, bcoeffs = asf_coeffs[0:-1:2], asf_coeffs[1:-1:2]
-    return (acoeffs * np.exp(-np.multiply.outer(ss**2, bcoeffs))).sum(axis=-1) + asf_coeffs[-1]     # -ss[:, :, np.newaxis]**2 * bcoeffs[np.newaxis, :]
+    acoeffs, bcoeffs = asf_coeffs[:5], asf_coeffs[6:]
+    return (acoeffs * np.exp(-np.multiply.outer(ss**2, bcoeffs))).sum(axis=-1) + asf_coeffs[5]     # -ss[:, :, np.newaxis]**2 * bcoeffs[np.newaxis, :]
 
 def gaussian(pts, waist=1e-4, wavelength=1.5e-7):
     """

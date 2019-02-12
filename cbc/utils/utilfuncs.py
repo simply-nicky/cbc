@@ -6,6 +6,7 @@ Utility functions for convergent beam diffraction project.
 from __future__ import print_function
 
 import os, numpy as np, numba as nb
+from math import sqrt, cos, sin
 from timeit import default_timer as timer
 import matplotlib.pyplot as plt
 
@@ -48,6 +49,23 @@ def make_filename(path, filename, i=2):
         return make_filename(path, filename, i + 1)
     else:
         return newname
+
+def rotation_matrix(axis, theta):
+    """
+    Return the rotation matrix associated with counterclockwise rotation about the given axis by theta radians.
+
+    axis - rotation axis
+    theta - rotation angle
+    """
+    axis = np.asarray(axis)
+    axis = axis / sqrt(np.dot(axis, axis))
+    a = cos(theta / 2.0)
+    b, c, d = -axis * sin(theta / 2.0)
+    aa, bb, cc, dd = a * a, b * b, c * c, d * d
+    bc, ad, ac, ab, bd, cd = b * c, a * d, a * c, a * b, b * d, c * d
+    return np.array([[aa + bb - cc - dd, 2 * (bc + ad), 2 * (bd - ac)],
+                     [2 * (bc - ad), aa + cc - bb - dd, 2 * (cd + ab)],
+                     [2 * (bd + ac), 2 * (cd - ab), aa + dd - bb - cc]])
 
 def verbose_call(v, func, *args):
     """

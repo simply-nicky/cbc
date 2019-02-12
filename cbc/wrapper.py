@@ -7,7 +7,7 @@ Dependencies: numpy, matplotlib abd h5py.
 Made by Nikolay Ivanov, 2018-2019.
 """
 
-from .functions import rotation_matrix, asf_coeffs, asf_correct, asf_val, gaussian, gaussian_f, lattice, make_grid, kins, kins_grid, kouts, kout_grid, diff_grid, diff_work, diff_plane, window, normal, uniform
+from .functions import asf_coeffs, asf_val, gaussian, gaussian_f, lattice, make_grid, kins, kins_grid, kouts, kout_grid, diff_grid, diff_work, diff_plane, window, normal, uniform
 from . import utils
 import numpy as np, os, concurrent.futures, h5py, datetime, logging, errno
 from functools import partial
@@ -22,9 +22,8 @@ except ImportError:
             pass
 
 class ASF(object):
-    def __init__(self, asf_fit='cbc/asf/Au/asf_q_fit.txt', asf_hw='cbc/asf/Au/asf_hw.txt', wavelength=1.5e-7):
-        self.coeffs = asf_coeffs(asf_fit)
-        asf_correct(self.coeffs, asf_hw, wavelength)
+    def __init__(self, elem='Au', wavelength=1.5e-7):
+        self.coeffs = asf_coeffs(elem, wavelength)
 
     def __call__(self, s):
         return asf_val(s, self.coeffs)
@@ -107,7 +106,7 @@ class diff(diff_setup):
 
     def rotate_lat(self, axis, theta):
         self.lat_pts -= self.lat_args.lat_orig
-        self.lat_pts = np.tensordot(self.lat_pts, rotation_matrix(axis, theta), axes=(1,1))
+        self.lat_pts = np.tensordot(self.lat_pts, utils.rotation_matrix(axis, theta), axes=(1,1))
         self.lat_pts += self.lat_args.lat_orig
     
     def move_lat(self, z=None):
