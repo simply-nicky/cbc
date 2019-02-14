@@ -23,6 +23,7 @@ if __name__ == "__main__":
     
     start = timer()
     diffres = diff.diff_noinfr(knum)
-    diffres = diff.diff_pool()
+    diffres2 = diff.diff_pool()
     print('Estimated time: %f' % (timer() - start))
     diffres.write()
+    diffres2.write()
