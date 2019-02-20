@@ -6,12 +6,12 @@ if __name__ == "__main__":
     waist = 1e-5
     wavelength = 1.5e-7
     a, b, c = 2e-5, 2.5e-5, 3e-5
-    Nx, Ny, Nz = 20, 20, 20
+    Nx, Ny, Nz = 20, 20, 4
 
-    detNx, detNy = 512, 512
-    pix_size = 55e-3 / 4
+    detNx, detNy = 32, 32
+    pix_size = 55e-3 / 2
     det_dist = 54
-    knum = 1000
+    knum = 100
 
     axis = np.random.rand(3)
     theta = 2 * np.pi * np.random.random()
@@ -19,11 +19,12 @@ if __name__ == "__main__":
     logpath = os.path.join('logs', str(datetime.date.today()) + '.log')
     diff = cbc.diff(setup_args=cbc.setup_args(handler=logging.FileHandler(logpath), relpath='results/'), kout_args=cbc.kout_args(det_dist=det_dist, detNx=detNx, detNy=detNy, pix_size=pix_size), lat_args=cbc.lat_args(a=a, b=b, c=c, Nx=Nx, Ny=Ny, Nz=Nz), waist=waist, wavelength=wavelength)
 
-    diff.rotate_lat(axis, theta)
+    # diff.rotate_lat(axis, theta)
+    # diff.move_lat()
     
     start = timer()
-    diffres = diff.diff_noinfr(knum)
-    diffres2 = diff.diff_pool()
+    diffres = diff.diff_pool()
+    diffres2 = diff.diff_conv(knum)
     print('Estimated time: %f' % (timer() - start))
     diffres.write()
     diffres2.write()

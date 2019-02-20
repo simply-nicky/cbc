@@ -13,6 +13,7 @@ from scipy import signal, constants
 from math import sqrt, cos, sin, exp
 from functools import partial
 from . import utils
+from timeit import default_timer as timer
 
 def asf_coeffs(elem = 'Au', wavelength=1.5e-7):
     """
@@ -51,6 +52,16 @@ def asf_vals(ss, asf_coeffs):
     acoeffs, bcoeffs = asf_coeffs[:5], asf_coeffs[6:]
     return (acoeffs * np.exp(-np.multiply.outer(ss**2, bcoeffs))).sum(axis=-1) + asf_coeffs[5]     # -ss[:, :, np.newaxis]**2 * bcoeffs[np.newaxis, :]
 
+def asf_vals_nb(ss, asf_coeffs):
+    """
+    Return a numpy ndarray of atomic scattering factor values for given sin(theta) / lambda value.
+
+    ss - sin(theta) / lambda [Angstrom^-1] numpy ndarray
+    asf_coeffs - atomic scattering factor fit coefficients
+    """
+    acoeffs, bcoeffs = asf_coeffs[:5], asf_coeffs[6:]
+    return utils.asf_dot(ss, acoeffs, bcoeffs) + asf_coeffs[5]
+
 def gaussian(pts, waist=1e-4, wavelength=1.5e-7):
     """
     Return a np.array of gaussian beam amplitudes for given array of points.
@@ -61,9 +72,22 @@ def gaussian(pts, waist=1e-4, wavelength=1.5e-7):
     """
     k = 2 * np.pi / wavelength
     xs, ys, zs = pts.T
-    return np.pi**-1 * waist**-2 * np.exp(1j * k * zs) / (1 + 2j * zs / k / waist**2) * np.exp(-(xs**2 + ys**2) / waist**2 / (1 + 2j * zs / k / waist**2))
+    return np.pi**-1 * waist**-2 * np.exp(-1j * k * zs) / (1 - 2j * zs / k / waist**2) * np.exp(-(xs**2 + ys**2) / waist**2 / (1 - 2j * zs / k / waist**2))
 
-def gaussian_f(kins, zs, waist=1e-4, wavelength=1.5e-7):
+def gaussian_abs(pts, waist=1e-4, wavelength=1.5e-7):
+    """
+    Return a np.array of gaussian beam amplitudes for given array of points.
+
+    pts - array of points
+    waist - beam waist radius
+    wavelength - light wavelength
+    """
+    zr = np.pi * waist**2 / wavelength
+    xs, ys, zs = pts.T
+    wzs = waist * np.sqrt(1 + zs**2 / zr**2)
+    return np.pi**-1 / waist / wzs * np.exp(-(xs**2 + ys**2) / wzs**2)
+
+def gaussian_f(kins, z, waist=1e-4, wavelength=1.5e-7):
     """
     Return a np.array of gaussian Fourier transform beam amplitudes for given arrays of spatial frequencies kins and propagation coordinate z.
 
@@ -74,7 +98,7 @@ def gaussian_f(kins, zs, waist=1e-4, wavelength=1.5e-7):
     """
     k = 2 * np.pi / wavelength
     kxs, kys = kins.T
-    return (2 * np.pi)**-2 * np.exp(1j * k * zs) * np.exp(-(kxs**2 + kys**2) * k**2 * waist**2 / 4)[:, np.newaxis] * np.exp(-0.5j * k * np.multiply.outer(kxs**2 + kys**2, zs))
+    return (2 * np.pi)**-2 * np.exp(-1j * k * z) * np.exp(-(kxs**2 + kys**2) * k**2 * waist**2 / 4) * np.exp(-0.5j * k * (kxs**2 + kys**2)  * z)
 
 def gaussian_kins(pts, waist=1e-4, wavelength=1.5e-7):
     """
@@ -85,21 +109,22 @@ def gaussian_kins(pts, waist=1e-4, wavelength=1.5e-7):
 
     Return a np.array of three incoming wavevector coordinates.
     """
-    k = 2 * np.pi / wavelength
-    zr = k * waist**2 / 2
+    zr = np.pi * waist**2 / wavelength
     xs, ys, zs = pts.T
     Rs = zs + zr**2 / zs
-    return np.dstack((xs, ys, Rs))[0] / np.sqrt(xs**2 + ys**2 + Rs**2)[:, np.newaxis]
+    return np.dstack((xs / Rs, ys / Rs, 1 - (xs**2 + ys**2) / 2.0 / Rs**2))[0]
 
-def normal(mu, sigma, N):
-    rs = np.random.normal(mu, sigma, N)
+def gaussian_dist(N, z, waist, wavelength):
+    zr = np.pi * waist**2 / wavelength
+    wz = waist * sqrt(1 + z**2 / zr**2)
+    thdiv = wavelength / np.pi / wz
+    rs = np.random.normal(0, thdiv / sqrt(2.0), N)
     phis = 2 * np.pi * np.random.rand(N)
-    return np.dstack((rs * np.cos(phis), rs * np.sin(phis)))[0]
+    return np.dstack((rs * np.cos(phis), rs * np.sin(phis), 1 - rs**2 / 2.0))[0]
 
-def uniform(N, a=0, b=1):
-    rs = np.random.uniform(a, b, N)
-    phis = 2 * np.pi * np.random.rand(N)
-    return np.dstack((np.sqrt(rs) * np.cos(phis), np.sqrt(rs) * np.sin(phis)))[0]
+def ks_ext(ks):
+    kxs, kys = ks.T
+    return np.dstack((kxs, kys, 1.0 - (kxs**2 + kys**2) / 2.0))[0]
 
 def kouts(det_dist=54, detNx=512, detNy=512, pix_size=55e-3):
     """
@@ -170,7 +195,7 @@ def diff_grid(kxs, kys, lat_pts, asf_coeffs, waist, sigma, wavelength=1.5e-7):
     _kouts = np.concatenate((kxs[:, :, np.newaxis], kys[:, :, np.newaxis], np.sqrt(1 - kxs**2 - kys**2)[:, :, np.newaxis]), axis=2)
     _qs = np.add(_kouts[:, :, np.newaxis], -1 * _kins) / 2.0 / wavelength / 1e7
     _asfs = asf_vals(np.sqrt((_qs**2).sum(axis=-1)), asf_coeffs)
-    _exps = np.exp(2 * np.pi / wavelength * np.dot(_kouts, lat_pts.T) * 1j)
+    _exps = np.exp(2j * np.pi / wavelength * np.dot(_kouts, lat_pts.T))
     return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * (_asfs * _exps * _us).sum(axis=-1)   
 
 def make_grid(kouts, fvals=None):
@@ -206,7 +231,7 @@ def diff_gen(kouts, lat_pts, asf_coeffs, waist, sigma, wavelength=1.5e-7):
     for kout in kouts:
         kx, ky = kout
         kout_ext = np.array([kx, ky, sqrt(1 - kx**2 - ky**2)])
-        qs = np.add(-1 * _kins, kout_ext) / 2.0 / wavelength / 1e7
+        qs = np.subtract(kout_ext, _kins) / 2.0 / wavelength / 1e7
         asfs = np.array([asf_val(sqrt(absv), asf_coeffs) for absv in (qs * qs).sum(axis=1)])
         exps = np.exp(2 * np.pi / wavelength * np.dot(lat_pts, kout_ext) * 1j)
         yield sqrt(sigma) * constants.value('classical electron radius') * 1e3 * np.sum(asfs * _us * exps)
@@ -224,35 +249,23 @@ def diff_work(kouts, lat_pts, asf_coeffs, us, kins, sigma, wavelength=1.5e-7):
 
     Return list of diffracted wave values for given kouts.
     """
-    kxs, kys = kouts.T
-    kouts = np.dstack((kxs, kys, np.sqrt(1 - kxs**2 - kys**2)))[0]
-    qs = np.add(kouts[:, np.newaxis], -1 * kins) / 2.0 / wavelength / 1e7
-    asfs = asf_vals(np.sqrt((qs*qs).sum(axis=-1)), asf_coeffs)
-    exps = np.exp(2 * np.pi / wavelength * np.dot(kouts, lat_pts.T) * 1j)
-    return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * (asfs * exps * us).sum(axis=-1)
+    _kouts = ks_ext(kouts)
+    _qs = np.subtract(_kouts[:, np.newaxis], kins) / 2.0 / wavelength / 1e7
+    _asfs = asf_vals_nb(np.sqrt((_qs**2).sum(axis=-1)), asf_coeffs)
+    _phs = np.exp(2j * np.pi / wavelength * np.dot(_kouts, lat_pts.T))
+    return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * (_asfs * _phs * us).sum(axis=-1)
 
-def diff_plane(kouts, lat_pts, phins, asf_coeffs, kins, sigma, wavelength=1.5e-7):
+def diff_conv(kks, kis, kjs, lat_pts, phis, phjs, asf_coeffs, sigma, wavelength=1.5e-7):
     """
     Return diffraction pattern for given array of output wavevectors.
-
-    kouts - tuple of output wavevectors
-    lat_pts - coordinates of sample lattice atoms
-    asf_coeffs - atomic scattering factor fit coefficients
-    waist - beam waist radius
-    sigma - the solid angle of a detector pixel
-    wavelength - light wavelength
-
-    Return list of diffracted wave values for given kouts.
     """
-    koutxs, koutys = kouts.T
-    kinxs, kinys = kins.T
-    _kouts = np.dstack((koutxs, koutys, np.sqrt(1 - koutxs**2 - koutys**2)))[0]
-    _kins = np.dstack((kinxs, kinys, np.sqrt(1 - kinxs**2 - kinys**2)))[0]
-    _qs = np.add(_kouts[:, np.newaxis], -1 * _kins) / 2.0 / wavelength / 1e7
-    _asfs = asf_vals(np.sqrt((_qs**2).sum(axis=-1)), asf_coeffs)
-    _phouts = np.exp(2j * np.pi / wavelength * utils.outerdot(_kouts, lat_pts)) 
-    _phs = utils.couterdot(_phouts, phins)
-    return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * (_asfs * _phs).sum(axis=-1)
+    _kks = ks_ext(kks)
+    _qs = utils.qs_dot(_kks, kjs, kis) / 2.0 / wavelength / 1e7
+    _asfs = asf_vals_nb(_qs, asf_coeffs)
+    _phks = np.exp(2j * np.pi / wavelength * np.dot(_kks, lat_pts.T))
+    _phs = utils.outermult(_phks, phjs, phis)
+    _res = (_asfs * _phs).sum(axis=-1)
+    return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * _res
 
 if __name__ == "__main__":
     pass

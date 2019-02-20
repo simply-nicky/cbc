@@ -6,12 +6,12 @@ Utility functions for convergent beam diffraction project.
 from __future__ import print_function
 
 import os, numpy as np, numba as nb
-from math import sqrt, cos, sin
+from math import sqrt, cos, sin, exp
 from timeit import default_timer as timer
 import matplotlib.pyplot as plt
 
 @nb.njit(nb.complex128[:,:](nb.complex128[:,:], nb.complex128[:,:]), fastmath=True)
-def couterdot(A, B):
+def biouterdot(A, B):
     a = A.shape[0]
     b, c = B.shape
     C = np.empty((a, b), dtype=np.complex128)
@@ -24,6 +24,57 @@ def couterdot(A, B):
                 dC += A[i,k] * B[j,k]
             C[i,j] = dC
     return C
+
+@nb.njit(nb.complex128[:,:,:](nb.complex128[:,:], nb.complex128[:,:], nb.complex128[:,:]), fastmath=True)
+def treouterdot(A, B, C):
+    a = A.shape[0]
+    b = B.shape[0]
+    c, d = C.shape
+    D = np.empty((a, b, c), dtype=np.complex128)
+    A = np.ascontiguousarray(A)
+    B = np.ascontiguousarray(B)
+    C = np.ascontiguousarray(C)
+    for i in range(a):
+        for j in range(b):
+            for k in range(c):
+                dD = np.complex128(0.0)
+                for l in range(d):
+                    dD += A[i,l] * B[j,l] * C[k,l]
+                D[i,j,k] = dD
+    return D
+
+@nb.njit(nb.float64[:,:](nb.float64[:,:], nb.float64[:,:], nb.float64[:,:]), fastmath=True)
+def qs_dot(A, B, C):
+    a = A.shape[0]
+    b = B.shape[0]
+    c, d = C.shape
+    D = np.empty((a, b * c), dtype=np.float64)
+    A = np.ascontiguousarray(A)
+    B = np.ascontiguousarray(B)
+    C = np.ascontiguousarray(C)
+    for i in range(a):
+        for j in range(b):
+            for k in range(c):
+                dD = 0.0
+                for l in range(d):
+                    dD += (A[i,l] - B[j,l] - C[k,l])**2
+                D[i,j + k] = sqrt(dD)
+    return D
+
+@nb.njit(nb.complex128[:,:](nb.complex128[:,:], nb.complex128[:,:], nb.complex128[:]), fastmath=True)
+def outermult(A, B, C):
+    a = A.shape[0]
+    b = B.shape[0]
+    c = C.shape[0]
+    D = np.empty((a, b * c), dtype=np.complex128)
+    A = np.ascontiguousarray(A)
+    B = np.ascontiguousarray(B)
+    C = np.ascontiguousarray(C)
+    for i in range(a):
+        for j in range(b):
+            for k in range(c):
+                D[i,j + k] = A[i,k] * B[j,k] * C[k]
+    return D
 
 @nb.njit(nb.float64[:,:](nb.float64[:,:], nb.float64[:,:]), fastmath=True)
 def outerdot(A, B):
@@ -39,6 +90,22 @@ def outerdot(A, B):
                 dC += A[i,k] * B[j,k]
             C[i,j] = dC
     return C
+
+@nb.njit(nb.float64[:,:](nb.float64[:,:], nb.float64[:], nb.float64[:]), fastmath=True)
+def asf_dot(ss, acoeffs, bcoeffs):
+    a, b = ss.shape
+    c = acoeffs.shape[0]
+    asfs = np.empty((a, b), dtype=np.float64)
+    ss = np.ascontiguousarray(ss)
+    acoeffs = np.ascontiguousarray(acoeffs)
+    bcoeffs = np.ascontiguousarray(bcoeffs)
+    for i in range(a):
+        for j in range(b):
+            dasf = 0.0
+            for k in range(c):
+                dasf += acoeffs[k] * exp(-ss[i,j] * ss[i,j] * bcoeffs[k])
+            asfs[i,j] = dasf
+    return asfs
 
 def make_filename(path, filename, i=2):
     name, ext = os.path.splitext(filename)
