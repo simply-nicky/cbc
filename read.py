@@ -8,6 +8,7 @@ Can be used as a script in terminal.
 import cbc, h5py, os
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import cm
 
 def read(filename):
     """
@@ -34,8 +35,10 @@ def savefig(reslist):
     fig, ax = plt.subplots()
     for filename, data in reslist:
         ax.clear()
-        path = os.path.splitext(filename)[0]    
-        ax.contourf(data[1], data[2], np.abs(data[0]))
+        path = os.path.splitext(filename)[0]
+        ints = np.abs(data[0])   
+        ax.pcolor(data[1], data[2], ints, cmap=cm.viridis, vmin=ints.min(), vmax=ints.max())
+        ax.colorbar()
         ax.set_title(filename)
         fig.canvas.draw()
         fig.savefig(path + '.eps', format='eps')
@@ -49,7 +52,9 @@ def show(reslist):
     axes = cbc.utils.AxesSeq(len(reslist))
     for ax, res in zip(axes, reslist):
         filename, data = res
-        ax.contourf(data[1], data[2], np.abs(data[0]))
+        ints = np.abs(data[0])   
+        ax.pcolor(data[1], data[2], ints, cmap=cm.viridis, vmin=ints.min(), vmax=ints.max())
+        ax.colorbar()
         ax.set_title(filename)
     axes.show()
 

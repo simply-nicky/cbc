@@ -7,12 +7,13 @@ Dependencies: numpy, matplotlib abd h5py.
 Made by Nikolay Ivanov, 2018-2019.
 """
 
-from .functions import asf_coeffs, asf_val, gaussian, gaussian_abs, gaussian_f, gaussian_kins, gaussian_dist, lattice, lattice_phases, make_grid, kouts, kout_grid, diff_grid, diff_work, diff_conv
+from .functions import asf_coeffs, gaussian, gaussian_f, gaussian_kins, gaussian_dist, lattice, kouts, diff_henry
 from . import utils
 import numpy as np, os, concurrent.futures, h5py, datetime, logging, errno
 from functools import partial
 from multiprocessing import cpu_count
 import matplotlib.pyplot as plt
+from matplotlib import cm
 
 try:
     from logging import NullHandler
@@ -21,12 +22,12 @@ except ImportError:
         def emit(self, record):
             pass
 
-class ASF(object):
-    def __init__(self, elem='Au', wavelength=1.5e-7):
-        self.coeffs = asf_coeffs(elem, wavelength)
-
-    def __call__(self, s):
-        return asf_val(s, self.coeffs)
+class worker_star(object):
+    def __init__(self, worker):
+        self.worker = worker
+    
+    def __call__(self, args):
+        return self.worker(*args)
 
 class lat_args(object): 
     """
@@ -82,124 +83,127 @@ class diff_setup(object):
 
 class diff(diff_setup):
     """
-    Diffraction simulation arguments class.
+    Diffraction simulation setup class.
 
     self_args, lat_args, kout_args and asf_args - class objects
     waist - beam waist radius
     wavelength - light wavelength
+    elem - sample material chemical element
     """
     def __init__(self, setup_args=setup_args(), lat_args=lat_args(), kout_args=kout_args(), waist=2e-5, wavelength=1.5e-7, elem='Au'):
         diff_setup.__init__(self, setup_args)
         self.waist, self.wavelength, self.sigma, self.thdiv, self.elem = waist, wavelength, kout_args.pix_size**2 / kout_args.det_dist**2, wavelength / np.pi / waist, elem
         self.lat_args, self.kout_args = lat_args, kout_args
-        self.lat_pts = lattice(**self.lat_args.__dict__)
+        self.xs, self.ys, self.zs = lattice(**self.lat_args.__dict__)
 
     def rotate_lat(self, axis, theta):
-        self.lat_pts -= self.lat_args.lat_orig
-        self.lat_pts = np.tensordot(self.lat_pts, utils.rotation_matrix(axis, theta), axes=(1,1))
-        self.lat_pts += self.lat_args.lat_orig
+        """
+        Rotate the sample around the axis by the angle theta
+        """
+        self.xs -= self.lat_args.lat_orig[0]
+        self.ys -= self.lat_args.lat_orig[1]
+        self.zs -= self.lat_args.lat_orig[2]
+        self.xs, self.ys, self.zs = utils.rotate(utils.rotation_matrix(axis, theta), self.xs, self.ys, self.zs)
+        self.xs += self.lat_args.lat_orig[0]
+        self.ys += self.lat_args.lat_orig[1]
+        self.zs += self.lat_args.lat_orig[2]
     
     def move_lat(self, z=None):
+        """
+        Move the sample up- or downstream by distance z.
+        """
         if z is None:
             z = max(self.lat_args.Nx * self.lat_args.a, self.lat_args.Ny * self.lat_args.b, self.lat_args.Nz * self.lat_args.c) / self.thdiv
-        self.lat_args.lat_orig = [0, 0, z]
-        self.lat_pts += [0, 0, z]
+        self.lat_args.lat_orig[2] = z
+        self.zs += self.lat_args.lat_orig[2]
 
-    def diff(self):
+    def henry(self):
         """
-        Serially calculate diffraction results in a grid.
+        Convergent gaussian beam diffraction based on Henry's equations.
         """
-        self.logger.info('Starting serial calculation of diffraction pattern with following parameters:')
+        self.logger.info("Setup for diffraction based on Henry's equations with following parameters:")
         for args in (self.lat_args, self.kout_args):
             for (key, value) in args.__dict__.items():
                 self.logger.info('%-9s=%+28s' % (key, value))
-        _kxs, _kys = kout_grid(**self.kout_args.__dict__)
+        _kxs, _kys = kouts(**self.kout_args.__dict__)
+        _us = gaussian(self.xs, self.ys, self.zs, self.waist, self.wavelength)
         _asf_coeffs = asf_coeffs(self.elem, self.wavelength)
-        _diffs = diff_grid(_kxs, _kys, self.lat_pts, asf_coeffs=_asf_coeffs, waist=self.waist, sigma=self.sigma, wavelength=self.wavelength)
-        self.logger.info('The calculation has ended, %d diffraction pattern values total' % _diffs.size)
-        return diff_res(_kxs, _kys, _diffs, self.time, self.path, self.logger, self.lat_args, self.kout_args, self.waist, self.wavelength, self.elem)
+        _kins = gaussian_kins(self.xs, self.ys, self.zs, self.waist, self.wavelength)
+        _worker = partial(diff_henry, xs=self.xs, ys=self.ys, zs=self.zs, kins=_kins, us=_us, asf_coeffs=_asf_coeffs, waist=self.waist, sigma=self.sigma, wavelength=self.wavelength)
+        _num = 3 * self.xs.size
+        return diff_calc(self, _worker, _kxs, _kys, _num)
 
-    def diff_pool(self, chunk_size=2**8):
-        """
-        Concurrently calculate diffraction pattern.
-        """
-        self.logger.info('Starting concurrent calculation of diffraction pattern with following parameters:')
-        for args in (self.lat_args, self.kout_args):
-            for (key, value) in args.__dict__.items():
-                self.logger.info('%-9s=%+28s' % (key, value))
-        _kouts = kouts(**self.kout_args.__dict__)
-        _us = gaussian(self.lat_pts, self.waist, self.wavelength)
-        _asf_coeffs = asf_coeffs(self.elem, self.wavelength)
-        _kins = gaussian_kins(self.lat_pts, self.waist, self.wavelength)
-        _worker = partial(diff_work, lat_pts=self.lat_pts, kins=_kins, us=_us, asf_coeffs=_asf_coeffs, sigma=self.sigma, wavelength=self.wavelength)
-        _n = max(cpu_count(), len(_kouts) / chunk_size)
-        _diff_list = []
-        with concurrent.futures.ProcessPoolExecutor() as executor:
-            for diff in executor.map(_worker, np.array_split(_kouts, _n)):
-                _diff_list.extend(diff)
-        self.logger.info('The calculation has ended, %d diffraction pattern values total' % len(_diff_list))
-        return diff_res(*make_grid(_kouts, _diff_list), time=self.time, path=self.path, logger=self.logger, lat_args=self.lat_args, kout_args=self.kout_args, waist=self.waist, wavelength=self.wavelength, elem=self.elem)
+class diff_calc(object):
+    """
+    Diffraction calculation class.
+
+    setup - diff class object
+    worker - worker function
+    kxs, kys - arguments
+    num - number of elements to calculate per one argument element
+    """
+    thread_size = 4000000
+
+    def __init__(self, setup, worker, kxs, kys, num):
+        self.setup, self.worker, self.kxs, self.kys, self.num = setup, worker, kxs, kys, num
     
-    def diff_conv(self, knum=100, chunk_size=2**8):
-        """
-        Concurrently calculate diffraction patttern based on convolution formula.
-        """
-        self.logger.info('Starting concurrent calculation of diffraction pattern based on convolution formula with following parameters:')
-        for args in (self.lat_args, self.kout_args):
-            for (key, value) in args.__dict__.items():
-                self.logger.info('%-9s=%+28s' % (key, value))
-        _kis = gaussian_kins(self.lat_pts, self.waist, self.wavelength)
-        _kjs = gaussian_dist(knum, self.lat_args.lat_orig[-1], self.waist, self.wavelength)
-        _kks = kouts(**self.kout_args.__dict__)
-        _asf_coeffs = asf_coeffs(self.elem, self.wavelength)
-        _phis = np.exp(-2j * np.pi / self.wavelength * (_kis * self.lat_pts).sum(axis=-1))
-        _phjs = np.exp(-2j * np.pi / self.wavelength * utils.outerdot(_kjs, self.lat_pts))
-        _worker = partial(diff_conv, kis=_kis, kjs=_kjs, lat_pts=self.lat_pts, phis=_phis, phjs=_phjs, asf_coeffs=_asf_coeffs, sigma=self.sigma, wavelength=self.wavelength)
-        _n = max(cpu_count(), len(_kks) / chunk_size)
-        _diff_list = []
-        with concurrent.futures.ProcessPoolExecutor() as executor:
-            for diff in executor.map(_worker, np.array_split(_kks, _n)):
-                _diff_list.extend(diff)
-        self.logger.info('The calculation has ended, %d diffraction pattern values total' % len(_diff_list))
-        return diff_res(*make_grid(_kks, _diff_list), time=self.time, path=self.path, logger=self.logger, lat_args=self.lat_args, kout_args=self.kout_args, waist=self.waist, wavelength=self.wavelength, elem=self.elem)
+    def serial(self):
+        self.setup.logger.info('Starting serial calculation')
+        _res = self.worker(self.kxs.ravel(), self.kys.ravel()).reshape(self.kxs.shape)
+        self.setup.logger.info('The calculation has ended, %d diffraction pattern values total' % _res.size)
+        return diff_res(self.setup, _res, self.kxs, self.kys)
 
-class diff_res(diff):
+    def pool(self):
+        _chunk_size = self.thread_size // self.num
+        _thread_num = max(cpu_count(), self.kxs.size // _chunk_size)
+        _res = []
+        self.setup.logger.info('Starting concurrent calculation, %d threads, %d chunk size' % (_thread_num, _chunk_size))
+        with concurrent.futures.ProcessPoolExecutor() as executor:
+            for diff in executor.map(worker_star(self.worker), zip(np.array_split(self.kxs.ravel(), _thread_num), np.array_split(self.kys.ravel(), _thread_num))):
+                _res.extend(diff)
+        self.setup.logger.info('The calculation has ended, %d diffraction pattern values total' % len(_res))
+        _res = np.array(_res).reshape(self.kxs.shape)
+        return diff_res(self.setup, _res, self.kxs, self.kys)
+
+class diff_res(object):
     """
     Diffraction results class.
 
+    setup - diff class object
+    res - diffracted wave values for given kxs and kys
     kxs, kys - x and y coordinates of output wavevectors
-    diffs - diffracted wave values for given kxs and kys
-    time, path, logger, lat_args, kout_args, asf_args, waist, wavelength - attributes inherited from diff class
     """
-    def __init__(self, kxs, kys, diffs, time, path, logger, lat_args, kout_args, waist, wavelength, elem):
-        self.kxs, self.kys, self.diffs = kxs, kys, diffs
-        self.time, self.path, self.logger, self.lat_args, self.kout_args, self.waist, self.wavelength, self.elem = time, path, logger, lat_args, kout_args, waist, wavelength, elem
+    def __init__(self, setup, res, kxs, kys):
+        self.setup, self.res, self.kxs, self.kys = setup, res, kxs, kys
 
     def plot(self):
-        self.logger.info('Plotting the results')
-        plt.contourf(self.kxs, self.kys, np.abs(self.diffs))
+        self.setup.logger.info('Plotting the results')
+        ints = np.abs(self.res)
+        plt.pcolor(self.kxs, self.kys, ints, cmap=cm.viridis, vmin=ints.min(), vmax=ints.max())
+        plt.colorbar()
         plt.show()
+        self.setup.logger.info('Plotting has ended')
 
     def write(self):
-        self.logger.info('Writing the results:')
-        self.logger.info('Folder: %s' % self.path)
+        self.setup.logger.info('Writing the results:')
+        self.setup.logger.info('Folder: %s' % self.setup.path)
         try:
-            os.makedirs(self.path)
+            os.makedirs(self.setup.path)
         except OSError as e:
             if e.errno != errno.EEXIST: raise
-        _filename = utils.make_filename(self.path, 'diff_' + datetime.datetime.now().strftime('%d-%m-%Y_%H-%M-%S') + '.hdf5')
-        self.logger.info('Filename: %s' % _filename)
-        _filediff = h5py.File(os.path.join(self.path, _filename), 'w')
+        _filename = utils.make_filename(self.setup.path, 'diff_' + datetime.datetime.now().strftime('%d-%m-%Y_%H-%M-%S') + '.hdf5')
+        self.setup.logger.info('Filename: %s' % _filename)
+        _filediff = h5py.File(os.path.join(self.setup.path, _filename), 'w')
         _diff_args = _filediff.create_group('arguments')
-        _diff_args.create_dataset('wavelength', data=self.wavelength)
-        _diff_args.create_dataset('sample\'s material', data=self.elem)
-        _diff_args.create_dataset('beam waist radius', data=self.waist)
-        for args in (self.lat_args, self.kout_args):
+        _diff_args.create_dataset('wavelength', data=self.setup.wavelength)
+        _diff_args.create_dataset('sample\'s material', data=self.setup.elem)
+        _diff_args.create_dataset('beam waist radius', data=self.setup.waist)
+        for args in (self.setup.lat_args, self.setup.kout_args):
             for (key, value) in args.__dict__.items():
                 _diff_args.create_dataset(key, data=value)
         _diff_res = _filediff.create_group('results')
         _diff_res.create_dataset('x coordinate of output wavevectors', data=self.kxs)
         _diff_res.create_dataset('y coordinate of output wavevectors', data=self.kys)
-        _diff_res.create_dataset('diffracted lightwave values', data=self.diffs)
+        _diff_res.create_dataset('diffracted lightwave values', data=self.res)
         _filediff.close()
-        self.logger.info('Writing is completed')
+        self.setup.logger.info('Writing is completed')

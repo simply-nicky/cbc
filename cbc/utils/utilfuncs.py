@@ -10,91 +10,25 @@ from math import sqrt, cos, sin, exp
 from timeit import default_timer as timer
 import matplotlib.pyplot as plt
 
-@nb.njit(nb.complex128[:,:](nb.complex128[:,:], nb.complex128[:,:]), fastmath=True)
-def biouterdot(A, B):
-    a = A.shape[0]
-    b, c = B.shape
-    C = np.empty((a, b), dtype=np.complex128)
-    A = np.ascontiguousarray(A)
-    B = np.ascontiguousarray(B)
+@nb.njit(nb.complex128[:,:](nb.float64[:,:], nb.float64[:], nb.float64[:], nb.float64[:], nb.float64), fastmath=True)
+def phase(ks, xs, ys, zs, wavelength):
+    a = ks.shape[0]
+    b = xs.size
+    res = np.empty((a, b), dtype=np.complex128)
+    ks = np.ascontiguousarray(ks)
+    xs = np.ascontiguousarray(xs)
+    ys = np.ascontiguousarray(ys)
+    zs = np.ascontiguousarray(zs)
     for i in range(a):
         for j in range(b):
-            dC = np.complex128(0.0)
-            for k in range(c):
-                dC += A[i,k] * B[j,k]
-            C[i,j] = dC
-    return C
-
-@nb.njit(nb.complex128[:,:,:](nb.complex128[:,:], nb.complex128[:,:], nb.complex128[:,:]), fastmath=True)
-def treouterdot(A, B, C):
-    a = A.shape[0]
-    b = B.shape[0]
-    c, d = C.shape
-    D = np.empty((a, b, c), dtype=np.complex128)
-    A = np.ascontiguousarray(A)
-    B = np.ascontiguousarray(B)
-    C = np.ascontiguousarray(C)
-    for i in range(a):
-        for j in range(b):
-            for k in range(c):
-                dD = np.complex128(0.0)
-                for l in range(d):
-                    dD += A[i,l] * B[j,l] * C[k,l]
-                D[i,j,k] = dD
-    return D
-
-@nb.njit(nb.float64[:,:](nb.float64[:,:], nb.float64[:,:], nb.float64[:,:]), fastmath=True)
-def qs_dot(A, B, C):
-    a = A.shape[0]
-    b = B.shape[0]
-    c, d = C.shape
-    D = np.empty((a, b * c), dtype=np.float64)
-    A = np.ascontiguousarray(A)
-    B = np.ascontiguousarray(B)
-    C = np.ascontiguousarray(C)
-    for i in range(a):
-        for j in range(b):
-            for k in range(c):
-                dD = 0.0
-                for l in range(d):
-                    dD += (A[i,l] - B[j,l] - C[k,l])**2
-                D[i,j + k] = sqrt(dD)
-    return D
-
-@nb.njit(nb.complex128[:,:](nb.complex128[:,:], nb.complex128[:,:], nb.complex128[:]), fastmath=True)
-def outermult(A, B, C):
-    a = A.shape[0]
-    b = B.shape[0]
-    c = C.shape[0]
-    D = np.empty((a, b * c), dtype=np.complex128)
-    A = np.ascontiguousarray(A)
-    B = np.ascontiguousarray(B)
-    C = np.ascontiguousarray(C)
-    for i in range(a):
-        for j in range(b):
-            for k in range(c):
-                D[i,j + k] = A[i,k] * B[j,k] * C[k]
-    return D
-
-@nb.njit(nb.float64[:,:](nb.float64[:,:], nb.float64[:,:]), fastmath=True)
-def outerdot(A, B):
-    a = A.shape[0]
-    b, c = B.shape
-    C = np.empty((a, b), dtype=np.float64)
-    A = np.ascontiguousarray(A)
-    B = np.ascontiguousarray(B)
-    for i in range(a):
-        for j in range(b):
-            dC = 0.0
-            for k in range(c):
-                dC += A[i,k] * B[j,k]
-            C[i,j] = dC
-    return C
+            _ph = ks[i,0] * xs[j] + ks[i,1] * ys[j] + ks[i,2] * zs[j]
+            res[i,j] = np.complex128(cos(2 * np.pi / wavelength * _ph) + sin(2 * np.pi / wavelength * _ph) * 1j)
+    return res
 
 @nb.njit(nb.float64[:,:](nb.float64[:,:], nb.float64[:], nb.float64[:]), fastmath=True)
-def asf_dot(ss, acoeffs, bcoeffs):
+def asf_sum(ss, acoeffs, bcoeffs):
     a, b = ss.shape
-    c = acoeffs.shape[0]
+    c = acoeffs.size
     asfs = np.empty((a, b), dtype=np.float64)
     ss = np.ascontiguousarray(ss)
     acoeffs = np.ascontiguousarray(acoeffs)
@@ -106,6 +40,37 @@ def asf_dot(ss, acoeffs, bcoeffs):
                 dasf += acoeffs[k] * exp(-ss[i,j] * ss[i,j] * bcoeffs[k])
             asfs[i,j] = dasf
     return asfs
+
+@nb.njit(nb.float64[:,:](nb.float64[:,:], nb.float64[:,:]), fastmath=True)
+def q_abs(kout, kin):
+    a = kout.shape[0]
+    b, c = kin.shape
+    qs = np.empty((a, b), dtype=np.float64)
+    kout = np.ascontiguousarray(kout)
+    kin = np.ascontiguousarray(kin)
+    for i in range(a):
+        for j in range(b):
+            dq = 0.0
+            for k in range(c):
+                dq += (kout[i,k] - kin[j,k])**2
+            qs[i,j] = sqrt(dq)
+    return qs
+
+@nb.njit(nb.types.UniTuple(nb.float64[:], 3)(nb.float64[:,:], nb.float64[:], nb.float64[:], nb.float64[:]), fastmath=True)
+def rotate(m, xs, ys, zs):
+    a = xs.size
+    XS = np.empty(a, dtype=np.float64)
+    YS = np.empty(a, dtype=np.float64)
+    ZS = np.empty(a, dtype=np.float64)
+    m = np.ascontiguousarray(m)
+    xs = np.ascontiguousarray(xs)
+    ys = np.ascontiguousarray(ys)
+    zs = np.ascontiguousarray(zs)
+    for i in range(a):
+        XS[i] = m[0,0] * xs[i] + m[0,1] * ys[i] + m[0,2] * zs[i]
+        YS[i] = m[1,0] * xs[i] + m[1,1] * ys[i] + m[1,2] * zs[i]
+        ZS[i] = m[2,0] * xs[i] + m[2,1] * ys[i] + m[2,2] * zs[i]
+    return XS, YS, ZS
 
 def make_filename(path, filename, i=2):
     name, ext = os.path.splitext(filename)
@@ -186,9 +151,9 @@ class AxesSeq(object):
         return iter(self.axes)
 
     def on_keypress(self, event):
-        if event.key == 'right':
+        if event.key == 'up':
             self.next_plot()
-        elif event.key == 'left':
+        elif event.key == 'down':
             self.prev_plot()
         else:
             return
