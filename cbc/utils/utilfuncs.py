@@ -25,12 +25,12 @@ def phase(ks, xs, ys, zs, wavelength):
             res[i,j] = np.complex128(cos(2 * np.pi / wavelength * _ph) + sin(2 * np.pi / wavelength * _ph) * 1j)
     return res
 
-@nb.njit(nb.complex128[:,:,:](nb.float64[:,:], nb.float64[:,:], nb.float64[:], nb.float64[:], nb.float64[:], nb.float64), fastmath=True)
+@nb.njit(nb.complex128[:,:](nb.float64[:,:], nb.float64[:,:], nb.float64[:], nb.float64[:], nb.float64[:], nb.float64), fastmath=True)
 def phase_conv(kos, kjs, xs, ys, zs, wavelength):
     a = kos.shape[0]
-    b = xs.shape[0]
-    c = kjs.shape[0]
-    res = np.empty((a, b, c), dtype=np.complex128)
+    b = kjs.shape[0]
+    c = xs.shape[0]
+    res = np.empty((a, b), dtype=np.complex128)
     kos = np.ascontiguousarray(kos)
     kjs = np.ascontiguousarray(kjs)
     xs = np.ascontiguousarray(xs)
@@ -38,9 +38,11 @@ def phase_conv(kos, kjs, xs, ys, zs, wavelength):
     zs = np.ascontiguousarray(zs)
     for i in range(a):
         for j in range(b):
+            _ph = np.complex128(0.0)
             for k in range(c):
-                _ph = (kos[i,0] - kjs[k,0]) * xs[j] + (kos[i,1] - kjs[k,1]) * ys[j] + (kos[i,2] - kjs[k,2]) * zs[j]
-                res[i,j,k] = np.complex128(cos(2 * np.pi / wavelength * _ph) + sin(2 * np.pi / wavelength * _ph) * 1j)
+                _arg = (kos[i,0] - kjs[j,0]) * xs[k] + (kos[i,1] - kjs[j,1]) * ys[k] + (kos[i,2] - kjs[j,2]) * zs[k]
+                _ph += np.complex128(cos(2 * np.pi / wavelength * _arg) + sin(2 * np.pi / wavelength * _arg) * 1j)
+            res[i,j] = _ph
     return res
 
 @nb.njit(nb.float64[:](nb.float64[:], nb.float64[:], nb.float64[:]), fastmath=True)

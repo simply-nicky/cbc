@@ -144,9 +144,8 @@ class diff(diff_setup):
         _kxs, _kys = det_kouts(**self.kout_args.__dict__)
         _us = gaussian(self.xs, self.ys, self.zs, self.waist, self.wavelength)
         _asf_coeffs = asf_coeffs(self.elem, self.wavelength)
-        _kis = gaussian_kins(self.xs, self.ys, self.zs, self.waist, self.wavelength)
         _kjs = gaussian_dist(knum, self.lat_args.lat_orig[2], self.waist, self.wavelength)
-        _worker = partial(diff_conv, xs=self.xs, ys=self.ys, zs=self.zs, kis=_kis, kjs=_kjs, us=_us, asf_coeffs=_asf_coeffs, waist=self.waist, sigma=self.sigma, wavelength=self.wavelength)
+        _worker = partial(diff_conv, xs=self.xs, ys=self.ys, zs=self.zs, kjs=_kjs, us=_us, asf_coeffs=_asf_coeffs, waist=self.waist, sigma=self.sigma, wavelength=self.wavelength)
         _num = self.xs.size * knum
         return diff_calc(self, _worker, _kxs, _kys, _num)
 
@@ -159,14 +158,14 @@ class diff_calc(object):
     kxs, kys - arguments
     num - number of elements to calculate per one argument element
     """
-    thread_size = 50000000          # ~1-2 Gb peak RAM usage
+    thread_size = 20000000          # ~1-2 Gb peak RAM usage
 
     def __init__(self, setup, worker, kxs, kys, num):
         self.setup, self.worker, self.kxs, self.kys, self.num = setup, worker, kxs, kys, num
     
     def serial(self):
         _chunk_size = self.thread_size // self.num
-        _thread_num = self.kxs.size // _chunk_size
+        _thread_num = self.kxs.size // _chunk_size + 1
         self.setup.logger.info('Starting serial calculation')
         _res = []
         for diff in map(worker_star(self.worker), zip(np.array_split(self.kxs.ravel(), _thread_num), np.array_split(self.kys.ravel(), _thread_num))):
@@ -201,6 +200,14 @@ class diff_res(object):
     def plot(self):
         self.setup.logger.info('Plotting the results')
         ints = np.abs(self.res)
+        plt.pcolor(self.kxs, self.kys, ints, cmap=cm.viridis, vmin=ints.min(), vmax=ints.max())
+        plt.colorbar()
+        plt.show()
+        self.setup.logger.info('Plotting has ended')
+
+    def plot_log(self):
+        self.setup.logger.info('Plotting the results in log scale')
+        ints = np.log(np.abs(self.res))
         plt.pcolor(self.kxs, self.kys, ints, cmap=cm.viridis, vmin=ints.min(), vmax=ints.max())
         plt.colorbar()
         plt.show()

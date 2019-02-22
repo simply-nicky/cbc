@@ -89,7 +89,8 @@ def gaussian_dist(N, z, waist, wavelength):
     zr = np.pi * waist**2 / wavelength
     wz = waist * sqrt(1 + z**2 / zr**2)
     thdiv = wavelength / np.pi / wz
-    return np.random.multivariate_normal([0, 0], [[thdiv**2 / 2, 0], [0, thdiv**2 / 2]], N)
+    kxs, kys = np.random.multivariate_normal([0, 0], [[thdiv**2 / 2, 0], [0, thdiv**2 / 2]], N).T
+    return kout_parax(kxs, kys)
 
 def kout_parax(kxs, kys):
     """
@@ -153,7 +154,7 @@ def diff_henry(kxs, kys, xs, ys, zs, kins, us, asf_coeffs, waist, sigma, wavelen
     _phs = utils.phase(_kouts, xs, ys, zs, wavelength)
     return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * (_asfs * _phs * us).sum(axis=-1)
 
-def diff_conv(kxs, kys, xs, ys, zs, kis, kjs, us, asf_coeffs, waist, sigma, wavelength):
+def diff_conv(kxs, kys, xs, ys, zs, kjs, us, asf_coeffs, waist, sigma, wavelength):
     """
     Return diffraction pattern intensity for given array of output wavevectors base on convolution equations.
 
@@ -170,11 +171,10 @@ def diff_conv(kxs, kys, xs, ys, zs, kis, kjs, us, asf_coeffs, waist, sigma, wave
     Return np.array of diffracted wave values with the same shape as kxs and kys.
     """
     _kouts = kout_parax(kxs, kys)
-    _qabs = utils.q_abs_conv(_kouts, kis, kjs)
+    _qabs = utils.q_abs(_kouts, kjs) / 2.0 / wavelength / 1e7
     _asfs = asf_vals(_qabs, asf_coeffs)
     _phs = utils.phase_conv(_kouts, kjs, xs, ys, zs, wavelength)
-    _phis = np.exp(-2j * np.pi / wavelength * np.einsum('ij,ji->i', kis, np.vstack((xs, ys, zs))))
-    return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * ((_asfs * _phs).sum(axis=-1) * _phis).sum(axis=-1) / kjs.shape[0]
+    return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * (_asfs * _phs).sum(axis=-1) / kjs.shape[0]
 
 if __name__ == "__main__":
     pass
