@@ -28,5 +28,5 @@ if __name__ == "__main__":
         kout_args= cbc.kout_args(det_dist=det_dist, detNx=detNx, detNy=detNy, pix_size=pix_size)
         diff = cbc.diff(setup_args=setup_args, lat_args=lat_args, kout_args=kout_args, waist=waist, wavelength=wavelength)
         diff.move_lat(lat_orig)
-        diffres = diff.diff_pool()
+        diffres = diff.henry().pool()
         diffres.write()

@@ -7,7 +7,7 @@ Dependencies: numpy, matplotlib abd h5py.
 Made by Nikolay Ivanov, 2018-2019.
 """
 
-from .functions import asf_coeffs, gaussian, gaussian_f, gaussian_kins, gaussian_dist, lattice, kouts, diff_henry
+from .functions import asf_coeffs, gaussian, gaussian_f, gaussian_kins, gaussian_dist, lattice, det_kouts, diff_henry, diff_conv
 from . import utils
 import numpy as np, os, concurrent.futures, h5py, datetime, logging, errno
 from functools import partial
@@ -45,7 +45,7 @@ class lat_args(object):
 
 class kout_args(object):
     """
-    kouts function arguments class.
+    det_kouts function arguments class.
 
     det_dist - distance between detector and sample
     detNx, detNy - numbers of pixels in x and y axes
@@ -125,12 +125,29 @@ class diff(diff_setup):
         for args in (self.lat_args, self.kout_args):
             for (key, value) in args.__dict__.items():
                 self.logger.info('%-9s=%+28s' % (key, value))
-        _kxs, _kys = kouts(**self.kout_args.__dict__)
+        _kxs, _kys = det_kouts(**self.kout_args.__dict__)
         _us = gaussian(self.xs, self.ys, self.zs, self.waist, self.wavelength)
         _asf_coeffs = asf_coeffs(self.elem, self.wavelength)
         _kins = gaussian_kins(self.xs, self.ys, self.zs, self.waist, self.wavelength)
         _worker = partial(diff_henry, xs=self.xs, ys=self.ys, zs=self.zs, kins=_kins, us=_us, asf_coeffs=_asf_coeffs, waist=self.waist, sigma=self.sigma, wavelength=self.wavelength)
-        _num = 3 * self.xs.size
+        _num = self.xs.size
+        return diff_calc(self, _worker, _kxs, _kys, _num)
+
+    def conv(self, knum=1000):
+        """
+        Convergent gaussian beam diffraction based on convolution equations.
+        """
+        self.logger.info("Setup for diffraction based on convolution equations with following parameters:")
+        for args in (self.lat_args, self.kout_args):
+            for (key, value) in args.__dict__.items():
+                self.logger.info('%-9s=%+28s' % (key, value))
+        _kxs, _kys = det_kouts(**self.kout_args.__dict__)
+        _us = gaussian(self.xs, self.ys, self.zs, self.waist, self.wavelength)
+        _asf_coeffs = asf_coeffs(self.elem, self.wavelength)
+        _kis = gaussian_kins(self.xs, self.ys, self.zs, self.waist, self.wavelength)
+        _kjs = gaussian_dist(knum, self.lat_args.lat_orig[2], self.waist, self.wavelength)
+        _worker = partial(diff_conv, xs=self.xs, ys=self.ys, zs=self.zs, kis=_kis, kjs=_kjs, us=_us, asf_coeffs=_asf_coeffs, waist=self.waist, sigma=self.sigma, wavelength=self.wavelength)
+        _num = self.xs.size * knum
         return diff_calc(self, _worker, _kxs, _kys, _num)
 
 class diff_calc(object):
@@ -142,14 +159,19 @@ class diff_calc(object):
     kxs, kys - arguments
     num - number of elements to calculate per one argument element
     """
-    thread_size = 4000000
+    thread_size = 50000000          # ~1-2 Gb peak RAM usage
 
     def __init__(self, setup, worker, kxs, kys, num):
         self.setup, self.worker, self.kxs, self.kys, self.num = setup, worker, kxs, kys, num
     
     def serial(self):
+        _chunk_size = self.thread_size // self.num
+        _thread_num = self.kxs.size // _chunk_size
         self.setup.logger.info('Starting serial calculation')
-        _res = self.worker(self.kxs.ravel(), self.kys.ravel()).reshape(self.kxs.shape)
+        _res = []
+        for diff in map(worker_star(self.worker), zip(np.array_split(self.kxs.ravel(), _thread_num), np.array_split(self.kys.ravel(), _thread_num))):
+                _res.extend(diff)
+        _res = np.array(_res).reshape(self.kxs.shape)
         self.setup.logger.info('The calculation has ended, %d diffraction pattern values total' % _res.size)
         return diff_res(self.setup, _res, self.kxs, self.kys)
 

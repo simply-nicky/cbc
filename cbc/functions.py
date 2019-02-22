@@ -38,7 +38,7 @@ def asf_vals(ss, asf_coeffs):
     asf_coeffs - atomic scattering factor fit coefficients
     """
     acoeffs, bcoeffs = asf_coeffs[:5], asf_coeffs[6:]
-    return utils.asf_sum(ss, acoeffs, bcoeffs) + asf_coeffs[5]     # -ss[:, :, np.newaxis]**2 * bcoeffs[np.newaxis, :]
+    return (utils.asf_sum(ss.ravel(), acoeffs, bcoeffs) + asf_coeffs[5]).reshape(ss.shape)
 
 def gaussian(xs, ys, zs, waist=1e-4, wavelength=1.5e-7):
     """
@@ -101,7 +101,7 @@ def kout_parax(kxs, kys):
     kouts[:,0] = kxs; kouts[:,1] = kys; kouts[:,2] = 1.0 - (kxs**2 + kys**2) / 2.0
     return kouts
 
-def kouts(det_dist=54, detNx=512, detNy=512, pix_size=55e-3):
+def det_kouts(det_dist=54, detNx=512, detNy=512, pix_size=55e-3):
     """
     Return output wave vectors array for given detector at given distance from the sample.
 
@@ -147,12 +147,34 @@ def diff_henry(kxs, kys, xs, ys, zs, kins, us, asf_coeffs, waist, sigma, wavelen
 
     Return np.array of diffracted wave values with the same shape as kxs and kys.
     """
-    _us = gaussian(xs, ys, zs, waist, wavelength)
     _kouts = kout_parax(kxs, kys)
     _qabs = utils.q_abs(_kouts, kins) / 2.0 / wavelength / 1e7
     _asfs = asf_vals(_qabs, asf_coeffs)
     _phs = utils.phase(_kouts, xs, ys, zs, wavelength)
     return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * (_asfs * _phs * us).sum(axis=-1)
+
+def diff_conv(kxs, kys, xs, ys, zs, kis, kjs, us, asf_coeffs, waist, sigma, wavelength):
+    """
+    Return diffraction pattern intensity for given array of output wavevectors base on convolution equations.
+
+    kxs, kys - x and y coordinates of output wavevectors
+    xs, ys, zs - coordinates of sample lattice atoms
+    kins - gaussian beam incoming wavevectors
+    kjs - convolution incoming wavevectors based on gaussian beam distribution
+    us - gaussian beam wave amplitudes
+    asf_coeffs - atomic scattering factor fit coefficients
+    waist - beam waist radius
+    sigma - the solid angle of a detector pixel
+    wavelength - light wavelength
+
+    Return np.array of diffracted wave values with the same shape as kxs and kys.
+    """
+    _kouts = kout_parax(kxs, kys)
+    _qabs = utils.q_abs_conv(_kouts, kis, kjs)
+    _asfs = asf_vals(_qabs, asf_coeffs)
+    _phs = utils.phase_conv(_kouts, kjs, xs, ys, zs, wavelength)
+    _phis = np.exp(-2j * np.pi / wavelength * np.einsum('ij,ji->i', kis, np.vstack((xs, ys, zs))))
+    return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * ((_asfs * _phs).sum(axis=-1) * _phis).sum(axis=-1) / kjs.shape[0]
 
 if __name__ == "__main__":
     pass

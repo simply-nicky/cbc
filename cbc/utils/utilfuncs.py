@@ -25,20 +25,37 @@ def phase(ks, xs, ys, zs, wavelength):
             res[i,j] = np.complex128(cos(2 * np.pi / wavelength * _ph) + sin(2 * np.pi / wavelength * _ph) * 1j)
     return res
 
-@nb.njit(nb.float64[:,:](nb.float64[:,:], nb.float64[:], nb.float64[:]), fastmath=True)
+@nb.njit(nb.complex128[:,:,:](nb.float64[:,:], nb.float64[:,:], nb.float64[:], nb.float64[:], nb.float64[:], nb.float64), fastmath=True)
+def phase_conv(kos, kjs, xs, ys, zs, wavelength):
+    a = kos.shape[0]
+    b = xs.shape[0]
+    c = kjs.shape[0]
+    res = np.empty((a, b, c), dtype=np.complex128)
+    kos = np.ascontiguousarray(kos)
+    kjs = np.ascontiguousarray(kjs)
+    xs = np.ascontiguousarray(xs)
+    ys = np.ascontiguousarray(ys)
+    zs = np.ascontiguousarray(zs)
+    for i in range(a):
+        for j in range(b):
+            for k in range(c):
+                _ph = (kos[i,0] - kjs[k,0]) * xs[j] + (kos[i,1] - kjs[k,1]) * ys[j] + (kos[i,2] - kjs[k,2]) * zs[j]
+                res[i,j,k] = np.complex128(cos(2 * np.pi / wavelength * _ph) + sin(2 * np.pi / wavelength * _ph) * 1j)
+    return res
+
+@nb.njit(nb.float64[:](nb.float64[:], nb.float64[:], nb.float64[:]), fastmath=True)
 def asf_sum(ss, acoeffs, bcoeffs):
-    a, b = ss.shape
-    c = acoeffs.size
-    asfs = np.empty((a, b), dtype=np.float64)
+    a = ss.size
+    b = acoeffs.size
+    asfs = np.empty(a, dtype=np.float64)
     ss = np.ascontiguousarray(ss)
     acoeffs = np.ascontiguousarray(acoeffs)
     bcoeffs = np.ascontiguousarray(bcoeffs)
     for i in range(a):
+        dasf = 0.0
         for j in range(b):
-            dasf = 0.0
-            for k in range(c):
-                dasf += acoeffs[k] * exp(-ss[i,j] * ss[i,j] * bcoeffs[k])
-            asfs[i,j] = dasf
+            dasf += acoeffs[j] * exp(-ss[i] * ss[i] * bcoeffs[j])
+        asfs[i] = dasf
     return asfs
 
 @nb.njit(nb.float64[:,:](nb.float64[:,:], nb.float64[:,:]), fastmath=True)
@@ -54,6 +71,24 @@ def q_abs(kout, kin):
             for k in range(c):
                 dq += (kout[i,k] - kin[j,k])**2
             qs[i,j] = sqrt(dq)
+    return qs
+
+@nb.njit(nb.float64[:,:,:](nb.float64[:,:], nb.float64[:,:], nb.float64[:,:]), fastmath=True)
+def q_abs_conv(kout, kis, kjs):
+    a = kout.shape[0]
+    b = kis.shape[0]
+    c, d = kjs.shape
+    qs = np.empty((a, b, c), dtype=np.float64)
+    kout = np.ascontiguousarray(kout)
+    kis = np.ascontiguousarray(kis)
+    kjs = np.ascontiguousarray(kjs)
+    for i in range(a):
+        for j in range(b):
+            for k in range(c):
+                dq = 0.0
+                for l in range(d):
+                    dq += (kout[i,l] - kis[j,l] - kjs[k,l])**2
+                qs[i,j,k] = sqrt(dq)
     return qs
 
 @nb.njit(nb.types.UniTuple(nb.float64[:], 3)(nb.float64[:,:], nb.float64[:], nb.float64[:], nb.float64[:]), fastmath=True)
