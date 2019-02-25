@@ -25,5 +25,5 @@ if __name__ == "__main__":
     diff.rotate_lat(axis, theta)
     start = timer()
     diffres = diff.henry().pool()
-    print('Estimated time: %f' % (timer() - start))
+    print('Estimated time: %fs' % (timer() - start))
     diffres.write()

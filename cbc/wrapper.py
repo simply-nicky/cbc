@@ -13,7 +13,7 @@ import numpy as np, os, concurrent.futures, h5py, datetime, logging, errno
 from functools import partial
 from multiprocessing import cpu_count
 import matplotlib.pyplot as plt
-from matplotlib import cm
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 try:
     from logging import NullHandler
@@ -200,16 +200,22 @@ class diff_res(object):
     def plot(self):
         self.setup.logger.info('Plotting the results')
         ints = np.abs(self.res)
-        plt.pcolor(self.kxs, self.kys, ints, cmap=cm.viridis, vmin=ints.min(), vmax=ints.max())
-        plt.colorbar()
+        fig, ax = plt.subplots()
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes('right', size='5%', pad=0.1)
+        im = ax.pcolor(self.kxs, self.kys, ints, cmap='viridis', vmin=ints.min(), vmax=ints.max())
+        fig.colorbar(im, cax=cax, orientation='vertical')
         plt.show()
         self.setup.logger.info('Plotting has ended')
 
     def plot_log(self):
         self.setup.logger.info('Plotting the results in log scale')
         ints = np.log(np.abs(self.res))
-        plt.pcolor(self.kxs, self.kys, ints, cmap=cm.viridis, vmin=ints.min(), vmax=ints.max())
-        plt.colorbar()
+        fig, ax = plt.subplots()
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes('right', size='5%', pad=0.1)
+        im = ax.pcolor(self.kxs, self.kys, ints, cmap='viridis', vmin=ints.min(), vmax=ints.max())
+        fig.colorbar(im, cax=cax, orientation='vertical')
         plt.show()
         self.setup.logger.info('Plotting has ended')
 

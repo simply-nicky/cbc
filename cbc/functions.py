@@ -61,7 +61,7 @@ def gaussian_f(kxs, kys, z, waist=1e-4, wavelength=1.5e-7):
     wavelength - light wavelength
     """
     k = 2 * np.pi / wavelength
-    return (2 * np.pi)**-2 * np.exp(-1j * k * z) * np.exp(-(kxs**2 + kys**2) * k**2 * waist**2 / 4) * np.exp(-0.5j * k * (kxs**2 + kys**2)  * z)
+    return (2 * np.pi)**-2 * np.exp(-1j * k * z) * np.exp(-(kxs**2 + kys**2) * k**2 * (waist**2 / 4 + 1j * z / 2 / k))
 
 def gaussian_kins(xs, ys, zs, waist=1e-4, wavelength=1.5e-7):
     """
@@ -86,9 +86,7 @@ def gaussian_dist(N, z, waist, wavelength):
     waist - beam waist radius    
     wavelength - light wavelength
     """
-    zr = np.pi * waist**2 / wavelength
-    wz = waist * sqrt(1 + z**2 / zr**2)
-    thdiv = wavelength / np.pi / wz
+    thdiv = wavelength / np.pi / waist
     kxs, kys = np.random.multivariate_normal([0, 0], [[thdiv**2 / 2, 0], [0, thdiv**2 / 2]], N).T
     return kout_parax(kxs, kys)
 
@@ -118,7 +116,7 @@ def det_kouts(det_dist=54, detNx=512, detNy=512, pix_size=55e-3):
 
 def lattice(a, b, c, Nx, Ny, Nz, lat_orig=[0, 0, 0]):
     """
-    Return atom coordinates of a cristalline sample.
+    Return atom coordinates of a crystalline sample.
 
     Nx, Ny, Nz - numbers of unit cells in a sample
     a, b, c - unit cell edge lengths

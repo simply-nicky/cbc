@@ -9,6 +9,7 @@ import os, numpy as np, numba as nb
 from math import sqrt, cos, sin, exp
 from timeit import default_timer as timer
 import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 @nb.njit(nb.complex128[:,:](nb.float64[:,:], nb.float64[:], nb.float64[:], nb.float64[:], nb.float64), fastmath=True)
 def phase(ks, xs, ys, zs, wavelength):
@@ -173,6 +174,44 @@ def search_rec(path, ext='hdf5', filelist=None):
             if f.endswith(ext):
                 filelist.append(os.path.join(root, f))
     return filelist
+
+class DataSeq(object):
+    def __init__(self, datas):
+        self.datas = datas
+        self.fig, self.ax = plt.subplots()
+        self.fig.canvas.mpl_connect('key_press_event', self.on_keypress)
+        self.index = 0
+
+    def on_keypress(self, event):
+        if event.key == 'up' and self.index < len(self.datas) - 1:
+            self.update_plot(self.index + 1)
+        elif event.key == 'down' and self.index > 0:
+            self.update_plot(self.index - 1)
+        else:
+            return
+        self.fig.canvas.draw()
+
+    def update_plot(self, index):
+        self.index = index
+        filename, (res, xs, ys) = self.datas[self.index]
+        ints = np.abs(res)
+        self.im.set_extent([xs.min(), xs.max(), ys.min(), ys.max()])
+        self.im.set_clim(vmin=ints.min(), vmax=ints.max())
+        self.im.set_data(ints)
+        self.ax.set_title(filename)
+
+    def show(self):
+        filename, (res, xs, ys) = self.datas[self.index]
+        ints = np.abs(res)
+        divider = make_axes_locatable(self.ax)
+        cax = divider.append_axes('right', size='5%', pad=0.1)
+        self.im = self.ax.imshow(ints, cmap='viridis', vmin=ints.min(), vmax=ints.max(),
+                                extent = [xs.min(), xs.max(), ys.min(), ys.max()],
+                                interpolation='nearest', origin='lower')
+        self.cbar = self.fig.colorbar(self.im, cax=cax, orientation='vertical')
+        self.ax.set_title(filename)
+        self.fig.canvas.draw()
+        plt.show()
 
 class AxesSeq(object):
     """
