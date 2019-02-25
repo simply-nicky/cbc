@@ -14,6 +14,7 @@ from functools import partial
 from multiprocessing import cpu_count
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+from matplotlib.colors import LogNorm
 
 try:
     from logging import NullHandler
@@ -203,18 +204,22 @@ class diff_res(object):
         fig, ax = plt.subplots()
         divider = make_axes_locatable(ax)
         cax = divider.append_axes('right', size='5%', pad=0.1)
-        im = ax.pcolor(self.kxs, self.kys, ints, cmap='viridis', vmin=ints.min(), vmax=ints.max())
+        im = ax.imshow(ints, cmap='viridis', vmin=ints.min(), vmax=ints.max(),
+                                extent = [self.kxs.min(), self.kxs.max(), self.kys.min(), self.kys.max()],
+                                interpolation='nearest', origin='lower')
         fig.colorbar(im, cax=cax, orientation='vertical')
         plt.show()
         self.setup.logger.info('Plotting has ended')
 
-    def plot_log(self):
+    def logplot(self):
         self.setup.logger.info('Plotting the results in log scale')
-        ints = np.log(np.abs(self.res))
+        ints = np.abs(self.res)
         fig, ax = plt.subplots()
         divider = make_axes_locatable(ax)
         cax = divider.append_axes('right', size='5%', pad=0.1)
-        im = ax.pcolor(self.kxs, self.kys, ints, cmap='viridis', vmin=ints.min(), vmax=ints.max())
+        im = ax.imshow(ints, cmap='viridis', norm=LogNorm(vmin=ints.min(), vmax=ints.max()),
+                                extent = [self.kxs.min(), self.kxs.max(), self.kys.min(), self.kys.max()],
+                                interpolation='nearest', origin='lower')
         fig.colorbar(im, cax=cax, orientation='vertical')
         plt.show()
         self.setup.logger.info('Plotting has ended')

@@ -24,8 +24,8 @@ if __name__ == "__main__":
     diff.move_lat(2 * zr)
     
     start = timer()
-    diffres = diff.conv(knum).pool()
+    diffres = diff.henry().pool()
     # diffres.write()
-    # print('Estimated time: %fs' % (timer() - start))
+    print('Estimated time: %fs' % (timer() - start))
     diffres.plot()
     # diffres2.plot()
