@@ -6,10 +6,10 @@ if __name__ == "__main__":
     waist = 4e-6
     wavelength = 1.5e-7
     a, b, c = 2e-6, 2.5e-6, 1e-5
-    Nx, Ny, Nz = 10, 10, 4
+    Nx, Ny, Nz = 20, 20, 6
 
-    detNx, detNy = 128, 128
-    pix_size = 55e-3
+    detNx, detNy = 512, 512
+    pix_size = 55e-3 / 4
     det_dist = 30
     knum = 5000
     zr = np.pi * waist**2 / wavelength
