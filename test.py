@@ -21,11 +21,15 @@ if __name__ == "__main__":
     diff = cbc.diff(setup_args=cbc.setup_args(handler=logging.FileHandler(logpath), relpath='results/'), kout_args=cbc.kout_args(det_dist=det_dist, detNx=detNx, detNy=detNy, pix_size=pix_size), lat_args=cbc.lat_args(a=a, b=b, c=c, Nx=Nx, Ny=Ny, Nz=Nz), waist=waist, wavelength=wavelength)
 
     # diff.rotate_lat(axis, theta)
-    diff.move_lat(2 * zr)
+    diff.move_lat(zr)
     
     start = timer()
     diffres = diff.henry().pool()
-    # diffres.write()
+    diffres2 = diff.conv(knum).pool()
+    diffres3 = diff.nocoh(knum).pool()
     print('Estimated time: %fs' % (timer() - start))
-    diffres.plot()
+    diffres.write()
+    diffres2.write()
+    diffres3.write()
+    # diffres.plot()
     # diffres2.plot()

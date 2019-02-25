@@ -158,7 +158,6 @@ def diff_conv(kxs, kys, xs, ys, zs, kjs, us, asf_coeffs, waist, sigma, wavelengt
 
     kxs, kys - x and y coordinates of output wavevectors
     xs, ys, zs - coordinates of sample lattice atoms
-    kins - gaussian beam incoming wavevectors
     kjs - convolution incoming wavevectors based on gaussian beam distribution
     us - gaussian beam wave amplitudes
     asf_coeffs - atomic scattering factor fit coefficients
@@ -173,6 +172,27 @@ def diff_conv(kxs, kys, xs, ys, zs, kjs, us, asf_coeffs, waist, sigma, wavelengt
     _asfs = asf_vals(_qabs, asf_coeffs)
     _phs = utils.phase_conv(_kouts, kjs, xs, ys, zs, wavelength)
     return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * (_asfs * _phs).sum(axis=-1) / kjs.shape[0]
+
+def diff_nocoh(kxs, kys, xs, ys, zs, kjs, us, asf_coeffs, waist, sigma, wavelength):
+    """
+    Return diffraction pattern intensity for given array of output wavevectors base on convolution noncoherent equations.
+
+    kxs, kys - x and y coordinates of output wavevectors
+    xs, ys, zs - coordinates of sample lattice atoms
+    kjs - convolution incoming wavevectors based on gaussian beam distribution
+    us - gaussian beam wave amplitudes
+    asf_coeffs - atomic scattering factor fit coefficients
+    waist - beam waist radius
+    sigma - the solid angle of a detector pixel
+    wavelength - light wavelength
+
+    Return np.array of diffracted wave values with the same shape as kxs and kys.
+    """
+    _kouts = kout_parax(kxs, kys)
+    _qabs = utils.q_abs(_kouts, kjs) / 2.0 / wavelength / 1e7
+    _asfs = asf_vals(_qabs, asf_coeffs)
+    _phs = utils.phase_conv(_kouts, kjs, xs, ys, zs, wavelength)
+    return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * np.abs(_asfs * _phs).sum(axis=-1) / kjs.shape[0]
 
 if __name__ == "__main__":
     pass

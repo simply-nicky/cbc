@@ -6,7 +6,7 @@ Utility functions for convergent beam diffraction project.
 from __future__ import print_function
 
 import os, numpy as np, numba as nb
-from math import sqrt, cos, sin, exp
+from math import sqrt, cos, sin, exp, pi
 from timeit import default_timer as timer
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -23,7 +23,7 @@ def phase(ks, xs, ys, zs, wavelength):
     for i in range(a):
         for j in range(b):
             _ph = ks[i,0] * xs[j] + ks[i,1] * ys[j] + ks[i,2] * zs[j]
-            res[i,j] = np.complex128(cos(2 * np.pi / wavelength * _ph) + sin(2 * np.pi / wavelength * _ph) * 1j)
+            res[i,j] = cos(2 * pi / wavelength * _ph) + sin(2 * pi / wavelength * _ph) * 1j
     return res
 
 @nb.njit(nb.complex128[:,:](nb.float64[:,:], nb.float64[:,:], nb.float64[:], nb.float64[:], nb.float64[:], nb.float64), fastmath=True)
@@ -39,10 +39,10 @@ def phase_conv(kos, kjs, xs, ys, zs, wavelength):
     zs = np.ascontiguousarray(zs)
     for i in range(a):
         for j in range(b):
-            _ph = np.complex128(0.0)
+            _ph = 0j
             for k in range(c):
                 _arg = (kos[i,0] - kjs[j,0]) * xs[k] + (kos[i,1] - kjs[j,1]) * ys[k] + (kos[i,2] - kjs[j,2]) * zs[k]
-                _ph += np.complex128(cos(2 * np.pi / wavelength * _arg) + sin(2 * np.pi / wavelength * _arg) * 1j)
+                _ph += cos(2 * pi / wavelength * _arg) + sin(2 * pi / wavelength * _arg) * 1j
             res[i,j] = _ph
     return res
 

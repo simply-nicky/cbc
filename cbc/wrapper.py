@@ -7,7 +7,7 @@ Dependencies: numpy, matplotlib abd h5py.
 Made by Nikolay Ivanov, 2018-2019.
 """
 
-from .functions import asf_coeffs, gaussian, gaussian_f, gaussian_kins, gaussian_dist, lattice, det_kouts, diff_henry, diff_conv
+from .functions import asf_coeffs, gaussian, gaussian_f, gaussian_kins, gaussian_dist, lattice, det_kouts, diff_henry, diff_conv, diff_nocoh
 from . import utils
 import numpy as np, os, concurrent.futures, h5py, datetime, logging, errno
 from functools import partial
@@ -147,7 +147,23 @@ class diff(diff_setup):
         _asf_coeffs = asf_coeffs(self.elem, self.wavelength)
         _kjs = gaussian_dist(knum, self.lat_args.lat_orig[2], self.waist, self.wavelength)
         _worker = partial(diff_conv, xs=self.xs, ys=self.ys, zs=self.zs, kjs=_kjs, us=_us, asf_coeffs=_asf_coeffs, waist=self.waist, sigma=self.sigma, wavelength=self.wavelength)
-        _num = self.xs.size * knum
+        _num = knum
+        return diff_calc(self, _worker, _kxs, _kys, _num)
+
+    def nocoh(self, knum=1000):
+        """
+        Convergent gaussian beam diffraction based on convolution noncoherent equations.
+        """
+        self.logger.info("Setup for diffraction based on convolution equations with following parameters:")
+        for args in (self.lat_args, self.kout_args):
+            for (key, value) in args.__dict__.items():
+                self.logger.info('%-9s=%+28s' % (key, value))
+        _kxs, _kys = det_kouts(**self.kout_args.__dict__)
+        _us = gaussian(self.xs, self.ys, self.zs, self.waist, self.wavelength)
+        _asf_coeffs = asf_coeffs(self.elem, self.wavelength)
+        _kjs = gaussian_dist(knum, self.lat_args.lat_orig[2], self.waist, self.wavelength)
+        _worker = partial(diff_nocoh, xs=self.xs, ys=self.ys, zs=self.zs, kjs=_kjs, us=_us, asf_coeffs=_asf_coeffs, waist=self.waist, sigma=self.sigma, wavelength=self.wavelength)
+        _num = knum
         return diff_calc(self, _worker, _kxs, _kys, _num)
 
 class diff_calc(object):
