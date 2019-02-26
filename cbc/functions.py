@@ -9,7 +9,7 @@ Made by Nikolay Ivanov, 2018-2019.
 
 import numpy as np
 from scipy.interpolate import interp1d
-from scipy import signal, constants
+from scipy import signal, constants, special
 from math import sqrt, cos, sin, exp
 from functools import partial
 from . import utils
@@ -77,7 +77,7 @@ def gaussian_kins(xs, ys, zs, waist=1e-4, wavelength=1.5e-7):
     Rs = zs + zr**2 / zs
     return np.dstack((xs / Rs, ys / Rs, 1 - (xs**2 + ys**2) / 2.0 / Rs**2))[0]
 
-def gaussian_dist(N, z, waist, wavelength):
+def gaussian_dist(N, waist, wavelength):
     """
     Return random incoming wavevector based on gaussian beam distribution.
 
@@ -89,6 +89,17 @@ def gaussian_dist(N, z, waist, wavelength):
     thdiv = wavelength / np.pi / waist
     kxs, kys = np.random.multivariate_normal([0, 0], [[thdiv**2 / 2, 0], [0, thdiv**2 / 2]], N).T
     return kout_parax(kxs, kys)
+
+def bessel(xs, ys, zs, waist, wavelength):
+    k = 2 * np.pi / wavelength
+    thdiv = wavelength / np.pi / waist
+    return special.jv(1, k * thdiv * np.sqrt(xs**2 + ys**2)) / thdiv / np.pi / np.sqrt(xs**2 + ys**2)
+
+def uniform_dist(N, waist, wavelength):
+    thdiv = wavelength / np.pi / waist
+    ths = thdiv * np.sqrt(np.random.random(N))
+    phis = 2 * np.pi * np.random.random(N)
+    return np.dstack((ths * np.cos(phis), ths * np.sin(phis), 1 - ths**2 / 2))[0] 
 
 def kout_parax(kxs, kys):
     """
@@ -131,7 +142,7 @@ def lattice(a, b, c, Nx, Ny, Nz, lat_orig=[0, 0, 0]):
     xs, ys, zs = np.meshgrid(xval, yval, zval)
     return xs.ravel(), ys.ravel(), zs.ravel()
 
-def diff_henry(kxs, kys, xs, ys, zs, kins, us, asf_coeffs, waist, sigma, wavelength=1.5e-7):
+def diff_henry(kxs, kys, xs, ys, zs, kins, us, asf_coeffs, sigma, wavelength=1.5e-7):
     """
     Return diffraction pattern intensity for given array of output wavevectors base on Henry's equations.
 
@@ -140,7 +151,6 @@ def diff_henry(kxs, kys, xs, ys, zs, kins, us, asf_coeffs, waist, sigma, wavelen
     kins - gaussian beam incoming wavevectors
     us - gaussian beam wave amplitudes
     asf_coeffs - atomic scattering factor fit coefficients
-    waist - beam waist radius
     sigma - the solid angle of a detector pixel
     wavelength - light wavelength
 
@@ -152,16 +162,14 @@ def diff_henry(kxs, kys, xs, ys, zs, kins, us, asf_coeffs, waist, sigma, wavelen
     _phs = utils.phase(_kouts, xs, ys, zs, wavelength)
     return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * (_asfs * _phs * us).sum(axis=-1)
 
-def diff_conv(kxs, kys, xs, ys, zs, kjs, us, asf_coeffs, waist, sigma, wavelength):
+def diff_conv(kxs, kys, xs, ys, zs, kjs, asf_coeffs, sigma, wavelength):
     """
     Return diffraction pattern intensity for given array of output wavevectors base on convolution equations.
 
     kxs, kys - x and y coordinates of output wavevectors
     xs, ys, zs - coordinates of sample lattice atoms
     kjs - convolution incoming wavevectors based on gaussian beam distribution
-    us - gaussian beam wave amplitudes
     asf_coeffs - atomic scattering factor fit coefficients
-    waist - beam waist radius
     sigma - the solid angle of a detector pixel
     wavelength - light wavelength
 
@@ -171,18 +179,16 @@ def diff_conv(kxs, kys, xs, ys, zs, kjs, us, asf_coeffs, waist, sigma, wavelengt
     _qabs = utils.q_abs(_kouts, kjs) / 2.0 / wavelength / 1e7
     _asfs = asf_vals(_qabs, asf_coeffs)
     _phs = utils.phase_conv(_kouts, kjs, xs, ys, zs, wavelength)
-    return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * (_asfs * _phs).sum(axis=-1) / kjs.shape[0]
+    return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * (_asfs * _phs).sum(axis=-1)
 
-def diff_nocoh(kxs, kys, xs, ys, zs, kjs, us, asf_coeffs, waist, sigma, wavelength):
+def diff_nocoh(kxs, kys, xs, ys, zs, kjs, asf_coeffs, sigma, wavelength):
     """
     Return diffraction pattern intensity for given array of output wavevectors base on convolution noncoherent equations.
 
     kxs, kys - x and y coordinates of output wavevectors
     xs, ys, zs - coordinates of sample lattice atoms
     kjs - convolution incoming wavevectors based on gaussian beam distribution
-    us - gaussian beam wave amplitudes
     asf_coeffs - atomic scattering factor fit coefficients
-    waist - beam waist radius
     sigma - the solid angle of a detector pixel
     wavelength - light wavelength
 

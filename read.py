@@ -47,7 +47,7 @@ def show(reslist):
 
     reslist - list of (filename, data) tuples
     """
-    axes = cbc.utils.DataSeq(reslist)
+    axes = cbc.utils.AxesSeq(reslist)
     axes.show()
 
 def read_all(path):

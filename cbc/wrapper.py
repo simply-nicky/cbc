@@ -7,7 +7,7 @@ Dependencies: numpy, matplotlib abd h5py.
 Made by Nikolay Ivanov, 2018-2019.
 """
 
-from .functions import asf_coeffs, gaussian, gaussian_f, gaussian_kins, gaussian_dist, lattice, det_kouts, diff_henry, diff_conv, diff_nocoh
+from .functions import asf_coeffs, gaussian, gaussian_f, gaussian_kins, gaussian_dist, bessel, uniform_dist, lattice, det_kouts, diff_henry, diff_conv, diff_nocoh
 from . import utils
 import numpy as np, os, concurrent.futures, h5py, datetime, logging, errno
 from functools import partial
@@ -15,6 +15,7 @@ from multiprocessing import cpu_count
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.colors import LogNorm
+from abc import ABCMeta, abstractmethod
 
 try:
     from logging import NullHandler
@@ -82,6 +83,49 @@ class diff_setup(object):
         self.logger.info('Initializing diff_setup')
         self.logger.info('output path is %s' % self.path)
 
+class Beam(object):
+    __metaclass__ = ABCMeta
+
+    @abstractmethod
+    def wave(self):
+        pass
+        
+    @abstractmethod
+    def wavevectors(self):
+        pass
+
+    @abstractmethod
+    def dist(self):
+        pass
+
+class GausBeam(Beam):
+    def __init__(self, waist, wavelength):
+        self.waist, self.wavelength = waist, wavelength
+        self.us, self.ds, self.ks = gaussian, gaussian_dist, gaussian_kins
+
+    def wave(self, xs, ys, zs):
+        return self.us(xs, ys, zs, self.waist, self.wavelength)
+
+    def wavevectors(self, xs, ys, zs):
+        return self.ks(xs, ys, zs, self.waist, self.wavelength)
+
+    def dist(self, N):
+        return self.ds(N, self.waist, self.wavelength)
+
+class BesselBeam(Beam):
+    def __init__(self, waist, wavelength):
+        self.waist, self.wavelength = waist, wavelength
+        self.us, self.ds, self.ks = bessel, uniform_dist, gaussian_kins
+
+    def wave(self, xs, ys, zs):
+        return self.us(xs, ys, zs, self.waist, self.wavelength)
+
+    def wavevectors(self, xs, ys, zs):
+        return self.ks(xs, ys, zs, self.waist, self.wavelength)
+
+    def dist(self, N):
+        return self.ds(N, self.waist, self.wavelength)
+
 class diff(diff_setup):
     """
     Diffraction simulation setup class.
@@ -91,10 +135,10 @@ class diff(diff_setup):
     wavelength - light wavelength
     elem - sample material chemical element
     """
-    def __init__(self, setup_args=setup_args(), lat_args=lat_args(), kout_args=kout_args(), waist=2e-5, wavelength=1.5e-7, elem='Au'):
+    def __init__(self, beam, setup_args=setup_args(), lat_args=lat_args(), kout_args=kout_args(), elem='Au'):
         diff_setup.__init__(self, setup_args)
-        self.waist, self.wavelength, self.sigma, self.thdiv, self.elem = waist, wavelength, kout_args.pix_size**2 / kout_args.det_dist**2, wavelength / np.pi / waist, elem
-        self.lat_args, self.kout_args = lat_args, kout_args
+        self.sigma, self.elem = kout_args.pix_size**2 / kout_args.det_dist**2, elem
+        self.beam, self.lat_args, self.kout_args = beam, lat_args, kout_args
         self.xs, self.ys, self.zs = lattice(**self.lat_args.__dict__)
 
     def rotate_lat(self, axis, theta):
@@ -109,12 +153,10 @@ class diff(diff_setup):
         self.ys += self.lat_args.lat_orig[1]
         self.zs += self.lat_args.lat_orig[2]
     
-    def move_lat(self, z=None):
+    def move_lat(self, z):
         """
         Move the sample up- or downstream by distance z.
         """
-        if z is None:
-            z = max(self.lat_args.Nx * self.lat_args.a, self.lat_args.Ny * self.lat_args.b, self.lat_args.Nz * self.lat_args.c) / self.thdiv
         self.lat_args.lat_orig[2] = z
         self.zs += self.lat_args.lat_orig[2]
 
@@ -127,10 +169,10 @@ class diff(diff_setup):
             for (key, value) in args.__dict__.items():
                 self.logger.info('%-9s=%+28s' % (key, value))
         _kxs, _kys = det_kouts(**self.kout_args.__dict__)
-        _us = gaussian(self.xs, self.ys, self.zs, self.waist, self.wavelength)
-        _asf_coeffs = asf_coeffs(self.elem, self.wavelength)
-        _kins = gaussian_kins(self.xs, self.ys, self.zs, self.waist, self.wavelength)
-        _worker = partial(diff_henry, xs=self.xs, ys=self.ys, zs=self.zs, kins=_kins, us=_us, asf_coeffs=_asf_coeffs, waist=self.waist, sigma=self.sigma, wavelength=self.wavelength)
+        _us = self.beam.wave(self.xs, self.ys, self.zs)
+        _asf_coeffs = asf_coeffs(self.elem, self.beam.wavelength)
+        _kins = self.beam.wavevectors(self.xs, self.ys, self.zs)
+        _worker = partial(diff_henry, xs=self.xs, ys=self.ys, zs=self.zs, kins=_kins, us=_us, asf_coeffs=_asf_coeffs, sigma=self.sigma, wavelength=self.beam.wavelength)
         _num = self.xs.size
         return diff_calc(self, _worker, _kxs, _kys, _num)
 
@@ -143,10 +185,9 @@ class diff(diff_setup):
             for (key, value) in args.__dict__.items():
                 self.logger.info('%-9s=%+28s' % (key, value))
         _kxs, _kys = det_kouts(**self.kout_args.__dict__)
-        _us = gaussian(self.xs, self.ys, self.zs, self.waist, self.wavelength)
-        _asf_coeffs = asf_coeffs(self.elem, self.wavelength)
-        _kjs = gaussian_dist(knum, self.lat_args.lat_orig[2], self.waist, self.wavelength)
-        _worker = partial(diff_conv, xs=self.xs, ys=self.ys, zs=self.zs, kjs=_kjs, us=_us, asf_coeffs=_asf_coeffs, waist=self.waist, sigma=self.sigma, wavelength=self.wavelength)
+        _asf_coeffs = asf_coeffs(self.elem, self.beam.wavelength)
+        _kjs = self.beam.dist(knum)
+        _worker = partial(diff_conv, xs=self.xs, ys=self.ys, zs=self.zs, kjs=_kjs, asf_coeffs=_asf_coeffs, sigma=self.sigma, wavelength=self.beam.wavelength)
         _num = knum
         return diff_calc(self, _worker, _kxs, _kys, _num)
 
@@ -159,10 +200,9 @@ class diff(diff_setup):
             for (key, value) in args.__dict__.items():
                 self.logger.info('%-9s=%+28s' % (key, value))
         _kxs, _kys = det_kouts(**self.kout_args.__dict__)
-        _us = gaussian(self.xs, self.ys, self.zs, self.waist, self.wavelength)
-        _asf_coeffs = asf_coeffs(self.elem, self.wavelength)
-        _kjs = gaussian_dist(knum, self.lat_args.lat_orig[2], self.waist, self.wavelength)
-        _worker = partial(diff_nocoh, xs=self.xs, ys=self.ys, zs=self.zs, kjs=_kjs, us=_us, asf_coeffs=_asf_coeffs, waist=self.waist, sigma=self.sigma, wavelength=self.wavelength)
+        _asf_coeffs = asf_coeffs(self.elem, self.beam.wavelength)
+        _kjs = self.beam.dist(knum)
+        _worker = partial(diff_nocoh, xs=self.xs, ys=self.ys, zs=self.zs, kjs=_kjs, asf_coeffs=_asf_coeffs, sigma=self.sigma, wavelength=self.beam.wavelength)
         _num = knum
         return diff_calc(self, _worker, _kxs, _kys, _num)
 
@@ -251,9 +291,10 @@ class diff_res(object):
         self.setup.logger.info('Filename: %s' % _filename)
         _filediff = h5py.File(os.path.join(self.setup.path, _filename), 'w')
         _diff_args = _filediff.create_group('arguments')
-        _diff_args.create_dataset('wavelength', data=self.setup.wavelength)
         _diff_args.create_dataset('sample\'s material', data=self.setup.elem)
-        _diff_args.create_dataset('beam waist radius', data=self.setup.waist)
+        _diff_args.create_dataset('incoming beam', data=self.setup.beam.__class__)
+        _diff_args.create_dataset('wavelength', data=self.setup.beam.wavelength)
+        _diff_args.create_dataset('beam waist radius', data=self.setup.beam.waist)
         for args in (self.setup.lat_args, self.setup.kout_args):
             for (key, value) in args.__dict__.items():
                 _diff_args.create_dataset(key, data=value)

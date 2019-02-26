@@ -76,24 +76,6 @@ def q_abs(kout, kin):
             qs[i,j] = sqrt(dq)
     return qs
 
-@nb.njit(nb.float64[:,:,:](nb.float64[:,:], nb.float64[:,:], nb.float64[:,:]), fastmath=True)
-def q_abs_conv(kout, kis, kjs):
-    a = kout.shape[0]
-    b = kis.shape[0]
-    c, d = kjs.shape
-    qs = np.empty((a, b, c), dtype=np.float64)
-    kout = np.ascontiguousarray(kout)
-    kis = np.ascontiguousarray(kis)
-    kjs = np.ascontiguousarray(kjs)
-    for i in range(a):
-        for j in range(b):
-            for k in range(c):
-                dq = 0.0
-                for l in range(d):
-                    dq += (kout[i,l] - kis[j,l] - kjs[k,l])**2
-                qs[i,j,k] = sqrt(dq)
-    return qs
-
 @nb.njit(nb.types.UniTuple(nb.float64[:], 3)(nb.float64[:,:], nb.float64[:], nb.float64[:], nb.float64[:]), fastmath=True)
 def rotate(m, xs, ys, zs):
     a = xs.size
@@ -175,7 +157,7 @@ def search_rec(path, ext='hdf5', filelist=None):
                 filelist.append(os.path.join(root, f))
     return filelist
 
-class DataSeq(object):
+class AxesSeq(object):
     def __init__(self, datas):
         self.datas = datas
         self.fig, self.ax = plt.subplots()
@@ -211,42 +193,4 @@ class DataSeq(object):
         self.cbar = self.fig.colorbar(self.im, cax=cax, orientation='vertical')
         self.ax.set_title(filename)
         self.fig.canvas.draw()
-        plt.show()
-
-class AxesSeq(object):
-    """
-    Creates a series of axes in a figure where only one is displayed at any given time. Which plot is displayed is controlled by the arrow keys.
-    """
-    def __init__(self, size):
-        self.fig = plt.figure()
-        self.axes = [self.fig.add_subplot(1,1,1, label=i, visible=False) for i in range(size)]
-        self.index = 0
-        self.fig.canvas.mpl_connect('key_press_event', self.on_keypress)
-
-    def __iter__(self):
-        return iter(self.axes)
-
-    def on_keypress(self, event):
-        if event.key == 'up':
-            self.next_plot()
-        elif event.key == 'down':
-            self.prev_plot()
-        else:
-            return
-        self.fig.canvas.draw()
-
-    def next_plot(self):
-        if self.index < len(self.axes) - 1:
-            self.axes[self.index].set_visible(False)
-            self.axes[self.index+1].set_visible(True)
-            self.index += 1
-
-    def prev_plot(self):
-        if self.index > 0:
-            self.axes[self.index].set_visible(False)
-            self.axes[self.index-1].set_visible(True)
-            self.index -= 1
-
-    def show(self):
-        self.axes[self.index].set_visible(True)
         plt.show()
