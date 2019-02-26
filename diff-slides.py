@@ -18,15 +18,16 @@ if __name__ == "__main__":
     det_dist = 54
 
     zmax = max(a * Nx, b * Ny, c * Nz) * np.pi * waist / wavelength
-    lat_origs = [[0,0,z] for z in np.linspace(0, zmax, num=11, endpoint=True)]
+    lat_origs = np.linspace(0, zmax, num=11, endpoint=True)
+    beam = cbc.GausBeam(waist, wavelength)
 
     for counter, lat_orig in enumerate(lat_origs):
         logpath = os.path.join('logs', str(datetime.date.today()) + '.log')
         relpath = os.path.join('results/zseries', str(counter))
-        setup_args = cbc.setup_args(handler=logging.FileHandler(logpath), relpath=relpath)
-        lat_args = cbc.lat_args(a=a, b=b, c=c, Nx=Nx, Ny=Ny, Nz=Nz)
-        kout_args= cbc.kout_args(det_dist=det_dist, detNx=detNx, detNy=detNy, pix_size=pix_size)
-        diff = cbc.diff(setup_args=setup_args, lat_args=lat_args, kout_args=kout_args, waist=waist, wavelength=wavelength)
+        setup_args = cbc.SetupArgs(handler=logging.FileHandler(logpath), relpath=relpath)
+        lat_args = cbc.LatArgs(a=a, b=b, c=c, Nx=Nx, Ny=Ny, Nz=Nz)
+        det_args= cbc.DetArgs(det_dist=det_dist, detNx=detNx, detNy=detNy, pix_size=pix_size)
+        diff = cbc.Diff(beam=beam, setup_args=setup_args, lat_args=lat_args, det_args=det_args)
         diff.move_lat(lat_orig)
         diffres = diff.henry().pool()
         diffres.write()

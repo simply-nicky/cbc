@@ -30,7 +30,7 @@ def phase(ks, xs, ys, zs, wavelength):
 def phase_conv(kos, kjs, xs, ys, zs, wavelength):
     a = kos.shape[0]
     b = kjs.shape[0]
-    c = xs.shape[0]
+    c = xs.size
     res = np.empty((a, b), dtype=np.complex128)
     kos = np.ascontiguousarray(kos)
     kjs = np.ascontiguousarray(kjs)
@@ -44,6 +44,19 @@ def phase_conv(kos, kjs, xs, ys, zs, wavelength):
                 _arg = (kos[i,0] - kjs[j,0]) * xs[k] + (kos[i,1] - kjs[j,1]) * ys[k] + (kos[i,2] - kjs[j,2]) * zs[k]
                 _ph += cos(2 * pi / wavelength * _arg) + sin(2 * pi / wavelength * _arg) * 1j
             res[i,j] = _ph
+    return res
+
+@nb.njit(nb.complex128[:](nb.float64[:,:], nb.float64[:], nb.float64[:], nb.float64[:], nb.float64), fastmath=True)
+def phase_inc(kins, xs, ys, zs, wavelength):
+    a = xs.size
+    res = np.empty(a, dtype=np.complex128)
+    kins = np.ascontiguousarray(kins)
+    xs = np.ascontiguousarray(xs)
+    ys = np.ascontiguousarray(ys)
+    zs = np.ascontiguousarray(zs)
+    for i in range(a):
+        _ph = kins[i,0] * xs[i] + kins[i,1] * ys[i] + kins[i,2] * zs[i]
+        res[i] = cos(2 * pi / wavelength * _ph) - sin(2 * pi / wavelength * _ph) * 1j
     return res
 
 @nb.njit(nb.float64[:](nb.float64[:], nb.float64[:], nb.float64[:]), fastmath=True)

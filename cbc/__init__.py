@@ -5,6 +5,6 @@ Compatible with Python 2.X and 3.X.
 """
 from __future__ import absolute_import
 
-from .wrapper import lat_args, kout_args, setup_args, diff, diff_res, GausBeam, BesselBeam
+from .wrapper import LatArgs, DetArgs, SetupArgs, Diff, DiffRes, GausBeam, BesselBeam
 from . import utils
 from .functions import asf_coeffs, asf_vals, gaussian_f, gaussian, gaussian_dist, uniform_dist, gaussian_kins, lattice, det_kouts, kout_parax, diff_henry

@@ -48,8 +48,9 @@ def gaussian(xs, ys, zs, waist=1e-4, wavelength=1.5e-7):
     waist - beam waist radius
     wavelength - light wavelength
     """
-    k = 2 * np.pi / wavelength
-    return np.pi**-1 * waist**-2 * np.exp(-1j * k * zs) / (1 - 2j * zs / k / waist**2) * np.exp(-(xs**2 + ys**2) / waist**2 / (1 - 2j * zs / k / waist**2))
+    zr = np.pi * waist**2 / wavelength
+    wz = waist * np.sqrt(1 + zs**2 / zr**2)
+    return np.pi**-1 * waist**-1 * wz**-1 * np.exp(-(xs**2 + ys**2) / wz**2)
 
 def gaussian_f(kxs, kys, z, waist=1e-4, wavelength=1.5e-7):
     """
@@ -94,6 +95,9 @@ def bessel(xs, ys, zs, waist, wavelength):
     k = 2 * np.pi / wavelength
     thdiv = wavelength / np.pi / waist
     return special.jv(1, k * thdiv * np.sqrt(xs**2 + ys**2)) / thdiv / np.pi / np.sqrt(xs**2 + ys**2)
+
+def bessel_kins(xs, ys, zs, waist=1e-4, wavelength=1.5e-7):
+    return np.array([[0.0, 0.0, 1.0],] * xs.size)
 
 def uniform_dist(N, waist, wavelength):
     thdiv = wavelength / np.pi / waist

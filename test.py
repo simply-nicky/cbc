@@ -19,8 +19,8 @@ if __name__ == "__main__":
 
     logpath = os.path.join('logs', str(datetime.date.today()) + '.log')
     beam = cbc.BesselBeam(waist, wavelength)
-    diff = cbc.diff(beam=beam, setup_args=cbc.setup_args(handler=logging.FileHandler(logpath), relpath='results/'),
-                    kout_args=cbc.kout_args(det_dist=det_dist, detNx=detNx, detNy=detNy, pix_size=pix_size), lat_args=cbc.lat_args(a=a, b=b, c=c, Nx=Nx, Ny=Ny, Nz=Nz))
+    diff = cbc.Diff(beam=beam, setup_args=cbc.SetupArgs(handler=logging.FileHandler(logpath), relpath='results/'),
+                    det_args=cbc.DetArgs(det_dist=det_dist, detNx=detNx, detNy=detNy, pix_size=pix_size), lat_args=cbc.LatArgs(a=a, b=b, c=c, Nx=Nx, Ny=Ny, Nz=Nz))
 
     # diff.rotate_lat(axis, theta)
     # diff.move_lat(zr)

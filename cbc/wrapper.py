@@ -7,7 +7,7 @@ Dependencies: numpy, matplotlib abd h5py.
 Made by Nikolay Ivanov, 2018-2019.
 """
 
-from .functions import asf_coeffs, gaussian, gaussian_f, gaussian_kins, gaussian_dist, bessel, uniform_dist, lattice, det_kouts, diff_henry, diff_conv, diff_nocoh
+from .functions import asf_coeffs, gaussian, gaussian_f, gaussian_kins, gaussian_dist, bessel, bessel_kins, uniform_dist, lattice, det_kouts, diff_henry, diff_conv, diff_nocoh
 from . import utils
 import numpy as np, os, concurrent.futures, h5py, datetime, logging, errno
 from functools import partial
@@ -31,7 +31,7 @@ class worker_star(object):
     def __call__(self, args):
         return self.worker(*args)
 
-class lat_args(object): 
+class LatArgs(object): 
     """
     lattice function arguments class.
     
@@ -45,7 +45,7 @@ class lat_args(object):
         self.a, self.b, self.c = a, b, c
         self.Nx, self.Ny, self.Nz = Nx, Ny, Nz
 
-class kout_args(object):
+class DetArgs(object):
     """
     det_kouts function arguments class.
 
@@ -56,7 +56,7 @@ class kout_args(object):
     def __init__(self, det_dist=54, detNx=512, detNy=512, pix_size=55e-3):
         self.det_dist, self.detNx, self.detNy, self.pix_size = det_dist, detNx, detNy, pix_size
 
-class setup_args(object):
+class SetupArgs(object):
     """
     diff_setup arguments class.
 
@@ -71,12 +71,12 @@ class setup_args(object):
         handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
         self.handler = handler
 
-class diff_setup(object):
+class DiffSetup(object):
     """
     Diffraction setup class.
     Initializes logger, the path where to save results and starting time.
     """
-    def __init__(self, setup_args=setup_args()):
+    def __init__(self, setup_args=SetupArgs()):
         self.time, self.path, self.logger = setup_args.time, setup_args.path, logging.getLogger(self.__class__.__name__)
         self.logger.addHandler(setup_args.handler)
         self.logger.level = setup_args.level
@@ -115,7 +115,7 @@ class GausBeam(Beam):
 class BesselBeam(Beam):
     def __init__(self, waist, wavelength):
         self.waist, self.wavelength = waist, wavelength
-        self.us, self.ds, self.ks = bessel, uniform_dist, gaussian_kins
+        self.us, self.ds, self.ks = bessel, uniform_dist, bessel_kins
 
     def wave(self, xs, ys, zs):
         return self.us(xs, ys, zs, self.waist, self.wavelength)
@@ -126,19 +126,19 @@ class BesselBeam(Beam):
     def dist(self, N):
         return self.ds(N, self.waist, self.wavelength)
 
-class diff(diff_setup):
+class Diff(DiffSetup):
     """
     Diffraction simulation setup class.
 
-    self_args, lat_args, kout_args and asf_args - class objects
+    self_args, lat_args, det_args and asf_args - class objects
     waist - beam waist radius
     wavelength - light wavelength
     elem - sample material chemical element
     """
-    def __init__(self, beam, setup_args=setup_args(), lat_args=lat_args(), kout_args=kout_args(), elem='Au'):
-        diff_setup.__init__(self, setup_args)
-        self.sigma, self.elem = kout_args.pix_size**2 / kout_args.det_dist**2, elem
-        self.beam, self.lat_args, self.kout_args = beam, lat_args, kout_args
+    def __init__(self, beam, setup_args=SetupArgs(), lat_args=LatArgs(), det_args=DetArgs(), elem='Au'):
+        DiffSetup.__init__(self, setup_args)
+        self.sigma, self.elem = det_args.pix_size**2 / det_args.det_dist**2, elem
+        self.beam, self.lat_args, self.det_args = beam, lat_args, det_args
         self.xs, self.ys, self.zs = lattice(**self.lat_args.__dict__)
 
     def rotate_lat(self, axis, theta):
@@ -165,48 +165,48 @@ class diff(diff_setup):
         Convergent gaussian beam diffraction based on Henry's equations.
         """
         self.logger.info("Setup for diffraction based on Henry's equations with following parameters:")
-        for args in (self.lat_args, self.kout_args):
+        for args in (self.lat_args, self.det_args):
             for (key, value) in args.__dict__.items():
                 self.logger.info('%-9s=%+28s' % (key, value))
-        _kxs, _kys = det_kouts(**self.kout_args.__dict__)
-        _us = self.beam.wave(self.xs, self.ys, self.zs)
+        _kxs, _kys = det_kouts(**self.det_args.__dict__)
         _asf_coeffs = asf_coeffs(self.elem, self.beam.wavelength)
         _kins = self.beam.wavevectors(self.xs, self.ys, self.zs)
+        _us = self.beam.wave(self.xs, self.ys, self.zs) * utils.phase_inc(_kins, self.xs, self.ys, self.zs, self.beam.wavelength)
         _worker = partial(diff_henry, xs=self.xs, ys=self.ys, zs=self.zs, kins=_kins, us=_us, asf_coeffs=_asf_coeffs, sigma=self.sigma, wavelength=self.beam.wavelength)
         _num = self.xs.size
-        return diff_calc(self, _worker, _kxs, _kys, _num)
+        return DiffCalc(self, _worker, _kxs, _kys, _num)
 
     def conv(self, knum=1000):
         """
         Convergent gaussian beam diffraction based on convolution equations.
         """
         self.logger.info("Setup for diffraction based on convolution equations with following parameters:")
-        for args in (self.lat_args, self.kout_args):
+        for args in (self.lat_args, self.det_args):
             for (key, value) in args.__dict__.items():
                 self.logger.info('%-9s=%+28s' % (key, value))
-        _kxs, _kys = det_kouts(**self.kout_args.__dict__)
+        _kxs, _kys = det_kouts(**self.det_args.__dict__)
         _asf_coeffs = asf_coeffs(self.elem, self.beam.wavelength)
         _kjs = self.beam.dist(knum)
         _worker = partial(diff_conv, xs=self.xs, ys=self.ys, zs=self.zs, kjs=_kjs, asf_coeffs=_asf_coeffs, sigma=self.sigma, wavelength=self.beam.wavelength)
         _num = knum
-        return diff_calc(self, _worker, _kxs, _kys, _num)
+        return DiffCalc(self, _worker, _kxs, _kys, _num)
 
     def nocoh(self, knum=1000):
         """
         Convergent gaussian beam diffraction based on convolution noncoherent equations.
         """
         self.logger.info("Setup for diffraction based on convolution equations with following parameters:")
-        for args in (self.lat_args, self.kout_args):
+        for args in (self.lat_args, self.det_args):
             for (key, value) in args.__dict__.items():
                 self.logger.info('%-9s=%+28s' % (key, value))
-        _kxs, _kys = det_kouts(**self.kout_args.__dict__)
+        _kxs, _kys = det_kouts(**self.det_args.__dict__)
         _asf_coeffs = asf_coeffs(self.elem, self.beam.wavelength)
         _kjs = self.beam.dist(knum)
         _worker = partial(diff_nocoh, xs=self.xs, ys=self.ys, zs=self.zs, kjs=_kjs, asf_coeffs=_asf_coeffs, sigma=self.sigma, wavelength=self.beam.wavelength)
         _num = knum
-        return diff_calc(self, _worker, _kxs, _kys, _num)
+        return DiffCalc(self, _worker, _kxs, _kys, _num)
 
-class diff_calc(object):
+class DiffCalc(object):
     """
     Diffraction calculation class.
 
@@ -229,7 +229,7 @@ class diff_calc(object):
                 _res.extend(diff)
         _res = np.array(_res).reshape(self.kxs.shape)
         self.setup.logger.info('The calculation has ended, %d diffraction pattern values total' % _res.size)
-        return diff_res(self.setup, _res, self.kxs, self.kys)
+        return DiffRes(self.setup, _res, self.kxs, self.kys)
 
     def pool(self):
         _chunk_size = self.thread_size // self.num
@@ -241,9 +241,9 @@ class diff_calc(object):
                 _res.extend(diff)
         self.setup.logger.info('The calculation has ended, %d diffraction pattern values total' % len(_res))
         _res = np.array(_res).reshape(self.kxs.shape)
-        return diff_res(self.setup, _res, self.kxs, self.kys)
+        return DiffRes(self.setup, _res, self.kxs, self.kys)
 
-class diff_res(object):
+class DiffRes(object):
     """
     Diffraction results class.
 
@@ -254,10 +254,10 @@ class diff_res(object):
     def __init__(self, setup, res, kxs, kys):
         self.setup, self.res, self.kxs, self.kys = setup, res, kxs, kys
 
-    def plot(self):
+    def plot(self, figsize=(12, 10)):
         self.setup.logger.info('Plotting the results')
         ints = np.abs(self.res)
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=figsize)
         divider = make_axes_locatable(ax)
         cax = divider.append_axes('right', size='5%', pad=0.1)
         im = ax.imshow(ints, cmap='viridis', vmin=ints.min(), vmax=ints.max(),
@@ -267,10 +267,10 @@ class diff_res(object):
         plt.show()
         self.setup.logger.info('Plotting has ended')
 
-    def logplot(self):
+    def logplot(self, figsize=(12, 10)):
         self.setup.logger.info('Plotting the results in log scale')
         ints = np.abs(self.res)
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=figsize)
         divider = make_axes_locatable(ax)
         cax = divider.append_axes('right', size='5%', pad=0.1)
         im = ax.imshow(ints, cmap='viridis', norm=LogNorm(vmin=ints.min(), vmax=ints.max()),
@@ -295,7 +295,7 @@ class diff_res(object):
         _diff_args.create_dataset('incoming beam', data=self.setup.beam.__class__)
         _diff_args.create_dataset('wavelength', data=self.setup.beam.wavelength)
         _diff_args.create_dataset('beam waist radius', data=self.setup.beam.waist)
-        for args in (self.setup.lat_args, self.setup.kout_args):
+        for args in (self.setup.lat_args, self.setup.det_args):
             for (key, value) in args.__dict__.items():
                 _diff_args.create_dataset(key, data=value)
         _diff_res = _filediff.create_group('results')
