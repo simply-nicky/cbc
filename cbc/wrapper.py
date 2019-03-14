@@ -7,7 +7,7 @@ Dependencies: numpy, matplotlib abd h5py.
 Made by Nikolay Ivanov, 2018-2019.
 """
 
-from .functions import asf_coeffs, gaussian, gaussian_f, gaussian_kins, gaussian_dist, bessel, bessel_kins, uniform_dist, lattice, det_kouts, diff_henry, diff_conv, diff_nocoh
+from .functions import asf_coeffs, rbeam, cbeam, lensbeam_kins, lensbeam_dist, gaussian, gaussian_f, gaussian_kins, gaussian_dist, bessel, bessel_kins, uniform_dist, lattice, det_kouts, diff_henry, diff_conv, diff_nocoh
 from . import utils
 import numpy as np, os, concurrent.futures, h5py, datetime, logging, errno
 from functools import partial
@@ -104,7 +104,7 @@ class GausBeam(Beam):
         self.us, self.ds, self.ks = gaussian, gaussian_dist, gaussian_kins
 
     def wave(self, xs, ys, zs):
-        return self.us(xs, ys, zs, self.waist, self.wavelength)
+        return self.us(xs, ys, zs, self.waist, self.wavelength) * utils.phase_inc(self.wavevectors(xs, ys, zs), xs, ys, zs, self.wavelength)
 
     def wavevectors(self, xs, ys, zs):
         return self.ks(xs, ys, zs, self.waist, self.wavelength)
@@ -118,13 +118,51 @@ class BesselBeam(Beam):
         self.us, self.ds, self.ks = bessel, uniform_dist, bessel_kins
 
     def wave(self, xs, ys, zs):
-        return self.us(xs, ys, zs, self.waist, self.wavelength)
+        return self.us(xs, ys, zs, self.waist, self.wavelength) * utils.phase_inc(self.wavevectors(xs, ys, zs), xs, ys, zs, self.wavelength)
 
     def wavevectors(self, xs, ys, zs):
         return self.ks(xs, ys, zs, self.waist, self.wavelength)
 
     def dist(self, N):
         return self.ds(N, self.waist, self.wavelength)
+
+class RectBeam(Beam):
+    def __init__(self, f, ap, wavelength):
+        self.f, self.ap, self.wavelength = f, ap, wavelength
+        self.us, self.ds, self.ks = rbeam, lensbeam_dist, lensbeam_kins
+
+    def wave(self, xs, ys, zs):
+        worker = partial(self.us, f=self.f, ap=self.ap, wavelength=self.wavelength)
+        us = []
+        with concurrent.futures.ProcessPoolExecutor() as executor:
+            for u in executor.map(worker_star(worker), zip(np.array_split(xs, cpu_count()), np.array_split(ys, cpu_count()), np.array_split(zs, cpu_count()))):
+                us.extend(u)
+        return np.array(us)
+
+    def wavevectors(self, xs, ys, zs):
+        return self.ks(xs, ys, zs, self.f, self.wavelength)
+    
+    def dist(self, N):
+        return self.ds(N, self.f, self.ap, self.wavelength)
+
+class CircBeam(Beam):
+    def __init__(self, f, ap, wavelength):
+        self.f, self.ap, self.wavelength = f, ap, wavelength
+        self.us, self.ds, self.ks = cbeam, lensbeam_dist, lensbeam_kins
+
+    def wave(self, xs, ys, zs):
+        worker = partial(self.us, f=self.f, ap=self.ap, wavelength=self.wavelength)
+        us = []
+        with concurrent.futures.ProcessPoolExecutor() as executor:
+            for u in executor.map(worker_star(worker), zip(np.array_split(xs, cpu_count()), np.array_split(ys, cpu_count()), np.array_split(zs, cpu_count()))):
+                us.extend(u)
+        return np.array(us)
+
+    def wavevectors(self, xs, ys, zs):
+        return self.ks(xs, ys, zs, self.f, self.wavelength)
+    
+    def dist(self, N):
+        return self.ds(N, self.f, self.ap, self.wavelength)
 
 class Diff(DiffSetup):
     """
@@ -153,11 +191,14 @@ class Diff(DiffSetup):
         self.ys += self.lat_args.lat_orig[1]
         self.zs += self.lat_args.lat_orig[2]
     
-    def move_lat(self, z):
+    def move_lat(self, pt):
         """
         Move the sample up- or downstream by distance z.
         """
-        self.lat_args.lat_orig[2] = z
+        assert len(pt) == 3, 'Point mest be size of three'
+        self.lat_args.lat_orig = pt
+        self.xs += self.lat_args.lat_orig[0]
+        self.ys += self.lat_args.lat_orig[1]
         self.zs += self.lat_args.lat_orig[2]
 
     def henry(self):
@@ -171,7 +212,7 @@ class Diff(DiffSetup):
         _kxs, _kys = det_kouts(**self.det_args.__dict__)
         _asf_coeffs = asf_coeffs(self.elem, self.beam.wavelength)
         _kins = self.beam.wavevectors(self.xs, self.ys, self.zs)
-        _us = self.beam.wave(self.xs, self.ys, self.zs) * utils.phase_inc(_kins, self.xs, self.ys, self.zs, self.beam.wavelength)
+        _us = self.beam.wave(self.xs, self.ys, self.zs)
         _worker = partial(diff_henry, xs=self.xs, ys=self.ys, zs=self.zs, kins=_kins, us=_us, asf_coeffs=_asf_coeffs, sigma=self.sigma, wavelength=self.beam.wavelength)
         _num = self.xs.size
         return DiffCalc(self, _worker, _kxs, _kys, _num)
@@ -254,9 +295,13 @@ class DiffRes(object):
     def __init__(self, setup, res, kxs, kys):
         self.setup, self.res, self.kxs, self.kys = setup, res, kxs, kys
 
-    def plot(self, figsize=(12, 10)):
+    def plot(self, figsize=(12, 10), xlim=None, ylim=None):
+        if xlim == None:
+            xlim = (0, self.res.shape[0])
+        if ylim == None:
+            ylim = (0, self.res.shape[1])
         self.setup.logger.info('Plotting the results')
-        ints = np.abs(self.res)
+        ints = np.abs(self.res)[slice(*ylim), slice(*xlim)]
         fig, ax = plt.subplots(figsize=figsize)
         divider = make_axes_locatable(ax)
         cax = divider.append_axes('right', size='5%', pad=0.1)
@@ -267,9 +312,13 @@ class DiffRes(object):
         plt.show()
         self.setup.logger.info('Plotting has ended')
 
-    def logplot(self, figsize=(12, 10)):
+    def logplot(self, figsize=(12, 10), xlim=None, ylim=None):
+        if xlim == None:
+            xlim = (0, self.res.shape[0])
+        if ylim == None:
+            ylim = (0, self.res.shape[1])
         self.setup.logger.info('Plotting the results in log scale')
-        ints = np.abs(self.res)
+        ints = np.abs(self.res)[slice(*ylim), slice(*xlim)]
         fig, ax = plt.subplots(figsize=figsize)
         divider = make_axes_locatable(ax)
         cax = divider.append_axes('right', size='5%', pad=0.1)

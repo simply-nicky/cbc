@@ -5,11 +5,36 @@ Utility functions for convergent beam diffraction project.
 """
 from __future__ import print_function
 
-import os, numpy as np, numba as nb
+import os, numpy as np, numba as nb, matplotlib.pyplot as plt, scipy.integrate as si, ctypes
 from math import sqrt, cos, sin, exp, pi
 from timeit import default_timer as timer
-import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+from scipy import LowLevelCallable
+from numba.extending import get_cython_function_address
+
+addr = get_cython_function_address("scipy.special.cython_special", "j0")
+functype = ctypes.CFUNCTYPE(ctypes.c_double, ctypes.c_double)
+j0_c = functype(addr)
+
+@nb.vectorize('float64(float64)')
+def j0_vec(x):
+    return j0_c(x)
+
+@nb.njit
+def j0(x):
+    return j0_vec(x)
+
+def jit_integrand(func):
+    jit_func = nb.njit(func)
+    @nb.cfunc(nb.float64(nb.intc, nb.types.CPointer(nb.float64)))
+    def wrapper(n, args):
+        return jit_func(args[0], args[1], args[2], args[3], args[4])
+    return LowLevelCallable(wrapper.ctypes)
+
+def quad_complex(func_re, func_im, a, b, **args):
+    re= si.quad(func_re, a, b, **args)[0]
+    im= si.quad(func_im, a, b, **args)[0]
+    return re + 1j * im
 
 @nb.njit(nb.complex128[:,:](nb.float64[:,:], nb.float64[:], nb.float64[:], nb.float64[:], nb.float64), fastmath=True)
 def phase(ks, xs, ys, zs, wavelength):
@@ -87,6 +112,19 @@ def q_abs(kout, kin):
             for k in range(c):
                 dq += (kout[i,k] - kin[j,k])**2
             qs[i,j] = sqrt(dq)
+    return qs
+
+@nb.njit(nb.float64[:,:,:](nb.float64[:,:], nb.float64[:,:]), fastmath=True)
+def q(kout, kin):
+    a = kout.shape[0]
+    b, c = kin.shape
+    qs = np.empty((a, b, c), dtype=np.float64)
+    kout = np.ascontiguousarray(kout)
+    kin = np.ascontiguousarray(kin)
+    for i in range(a):
+        for j in range(b):
+            for k in range(c):
+                qs[i,j,k] = kout[i,k] - kin[j,k]
     return qs
 
 @nb.njit(nb.types.UniTuple(nb.float64[:], 3)(nb.float64[:,:], nb.float64[:], nb.float64[:], nb.float64[:]), fastmath=True)

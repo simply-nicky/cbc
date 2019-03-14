@@ -10,7 +10,7 @@ Made by Nikolay Ivanov, 2018-2019.
 import numpy as np
 from scipy.interpolate import interp1d
 from scipy import signal, constants, special
-from math import sqrt, cos, sin, exp
+from math import sqrt, cos, sin, exp, pi
 from functools import partial
 from . import utils
 from timeit import default_timer as timer
@@ -39,6 +39,46 @@ def asf_vals(ss, asf_coeffs):
     """
     acoeffs, bcoeffs = asf_coeffs[:5], asf_coeffs[6:]
     return (utils.asf_sum(ss.ravel(), acoeffs, bcoeffs) + asf_coeffs[5]).reshape(ss.shape)
+
+@utils.jit_integrand
+def rbeam_integrand_re(xx, x, z, f, wavelength):
+    k = 2 * np.pi / wavelength
+    return cos(k * xx**2 / 2 * (1 / f - 1 / z) + k / z * x * xx)
+
+@utils.jit_integrand
+def rbeam_integrand_im(xx, x, z, f, wavelength):
+    k = 2 * np.pi / wavelength
+    return -sin(k * xx**2 / 2 * (1 / f - 1 / z) + k / z * x * xx)
+
+def rbeam(xs, ys, zs, f, ap, wavelength):
+    k = 2 * np.pi / wavelength
+    coeffs = -1j * np.exp(1j * k * (zs + f)) / wavelength / (zs + f) * np.exp(1j * k / 2.0 / (zs + f) * (xs**2 + ys**2))
+    xvals = np.array([utils.quad_complex(rbeam_integrand_re, rbeam_integrand_im, -ap, ap, args=(x, z + f, f, wavelength), limit=int(2.0 * ap / sqrt(2.0 * wavelength * z))) for x, z in zip(xs, zs)])
+    yvals = np.array([utils.quad_complex(rbeam_integrand_re, rbeam_integrand_im, -ap, ap, args=(y, z + f, f, wavelength), limit=int(2.0 * ap / sqrt(2.0 * wavelength * z))) for y, z in zip(ys, zs)])
+    return coeffs * xvals * yvals
+
+def lensbeam_kins(xs, ys, zs, f, wavelength):
+    Rs = np.sqrt(xs**2 + ys**2 + zs**2)
+    return np.dstack((xs / Rs, ys / Rs, 1 - (xs**2 + ys**2) / 2.0 / Rs**2))[0]
+
+def lensbeam_dist(N, f, a, wavelength):
+    pass
+
+@utils.jit_integrand
+def circ_re(rr, r, z, f, wavelength):
+    k = 2 * np.pi / wavelength
+    return cos(k * rr**2 / 2 * (1 / f - 1 / z)) * utils.j0(k * r * rr / z) * 2 * pi * rr
+
+@utils.jit_integrand
+def circ_im(rr, r, z, f, wavelength):
+    k = 2 * np.pi / wavelength
+    return -sin(k * rr**2 / 2 * (1 / f - 1 / z)) * utils.j0(k * r * rr / z) * 2 * pi * rr
+
+def cbeam(xs, ys, zs, f, ap, wavelength):
+    k = 2 * np.pi / wavelength
+    coeffs = -1j * np.exp(1j * k * (zs + f)) / wavelength / (zs + f) * np.exp(1j * k * (xs**2 + ys**2) / 2.0 / (zs + f))
+    rvals = np.array([utils.quad_complex(circ_re, circ_im, 0, ap, args=(sqrt(x**2 + y**2), z + f, f, wavelength), limit=int(2.0 * ap / sqrt(2.0 * wavelength * z))) for x, y, z in zip(xs, ys, zs)])
+    return coeffs * rvals
 
 def gaussian(xs, ys, zs, waist=1e-4, wavelength=1.5e-7):
     """
@@ -97,7 +137,8 @@ def bessel(xs, ys, zs, waist, wavelength):
     return special.jv(1, k * thdiv * np.sqrt(xs**2 + ys**2)) / thdiv / np.pi / np.sqrt(xs**2 + ys**2)
 
 def bessel_kins(xs, ys, zs, waist=1e-4, wavelength=1.5e-7):
-    return np.array([[0.0, 0.0, 1.0],] * xs.size)
+    thdiv = wavelength / np.pi / waist
+    return np.array([[0.0, 0.0, 1.0 - thdiv**2 / 2],] * xs.size)
 
 def uniform_dist(N, waist, wavelength):
     thdiv = wavelength / np.pi / waist
