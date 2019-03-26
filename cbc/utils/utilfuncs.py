@@ -99,6 +99,30 @@ def asf_sum(ss, acoeffs, bcoeffs):
         asfs[i] = dasf
     return asfs
 
+@nb.njit(nb.complex128[:](nb.float64[:,:], nb.float64[:,:], nb.float64[:,:], nb.float64[:], nb.float64[:], nb.float64[:], nb.float64[:]), fastmath=True)
+def sf_sum(ss, acoeffs, bcoeffs, xs, ys, zs, bs):
+    a = ss.shape[0]
+    b, c = acoeffs.shape
+    sfs = np.empty(a, dtype=np.complex128)
+    ss = np.ascontiguousarray(ss)
+    acoeffs = np.ascontiguousarray(acoeffs)
+    bcoeffs = np.ascontiguousarray(bcoeffs)
+    xs = np.ascontiguousarray(xs)
+    ys = np.ascontiguousarray(ys)
+    zs = np.ascontiguousarray(zs)
+    bs = np.ascontiguousarray(bs)
+    for i in range(a):
+        dsf = 0.0j
+        sabs = ss[i,0]**2 + ss[i,1]**2 + ss[i,2]**2
+        for j in range(b):
+            dasf = 0.0
+            ph = 4 * pi * (ss[i,0] * xs[j] + ss[i,1] * ys[j] + ss[i,2] * zs[j])
+            for k in range(c):
+                dasf += acoeffs[j,k] * exp(-sabs * bcoeffs[j,k])
+            dsf += dasf * (cos(ph) + 1j * sin(ph)) * exp(-bs[j] * sabs)
+        sfs[i] = dsf
+    return sfs
+
 @nb.njit(nb.float64[:,:](nb.float64[:,:], nb.float64[:,:]), fastmath=True)
 def q_abs(kout, kin):
     a = kout.shape[0]
@@ -115,7 +139,7 @@ def q_abs(kout, kin):
     return qs
 
 @nb.njit(nb.float64[:,:,:](nb.float64[:,:], nb.float64[:,:]), fastmath=True)
-def q(kout, kin):
+def qs(kout, kin):
     a = kout.shape[0]
     b, c = kin.shape
     qs = np.empty((a, b, c), dtype=np.float64)

@@ -40,6 +40,15 @@ def asf_vals(ss, asf_coeffs):
     acoeffs, bcoeffs = asf_coeffs[:5], asf_coeffs[6:]
     return (utils.asf_sum(ss.ravel(), acoeffs, bcoeffs) + asf_coeffs[5]).reshape(ss.shape)
 
+def pdb_import(filename, wavelength):
+    xs, ys, zs, bs, els = utils.readpdb(filename)
+    asfs = np.array([asf_coeffs(el, wavelength) for el in els])
+    return asfs, np.array(xs), np.array(ys), np.array(zs), np.array(bs)
+
+def sf_vals(ss, asf_coeffs, xs, ys, zs, bs):
+    acoeffs, bcoeffs = asf_coeffs[:, :5], asf_coeffs[:, 6:]
+    return utils.sf_sum(ss.reshape(-1, ss.shape[-1]), acoeffs, bcoeffs, xs, ys, zs, bs).reshape(ss.shape[:-1])
+
 @utils.jit_integrand
 def rbeam_integrand_re(xx, x, z, f, wavelength):
     k = 2 * np.pi / wavelength

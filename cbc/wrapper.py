@@ -196,10 +196,10 @@ class Diff(DiffSetup):
         Move the sample up- or downstream by distance z.
         """
         assert len(pt) == 3, 'Point mest be size of three'
+        self.xs += (pt[0] - self.lat_args.lat_orig[0])
+        self.ys += (pt[1] - self.lat_args.lat_orig[1])
+        self.zs += (pt[2] - self.lat_args.lat_orig[2])
         self.lat_args.lat_orig = pt
-        self.xs += self.lat_args.lat_orig[0]
-        self.ys += self.lat_args.lat_orig[1]
-        self.zs += self.lat_args.lat_orig[2]
 
     def henry(self):
         """
@@ -295,7 +295,7 @@ class DiffRes(object):
     def __init__(self, setup, res, kxs, kys):
         self.setup, self.res, self.kxs, self.kys = setup, res, kxs, kys
 
-    def plot(self, figsize=(12, 10), xlim=None, ylim=None):
+    def plot(self, figsize=(10, 10), xlim=None, ylim=None):
         if xlim == None:
             xlim = (0, self.res.shape[0])
         if ylim == None:
@@ -312,7 +312,26 @@ class DiffRes(object):
         plt.show()
         self.setup.logger.info('Plotting has ended')
 
-    def logplot(self, figsize=(12, 10), xlim=None, ylim=None):
+    def savefig(self, figsize=(10, 10), xlim=None, ylim=None):
+        if xlim == None:
+            xlim = (0, self.res.shape[0])
+        if ylim == None:
+            ylim = (0, self.res.shape[1])
+        self.setup.logger.info('Saving the results in eps image')
+        _filename = utils.make_filename(self.setup.path, 'diff_' + datetime.datetime.now().strftime('%d-%m-%Y_%H-%M-%S') + '.eps')
+        self.setup.logger.info('Filename: %s' % _filename)
+        ints = np.abs(self.res)[slice(*ylim), slice(*xlim)]
+        fig, ax = plt.subplots(figsize=figsize)
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes('right', size='5%', pad=0.1)
+        im = ax.imshow(ints, cmap='viridis', vmin=ints.min(), vmax=ints.max(),
+                                extent = [self.kxs.min(), self.kxs.max(), self.kys.min(), self.kys.max()],
+                                interpolation='nearest', origin='lower')
+        fig.colorbar(im, cax=cax, orientation='vertical')
+        fig.savefig(_filename, format='eps')
+        self.setup.logger.info('Image creation has ended')
+
+    def logplot(self, figsize=(10, 10), xlim=None, ylim=None):
         if xlim == None:
             xlim = (0, self.res.shape[0])
         if ylim == None:

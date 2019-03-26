@@ -1,6 +1,6 @@
 import numpy as np, os
 
-def read(filename):
+def readpdb(filename):
     at = "ATOM"
     dir = os.path.dirname(__file__)
     xs, ys, zs, bs, els = [], [], [], [], []
@@ -13,7 +13,7 @@ def read(filename):
             els.append(line[77:78])
     return xs, ys, zs, bs, els
 
-def save(filename):
+def savepdb(filename):
     at = "ATOM"
     dir = os.path.dirname(__file__)
     xs, ys, zs, bs, els = [], [], [], [], []
@@ -28,5 +28,5 @@ def save(filename):
     np.save(os.path.splitext(filename)[0], res)
 
 if __name__ == "__main__":
-    xs, ys, zs, bs, els = read('4et8.pdb')
+    xs, ys, zs, bs, els = readpdb('4et8.pdb')
     print(els)

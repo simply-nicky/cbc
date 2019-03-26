@@ -5,11 +5,11 @@ import numpy as np
 if __name__ == "__main__":
     waist, f, ap = 12e-7, 2.0, 9e-2
     wavelength = 1.5e-7
-    a, b, c = 2e-6, 2.5e-6, 3e-6
+    a, b, c = 2e-6, 2e-6, 3e-6
     Nx, Ny, Nz = 60, 60, 1
 
     detNx, detNy = 512, 512
-    pix_size = 55e-3 / 2
+    pix_size = 55e-3 / 4
     det_dist = 30
     knum = 1000
     zr = np.pi * waist**2 / wavelength
@@ -23,7 +23,7 @@ if __name__ == "__main__":
                     det_args=cbc.DetArgs(det_dist=det_dist, detNx=detNx, detNy=detNy, pix_size=pix_size), lat_args=cbc.LatArgs(a=a, b=b, c=c, Nx=Nx, Ny=Ny, Nz=Nz))
 
     # diff.rotate_lat(axis, theta)
-    diff.move_lat([0.501 * a, 0.501 * b, 1e-6])
+    diff.move_lat([0.501 * a, 0.501 * b, 1e-4])
     
     start = timer()
     diffres = diff.henry().pool()
