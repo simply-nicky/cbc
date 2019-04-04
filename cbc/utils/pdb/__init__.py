@@ -1,1 +1,1 @@
-from .readpdb import readpdb, savepdb
+from .readpdb import importpdb, savepdb

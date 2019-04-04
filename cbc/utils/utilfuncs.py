@@ -32,31 +32,32 @@ def jit_integrand(func):
     return LowLevelCallable(wrapper.ctypes)
 
 def quad_complex(func_re, func_im, a, b, **args):
-    re= si.quad(func_re, a, b, **args)[0]
-    im= si.quad(func_im, a, b, **args)[0]
+    re = si.quad(func_re, a, b, **args)[0]
+    im = si.quad(func_im, a, b, **args)[0]
     return re + 1j * im
 
-@nb.njit(nb.complex128[:,:](nb.float64[:,:], nb.float64[:], nb.float64[:], nb.float64[:], nb.float64), fastmath=True)
-def phase(ks, xs, ys, zs, wavelength):
-    a = ks.shape[0]
-    b = xs.size
-    res = np.empty((a, b), dtype=np.complex128)
-    ks = np.ascontiguousarray(ks)
+@nb.njit(nb.complex128[:,:,:](nb.float64[:,:], nb.float64[:,:], nb.float64[:,:], nb.float64[:,:], nb.float64), fastmath=True)
+def phase(kouts, xs, ys, zs, wavelength):
+    a = kouts.shape[0]
+    b, c = xs.shape
+    res = np.empty((a, b, c), dtype=np.complex128)
+    kouts = np.ascontiguousarray(kouts)
     xs = np.ascontiguousarray(xs)
     ys = np.ascontiguousarray(ys)
     zs = np.ascontiguousarray(zs)
     for i in range(a):
         for j in range(b):
-            _ph = ks[i,0] * xs[j] + ks[i,1] * ys[j] + ks[i,2] * zs[j]
-            res[i,j] = cos(2 * pi / wavelength * _ph) + sin(2 * pi / wavelength * _ph) * 1j
+            for k in range(c):
+                _ph = kouts[i,0] * xs[j,k] + kouts[i,1] * ys[j,k] + kouts[i,2] * zs[j,k]
+                res[i,j,k] = cos(2 * pi / wavelength * _ph) + sin(2 * pi / wavelength * _ph) * 1j
     return res
 
-@nb.njit(nb.complex128[:,:](nb.float64[:,:], nb.float64[:,:], nb.float64[:], nb.float64[:], nb.float64[:], nb.float64), fastmath=True)
+@nb.njit(nb.complex128[:,:,:](nb.float64[:,:], nb.float64[:,:,:], nb.float64[:,:], nb.float64[:,:], nb.float64[:,:], nb.float64), fastmath=True)
 def phase_conv(kos, kjs, xs, ys, zs, wavelength):
     a = kos.shape[0]
-    b = kjs.shape[0]
-    c = xs.size
-    res = np.empty((a, b), dtype=np.complex128)
+    b, c = kjs.shape[:-1]
+    d = xs.shape[0]
+    res = np.empty((a, b, c), dtype=np.complex128)
     kos = np.ascontiguousarray(kos)
     kjs = np.ascontiguousarray(kjs)
     xs = np.ascontiguousarray(xs)
@@ -64,107 +65,85 @@ def phase_conv(kos, kjs, xs, ys, zs, wavelength):
     zs = np.ascontiguousarray(zs)
     for i in range(a):
         for j in range(b):
-            _ph = 0j
             for k in range(c):
-                _arg = (kos[i,0] - kjs[j,0]) * xs[k] + (kos[i,1] - kjs[j,1]) * ys[k] + (kos[i,2] - kjs[j,2]) * zs[k]
-                _ph += cos(2 * pi / wavelength * _arg) + sin(2 * pi / wavelength * _arg) * 1j
-            res[i,j] = _ph
+                _ph = 0j
+                for l in range(d):
+                    _arg = (kos[i,0] - kjs[j,k,0]) * xs[l,k] + (kos[i,1] - kjs[j,k,1]) * ys[l,k] + (kos[i,2] - kjs[j,k,2]) * zs[l,k]
+                    _ph += cos(2 * pi / wavelength * _arg) + sin(2 * pi / wavelength * _arg) * 1j
+                res[i,j,k] = _ph
     return res
 
-@nb.njit(nb.complex128[:](nb.float64[:,:], nb.float64[:], nb.float64[:], nb.float64[:], nb.float64), fastmath=True)
+@nb.njit(nb.complex128[:,:](nb.float64[:,:,:], nb.float64[:,:], nb.float64[:,:], nb.float64[:,:], nb.float64), fastmath=True)
 def phase_inc(kins, xs, ys, zs, wavelength):
-    a = xs.size
-    res = np.empty(a, dtype=np.complex128)
+    a, b = xs.shape
+    res = np.empty((a, b), dtype=np.complex128)
     kins = np.ascontiguousarray(kins)
     xs = np.ascontiguousarray(xs)
     ys = np.ascontiguousarray(ys)
     zs = np.ascontiguousarray(zs)
     for i in range(a):
-        _ph = kins[i,0] * xs[i] + kins[i,1] * ys[i] + kins[i,2] * zs[i]
-        res[i] = cos(2 * pi / wavelength * _ph) - sin(2 * pi / wavelength * _ph) * 1j
+        for j in range(b):
+            _ph = kins[i,j,0] * xs[i,j] + kins[i,j,1] * ys[i,j] + kins[i,j,2] * zs[i,j]
+            res[i,j] = cos(2 * pi / wavelength * _ph) - sin(2 * pi / wavelength * _ph) * 1j
     return res
 
-@nb.njit(nb.float64[:](nb.float64[:], nb.float64[:], nb.float64[:]), fastmath=True)
-def asf_sum(ss, acoeffs, bcoeffs):
-    a = ss.size
-    b = acoeffs.size
-    asfs = np.empty(a, dtype=np.float64)
+@nb.njit(nb.float64[:,:,:](nb.float64[:,:,:], nb.float64[:,:]), fastmath=True)
+def asf_sum(ss, asfcoeffs):
+    a, b, c = ss.shape
+    asfs = np.empty((a, b, c), dtype=np.float64)
     ss = np.ascontiguousarray(ss)
-    acoeffs = np.ascontiguousarray(acoeffs)
-    bcoeffs = np.ascontiguousarray(bcoeffs)
+    asfcoeffs = np.ascontiguousarray(asfcoeffs)
     for i in range(a):
-        dasf = 0.0
         for j in range(b):
-            dasf += acoeffs[j] * exp(-ss[i] * ss[i] * bcoeffs[j])
-        asfs[i] = dasf
+            for k in range(c):
+                dasf = 0.0
+                for l in range(5):
+                    dasf += asfcoeffs[k,l] * exp(-ss[i,j,k] * ss[i,j,k] * asfcoeffs[k,6+l])
+                asfs[i,j,k] = (dasf + asfcoeffs[k,5]) * exp(-ss[i,j,k]**2 * asfcoeffs[k,-1])
     return asfs
 
-@nb.njit(nb.complex128[:](nb.float64[:,:], nb.float64[:,:], nb.float64[:,:], nb.float64[:], nb.float64[:], nb.float64[:], nb.float64[:]), fastmath=True)
-def sf_sum(ss, acoeffs, bcoeffs, xs, ys, zs, bs):
-    a = ss.shape[0]
-    b, c = acoeffs.shape
-    sfs = np.empty(a, dtype=np.complex128)
-    ss = np.ascontiguousarray(ss)
-    acoeffs = np.ascontiguousarray(acoeffs)
-    bcoeffs = np.ascontiguousarray(bcoeffs)
-    xs = np.ascontiguousarray(xs)
-    ys = np.ascontiguousarray(ys)
-    zs = np.ascontiguousarray(zs)
-    bs = np.ascontiguousarray(bs)
-    for i in range(a):
-        dsf = 0.0j
-        sabs = ss[i,0]**2 + ss[i,1]**2 + ss[i,2]**2
-        for j in range(b):
-            dasf = 0.0
-            ph = 4 * pi * (ss[i,0] * xs[j] + ss[i,1] * ys[j] + ss[i,2] * zs[j])
-            for k in range(c):
-                dasf += acoeffs[j,k] * exp(-sabs * bcoeffs[j,k])
-            dsf += dasf * (cos(ph) + 1j * sin(ph)) * exp(-bs[j] * sabs)
-        sfs[i] = dsf
-    return sfs
-
-@nb.njit(nb.float64[:,:](nb.float64[:,:], nb.float64[:,:]), fastmath=True)
-def q_abs(kout, kin):
+@nb.njit(nb.float64[:,:,:](nb.float64[:,:], nb.float64[:,:,:], nb.float64), fastmath=True)
+def q_abs(kout, kin, wavelength):
     a = kout.shape[0]
-    b, c = kin.shape
-    qs = np.empty((a, b), dtype=np.float64)
-    kout = np.ascontiguousarray(kout)
-    kin = np.ascontiguousarray(kin)
-    for i in range(a):
-        for j in range(b):
-            dq = 0.0
-            for k in range(c):
-                dq += (kout[i,k] - kin[j,k])**2
-            qs[i,j] = sqrt(dq)
-    return qs
-
-@nb.njit(nb.float64[:,:,:](nb.float64[:,:], nb.float64[:,:]), fastmath=True)
-def qs(kout, kin):
-    a = kout.shape[0]
-    b, c = kin.shape
+    b, c = kin.shape[:-1]
     qs = np.empty((a, b, c), dtype=np.float64)
     kout = np.ascontiguousarray(kout)
     kin = np.ascontiguousarray(kin)
     for i in range(a):
         for j in range(b):
             for k in range(c):
-                qs[i,j,k] = kout[i,k] - kin[j,k]
+                qs[i,j,k] = sqrt((kout[i,0] - kin[j,k,0])**2 + (kout[i,1] - kin[j,k,1])**2 + (kout[i,2] - kin[j,k,2])**2) / 2e7 / wavelength
     return qs
 
-@nb.njit(nb.types.UniTuple(nb.float64[:], 3)(nb.float64[:,:], nb.float64[:], nb.float64[:], nb.float64[:]), fastmath=True)
+@nb.njit(nb.float64[:,:,:,:](nb.float64[:,:], nb.float64[:,:,:], nb.float64), fastmath=True)
+def qs(kout, kin, wavelength):
+    a = kout.shape[0]
+    b, c, d = kin.shape
+    qs = np.empty((a, b, c, d), dtype=np.float64)
+    kout = np.ascontiguousarray(kout)
+    kin = np.ascontiguousarray(kin)
+    for i in range(a):
+        for j in range(b):
+            for k in range(c):
+                for l in range(d):
+                    qs[i,j,k,l] = (kout[i,l] - kin[j,k,l]) / 2e7 / wavelength
+    return qs
+
+@nb.njit(nb.types.UniTuple(nb.float64[:,:], 3)(nb.float64[:,:], nb.float64[:,:], nb.float64[:,:], nb.float64[:,:]), fastmath=True)
 def rotate(m, xs, ys, zs):
-    a = xs.size
-    XS = np.empty(a, dtype=np.float64)
-    YS = np.empty(a, dtype=np.float64)
-    ZS = np.empty(a, dtype=np.float64)
+    a, b = xs.shape
+    XS = np.empty((a, b), dtype=np.float64)
+    YS = np.empty((a, b), dtype=np.float64)
+    ZS = np.empty((a, b), dtype=np.float64)
     m = np.ascontiguousarray(m)
     xs = np.ascontiguousarray(xs)
     ys = np.ascontiguousarray(ys)
     zs = np.ascontiguousarray(zs)
     for i in range(a):
-        XS[i] = m[0,0] * xs[i] + m[0,1] * ys[i] + m[0,2] * zs[i]
-        YS[i] = m[1,0] * xs[i] + m[1,1] * ys[i] + m[1,2] * zs[i]
-        ZS[i] = m[2,0] * xs[i] + m[2,1] * ys[i] + m[2,2] * zs[i]
+        for j in range(b):
+            XS[i,j] = m[0,0] * xs[i,j] + m[0,1] * ys[i,j] + m[0,2] * zs[i,j]
+            YS[i,j] = m[1,0] * xs[i,j] + m[1,1] * ys[i,j] + m[1,2] * zs[i,j]
+            ZS[i,j] = m[2,0] * xs[i,j] + m[2,1] * ys[i,j] + m[2,2] * zs[i,j]
     return XS, YS, ZS
 
 def make_filename(path, filename, i=2):

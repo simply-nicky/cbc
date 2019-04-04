@@ -15,7 +15,7 @@ from functools import partial
 from . import utils
 from timeit import default_timer as timer
 
-def asf_coeffs(elem = 'Au', wavelength=1.5e-7):
+def asf_coeffs(elems = ['Au'], bs = np.zeros(1), wavelength=1.5e-7):
     """
     Return Wasmeier and Kirfel atomic scattering factor fit coefficients. for a given chemical element elem.
     Coefficients are put in a list as follows: [a1,  a2,  a3,  a4,  a5,  c,  b1,  b2,  b3,  b4,  b5].
@@ -25,29 +25,14 @@ def asf_coeffs(elem = 'Au', wavelength=1.5e-7):
     wavelength - light wavelength
     """
     en = constants.c * constants.h / constants.e / wavelength * 1e3     #photon energy in eV
-    _asf_coeffs = utils.asf.waskif[elem]
-    ens, f1s = utils.asf.henke[elem][0:2]
-    _asf_coeffs[5] = interp1d(ens, f1s, kind='cubic')(en) - _asf_coeffs[:5].sum()
-    return _asf_coeffs
-
-def asf_vals(ss, asf_coeffs):
-    """
-    Return a numpy ndarray of atomic scattering factor values for given sin(theta) / lambda value.
-
-    ss - sin(theta) / lambda [Angstrom^-1] numpy ndarray
-    asf_coeffs - atomic scattering factor fit coefficients
-    """
-    acoeffs, bcoeffs = asf_coeffs[:5], asf_coeffs[6:]
-    return (utils.asf_sum(ss.ravel(), acoeffs, bcoeffs) + asf_coeffs[5]).reshape(ss.shape)
-
-def pdb_import(filename, wavelength):
-    xs, ys, zs, bs, els = utils.readpdb(filename)
-    asfs = np.array([asf_coeffs(el, wavelength) for el in els])
-    return asfs, np.array(xs), np.array(ys), np.array(zs), np.array(bs)
-
-def sf_vals(ss, asf_coeffs, xs, ys, zs, bs):
-    acoeffs, bcoeffs = asf_coeffs[:, :5], asf_coeffs[:, 6:]
-    return utils.sf_sum(ss.reshape(-1, ss.shape[-1]), acoeffs, bcoeffs, xs, ys, zs, bs).reshape(ss.shape[:-1])
+    _asf_list = []
+    for elem, b in zip(elems, bs):
+        _asf_coeffs = utils.asf.waskif[elem]
+        ens, f1s = utils.asf.henke[elem][0:2]
+        _asf_coeffs[5] = interp1d(ens, f1s, kind='cubic')(en) - _asf_coeffs[:5].sum()
+        np.append(_asf_coeffs, b)
+        _asf_list.append(_asf_coeffs)
+    return np.array(_asf_list)
 
 @utils.jit_integrand
 def rbeam_integrand_re(xx, x, z, f, wavelength):
@@ -62,16 +47,13 @@ def rbeam_integrand_im(xx, x, z, f, wavelength):
 def rbeam(xs, ys, zs, f, ap, wavelength):
     k = 2 * np.pi / wavelength
     coeffs = -1j * np.exp(1j * k * (zs + f)) / wavelength / (zs + f) * np.exp(1j * k / 2.0 / (zs + f) * (xs**2 + ys**2))
-    xvals = np.array([utils.quad_complex(rbeam_integrand_re, rbeam_integrand_im, -ap, ap, args=(x, z + f, f, wavelength), limit=int(2.0 * ap / sqrt(2.0 * wavelength * z))) for x, z in zip(xs, zs)])
-    yvals = np.array([utils.quad_complex(rbeam_integrand_re, rbeam_integrand_im, -ap, ap, args=(y, z + f, f, wavelength), limit=int(2.0 * ap / sqrt(2.0 * wavelength * z))) for y, z in zip(ys, zs)])
+    xvals = np.array([utils.quad_complex(rbeam_integrand_re, rbeam_integrand_im, -ap, ap, args=(x, z + f, f, wavelength), limit=int(2.0 * ap / sqrt(2.0 * wavelength * abs(z)))) for x, z in zip(xs.ravel(), zs.ravel())]).reshape(xs.shape)
+    yvals = np.array([utils.quad_complex(rbeam_integrand_re, rbeam_integrand_im, -ap, ap, args=(y, z + f, f, wavelength), limit=int(2.0 * ap / sqrt(2.0 * wavelength * abs(z)))) for y, z in zip(ys.ravel(), zs.ravel())]).reshape(xs.shape)
     return coeffs * xvals * yvals
 
 def lensbeam_kins(xs, ys, zs, f, wavelength):
     Rs = np.sqrt(xs**2 + ys**2 + zs**2)
-    return np.dstack((xs / Rs, ys / Rs, 1 - (xs**2 + ys**2) / 2.0 / Rs**2))[0]
-
-def lensbeam_dist(N, f, a, wavelength):
-    pass
+    return np.stack((xs / Rs, ys / Rs, 1 - (xs**2 + ys**2) / 2.0 / Rs**2), axis=-1)
 
 @utils.jit_integrand
 def circ_re(rr, r, z, f, wavelength):
@@ -86,7 +68,7 @@ def circ_im(rr, r, z, f, wavelength):
 def cbeam(xs, ys, zs, f, ap, wavelength):
     k = 2 * np.pi / wavelength
     coeffs = -1j * np.exp(1j * k * (zs + f)) / wavelength / (zs + f) * np.exp(1j * k * (xs**2 + ys**2) / 2.0 / (zs + f))
-    rvals = np.array([utils.quad_complex(circ_re, circ_im, 0, ap, args=(sqrt(x**2 + y**2), z + f, f, wavelength), limit=int(2.0 * ap / sqrt(2.0 * wavelength * z))) for x, y, z in zip(xs, ys, zs)])
+    rvals = np.array([utils.quad_complex(circ_re, circ_im, 0, ap, args=(sqrt(x**2 + y**2), z + f, f, wavelength), limit=int(2.0 * ap / sqrt(2.0 * wavelength * abs(z)))) for x, y, z in zip(xs.ravel(), ys.ravel(), zs.ravel())]).reshape(xs.shape)
     return coeffs * rvals
 
 def gaussian(xs, ys, zs, waist=1e-4, wavelength=1.5e-7):
@@ -111,7 +93,7 @@ def gaussian_f(kxs, kys, z, waist=1e-4, wavelength=1.5e-7):
     wavelength - light wavelength
     """
     k = 2 * np.pi / wavelength
-    return (2 * np.pi)**-2 * np.exp(-1j * k * z) * np.exp(-(kxs**2 + kys**2) * k**2 * (waist**2 / 4 + 1j * z / 2 / k))
+    return np.exp(-1j * k * z * (1.0 - (kxs**2 + kys**2) / 2.0))
 
 def gaussian_kins(xs, ys, zs, waist=1e-4, wavelength=1.5e-7):
     """
@@ -125,7 +107,7 @@ def gaussian_kins(xs, ys, zs, waist=1e-4, wavelength=1.5e-7):
     """
     zr = np.pi * waist**2 / wavelength
     Rs = zs + zr**2 / zs
-    return np.dstack((xs / Rs, ys / Rs, 1 - (xs**2 + ys**2) / 2.0 / Rs**2))[0]
+    return np.stack((xs / Rs, ys / Rs, 1 - (xs**2 + ys**2) / 2.0 / Rs**2), axis=-1)
 
 def gaussian_dist(N, waist, wavelength):
     """
@@ -147,13 +129,13 @@ def bessel(xs, ys, zs, waist, wavelength):
 
 def bessel_kins(xs, ys, zs, waist=1e-4, wavelength=1.5e-7):
     thdiv = wavelength / np.pi / waist
-    return np.array([[0.0, 0.0, 1.0 - thdiv**2 / 2],] * xs.size)
+    return np.tile([0.0, 0.0, 1.0 - thdiv**2 / 2], xs.shape + (1,))
 
 def uniform_dist(N, waist, wavelength):
     thdiv = wavelength / np.pi / waist
     ths = thdiv * np.sqrt(np.random.random(N))
     phis = 2 * np.pi * np.random.random(N)
-    return np.dstack((ths * np.cos(phis), ths * np.sin(phis), 1 - ths**2 / 2))[0] 
+    return np.stack((ths * np.cos(phis), ths * np.sin(phis), 1 - ths**2 / 2), axis=-1)
 
 def kout_parax(kxs, kys):
     """
@@ -179,7 +161,7 @@ def det_kouts(det_dist=54, detNx=512, detNy=512, pix_size=55e-3):
     y_det = np.arange((-detNy + 1) / 2.0, (detNy + 1) / 2.0) * pix_size
     return np.meshgrid(x_det / det_dist, y_det / det_dist)
 
-def lattice(a, b, c, Nx, Ny, Nz, lat_orig=[0, 0, 0]):
+def lattice(a, b, c, Nx, Ny, Nz, XS=np.zeros(1), YS=np.zeros(1), ZS=np.zeros(1), lat_orig=[0, 0, 0]):
     """
     Return atom coordinates of a crystalline sample.
 
@@ -194,7 +176,7 @@ def lattice(a, b, c, Nx, Ny, Nz, lat_orig=[0, 0, 0]):
     yval = b * np.arange((-Ny + 1) / 2.0, (Ny + 1) / 2.0) + lat_orig[1]
     zval = c * np.arange((-Nz + 1) / 2.0, (Nz + 1) / 2.0) + lat_orig[2]
     xs, ys, zs = np.meshgrid(xval, yval, zval)
-    return xs.ravel(), ys.ravel(), zs.ravel()
+    return np.add.outer(xs.ravel(), XS), np.add.outer(ys.ravel(), YS), np.add.outer(zs.ravel(), ZS)
 
 def diff_henry(kxs, kys, xs, ys, zs, kins, us, asf_coeffs, sigma, wavelength=1.5e-7):
     """
@@ -211,12 +193,12 @@ def diff_henry(kxs, kys, xs, ys, zs, kins, us, asf_coeffs, sigma, wavelength=1.5
     Return np.array of diffracted wave values with the same shape as kxs and kys.
     """
     _kouts = kout_parax(kxs, kys)
-    _qabs = utils.q_abs(_kouts, kins) / 2.0 / wavelength / 1e7
-    _asfs = asf_vals(_qabs, asf_coeffs)
+    _qabs = utils.q_abs(_kouts, kins, wavelength)
+    _asfs = utils.asf_sum(_qabs, asf_coeffs)
     _phs = utils.phase(_kouts, xs, ys, zs, wavelength)
-    return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * (_asfs * _phs * us).sum(axis=-1)
+    return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * (_asfs * _phs * us).sum(axis=(-2,-1))
 
-def diff_conv(kxs, kys, xs, ys, zs, kjs, asf_coeffs, sigma, wavelength):
+def diff_conv(kxs, kys, xs, ys, zs, kjs, ufs, asf_coeffs, sigma, wavelength):
     """
     Return diffraction pattern intensity for given array of output wavevectors base on convolution equations.
 
@@ -230,12 +212,12 @@ def diff_conv(kxs, kys, xs, ys, zs, kjs, asf_coeffs, sigma, wavelength):
     Return np.array of diffracted wave values with the same shape as kxs and kys.
     """
     _kouts = kout_parax(kxs, kys)
-    _qabs = utils.q_abs(_kouts, kjs) / 2.0 / wavelength / 1e7
-    _asfs = asf_vals(_qabs, asf_coeffs)
+    _qabs = utils.q_abs(_kouts, kjs, wavelength)
+    _asfs = utils.asf_sum(_qabs, asf_coeffs)
     _phs = utils.phase_conv(_kouts, kjs, xs, ys, zs, wavelength)
-    return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * (_asfs * _phs).sum(axis=-1)
+    return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * (ufs * _asfs * _phs).sum(axis=(-2,-1)) / kjs.shape[0]
 
-def diff_nocoh(kxs, kys, xs, ys, zs, kjs, asf_coeffs, sigma, wavelength):
+def diff_nocoh(kxs, kys, xs, ys, zs, kjs, ufs, asf_coeffs, sigma, wavelength):
     """
     Return diffraction pattern intensity for given array of output wavevectors base on convolution noncoherent equations.
 
@@ -249,10 +231,10 @@ def diff_nocoh(kxs, kys, xs, ys, zs, kjs, asf_coeffs, sigma, wavelength):
     Return np.array of diffracted wave values with the same shape as kxs and kys.
     """
     _kouts = kout_parax(kxs, kys)
-    _qabs = utils.q_abs(_kouts, kjs) / 2.0 / wavelength / 1e7
-    _asfs = asf_vals(_qabs, asf_coeffs)
+    _qabs = utils.q_abs(_kouts, kjs, wavelength)
+    _asfs = utils.asf_sum(_qabs, asf_coeffs)
     _phs = utils.phase_conv(_kouts, kjs, xs, ys, zs, wavelength)
-    return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * np.abs(_asfs * _phs).sum(axis=-1) / kjs.shape[0]
+    return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * np.abs(ufs * _asfs * _phs).sum(axis=(-2,-1)) / kjs.shape[0]
 
 if __name__ == "__main__":
     pass
