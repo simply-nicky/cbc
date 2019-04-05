@@ -367,7 +367,7 @@ class DiffRes(object):
             _args_group = _diff_setup.create_group(args.__class__.__name__)
             for (key, value) in args.__dict__.items():
                 if key == 'elems':
-                    _args_group.create_dataset(key, data=value, dtype=h5py.special_dtype(vlen=unicode))
+                    _args_group.create_dataset(key, data=np.array(value, 'S2'), dtype=h5py.special_dtype(vlen=str))
                 elif key == 'us' or key == 'ks' or key == 'ds' or key == 'uf':
                     pass
                 else:
