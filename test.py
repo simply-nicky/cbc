@@ -6,9 +6,9 @@ if __name__ == "__main__":
     wavelength = 1.5e-7
     waist, f, ap = 35e-7, 2.0, 2e-2
     a, b, c = 7.9e-6, 7.9e-6, 3.8e-6
-    Nx, Ny, Nz = 20, 20, 1
+    Nx, Ny, Nz = 20, 20, 5
 
-    detNx, detNy = 4, 4
+    detNx, detNy = 512, 512
     pix_size = 55e-3 / 2
     det_dist = 30
     knum = 20000
