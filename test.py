@@ -8,7 +8,7 @@ if __name__ == "__main__":
     a, b, c = 7.9e-6, 7.9e-6, 3.8e-6
     Nx, Ny, Nz = 20, 20, 1
 
-    detNx, detNy = 512, 512
+    detNx, detNy = 4, 4
     pix_size = 55e-3 / 2
     det_dist = 30
     knum = 20000
