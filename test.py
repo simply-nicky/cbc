@@ -6,7 +6,7 @@ if __name__ == "__main__":
     wavelength = 1.5e-7
     waist, f, ap = 4.5e-6, 2.0, 2e-2
     a, b, c = 7.9e-6, 7.9e-6, 3.8e-6
-    Nx, Ny, Nz = 20, 20, 5
+    Nx, Ny, Nz = 20, 20, 1
 
     detNx, detNy = 512, 512
     pix_size = 55e-3 / 2
@@ -33,7 +33,7 @@ if __name__ == "__main__":
     # diffres2 = diff.conv(knum).pool()
     # diffres3 = diff.nocoh(knum).pool()
     # print('Estimated time: %fs' % (timer() - start))
-    diffres.write()
+    # diffres.write()
     # diffres2.write()
     # diffres3.write()
     diffres.plot()
