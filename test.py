@@ -4,7 +4,7 @@ import numpy as np
 
 if __name__ == "__main__":
     wavelength = 1.5e-7
-    waist, f, ap = 35e-7, 2.0, 2e-2
+    waist, f, ap = 4.5e-6, 2.0, 2e-2
     a, b, c = 7.9e-6, 7.9e-6, 3.8e-6
     Nx, Ny, Nz = 20, 20, 5
 
@@ -18,7 +18,7 @@ if __name__ == "__main__":
     theta = 2 * np.pi * np.random.random()
 
     logpath = os.path.join('logs', str(datetime.date.today()) + '.log')
-    beam = cbc.CircBeam(f, ap, wavelength)
+    beam = cbc.BesselBeam(waist, wavelength)
     diff = cbc.Diff(beam=beam, setup_args=cbc.SetupArgs(handler=logging.FileHandler(logpath), relpath='results/'),
                     det_args=cbc.DetArgs(det_dist=det_dist, detNx=detNx, detNy=detNy, pix_size=pix_size),
                     cell_args=cbc.CellArgs.importpdb('4et8.pdb'),
@@ -26,7 +26,7 @@ if __name__ == "__main__":
                     lat_args=cbc.LatArgs(a=a, b=b, c=c, Nx=Nx, Ny=Ny, Nz=Nz))
 
     # diff.rotate_lat(axis, theta)
-    diff.move_lat([0.501 * a, 0.501 * b, 1e-4])
+    diff.move_lat([0.5001 * a, 0.5001 * b, 0.0])
     
     start = timer()
     diffres = diff.henry().pool()
