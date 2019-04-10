@@ -5,7 +5,7 @@ For more information regarding the theory behind this see [the article written b
 
 ## compilation
 
-It's a package called cbc, with which you can conduct a diffraction simulation. See usage examples: [go to cbc structure](#cbc-structure)
+It's a package called cbc, with which you can conduct a diffraction simulation. See usage examples: [go to cbc package structure](#cbc-package-structure)
 
 Required dependencies:
 
