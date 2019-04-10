@@ -2,7 +2,7 @@
 File: wrapper.py (Python 2.X and 3.X) - name and Python versions compatibility are temporal.
 
 Class wrapper module for convergent beam crystallography simulation.
-Dependencies: numpy, matplotlib abd h5py.
+Dependencies: numpy, matplotlib and h5py.
 
 Made by Nikolay Ivanov, 2018-2019.
 """
@@ -33,7 +33,7 @@ class worker_star(object):
 
 class LatArgs(object): 
     """
-    lattice function arguments class.
+    Lattice function arguments class.
     
     Nx, Ny, Nz - numbers of unit cells in a sample
     a, b, c - unit cell edge lengths
@@ -46,6 +46,13 @@ class LatArgs(object):
         self.Nx, self.Ny, self.Nz = Nx, Ny, Nz
 
 class CellArgs(object):
+    """
+    Unit cell function arguments class.
+    
+    XS, YS, ZS - atom coordinates within the unit cell
+    bs - an array of B-factors
+    elems - an array of the abbreviations of chemical elements
+    """
     def __init__(self, XS=np.zeros(1), YS=np.zeros(1), ZS=np.zeros(1), bs=np.zeros(1), elems=['Au']):
         self.XS, self.YS, self.ZS, self.bs, self.elems = XS, YS, ZS, bs, elems
 
@@ -103,6 +110,12 @@ class Beam(object):
         pass
 
 class GausBeam(Beam):
+    """
+    Gaussian beam class.
+
+    waist - beam waist radius
+    wavelength - light wavelength
+    """
     def __init__(self, waist, wavelength):
         self.waist, self.wavelength = waist, wavelength
         self.us, self.ds, self.ks, self.uf = gaussian, gaussian_dist, gaussian_kins, gaussian_f
@@ -120,6 +133,12 @@ class GausBeam(Beam):
         return self.uf(kxs, kys, z, self.waist, self.wavelength)
 
 class BesselBeam(Beam):
+    """
+    Bessel beam class.
+
+    waist - beam waist radius
+    wavelength - light wavelength
+    """
     def __init__(self, waist, wavelength):
         self.waist, self.wavelength = waist, wavelength
         self.us, self.ds, self.ks = bessel, uniform_dist, bessel_kins
@@ -134,6 +153,13 @@ class BesselBeam(Beam):
         return self.ds(N, self.waist, self.wavelength)
 
 class RectBeam(Beam):
+    """
+    Rectangular aperture lens beam class.
+
+    f - focal length
+    ap - half aperture size
+    wavelength - light wavelength
+    """
     def __init__(self, f, ap, wavelength):
         self.f, self.ap, self.wavelength = f, ap, wavelength
         self.us,  self.ks = rbeam, lensbeam_kins
@@ -150,6 +176,13 @@ class RectBeam(Beam):
         return self.ks(xs, ys, zs, self.f, self.wavelength)
 
 class CircBeam(Beam):
+    """
+    Circular aperture lens beam class.
+
+    f - focal length
+    ap - half aperture size
+    wavelength - light wavelength
+    """
     def __init__(self, f, ap, wavelength):
         self.f, self.ap, self.wavelength = f, ap, wavelength
         self.us, self.ks = cbeam, lensbeam_kins
@@ -169,10 +202,11 @@ class Diff(DiffSetup):
     """
     Diffraction simulation setup class.
 
-    self_args, lat_args, det_args and asf_args - class objects
-    waist - beam waist radius
-    wavelength - light wavelength
-    elem - sample material chemical element
+    beam - incoming beam class
+    setup_args - SetupArgs class object
+    cell_args - CellArgs class object
+    lat_args - LatArgs class object
+    det_args - DetArgs class object
     """
     def __init__(self, beam, setup_args=SetupArgs(), cell_args=CellArgs(), lat_args=LatArgs(), det_args=DetArgs()):
         DiffSetup.__init__(self, setup_args)
@@ -184,6 +218,9 @@ class Diff(DiffSetup):
     def rotate_lat(self, axis, theta):
         """
         Rotate the sample around the axis by the angle theta
+
+        axis = [nx, ny, nz] - rotation axis vector
+        theta - rotation angle
         """
         self.xs -= self.lat_args.lat_orig[0]
         self.ys -= self.lat_args.lat_orig[1]
@@ -195,7 +232,9 @@ class Diff(DiffSetup):
     
     def move_lat(self, pt):
         """
-        Move the sample up- or downstream by distance z.
+        Move the sample to the point pt.
+
+        pt = [x, y, z] - array of point coordinates
         """
         assert len(pt) == 3, 'Point mest be size of three'
         self.xs += (pt[0] - self.lat_args.lat_orig[0])
@@ -260,7 +299,7 @@ class DiffCalc(object):
     kxs, kys - arguments
     num - number of elements to calculate per one argument element
     """
-    thread_size = 20000000          # ~1-2 Gb peak RAM usage
+    thread_size = 20000000          # ~1-2 Gb peak RAM usage per thread
 
     def __init__(self, setup, worker, kxs, kys, num):
         self.setup, self.worker, self.kxs, self.kys, self.num = setup, worker, kxs, kys, num

@@ -36,7 +36,7 @@ def savefig(reslist):
         ax.clear()
         path = os.path.splitext(filename)[0]
         ints = np.abs(data[0])   
-        ax.pcolor(data[1], data[2], ints, cmap='viridis', vmin=ints.min(), vmax=ints.max())
+        ax.imshow(data[1], data[2], ints, cmap='viridis', vmin=ints.min(), vmax=ints.max())
         ax.set_title(filename)
         fig.canvas.draw()
         fig.savefig(path + '.eps', format='eps')

@@ -2,6 +2,7 @@
 File: utilfuncs.py (Python 2.X and 3.X)
 
 Utility functions for convergent beam diffraction project.
+Dependencies: scipy, numpy and numba.
 """
 from __future__ import print_function
 
