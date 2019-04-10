@@ -10,6 +10,7 @@ It's a package called cbc, with which you can program the simulation. See usage 
 Required dependencies:
 
 - NumPy
+- Numba
 - SciPy
 - matplotlib
 - h5py
@@ -22,12 +23,17 @@ The library itself consists of two modules and an utility package:
 - wrapper.py - class wrapper for settting up and running diffraction simulations as well as plotting and writing into HDF5 file diffraction results
 - utils - utility package:
     - utilfuncs.py - utility functions for convergent beam diffraction project
+    - asf - atomic scattering factor calculation package:
+        - load.py - a module, that loads atomic scattering factor fit coefficients
+    - pdb - PDB data import package
+        - readpdb.py - a module, that imports molecular structure .pdb files
 
 Also there is a couple of usage examples:
 
 - diff-run.py - conducting diffraction simulation and saving results to HDF5 file
 - diff-slides.py - calculating and saving diffraction pattern series
 - read.py - reading and ploting diffraction results
+- test.py - testing diffraction simulation
 
 ## upcoming things to do
 
