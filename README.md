@@ -1,11 +1,11 @@
 # Convergent gaussian beam crystallography project
-Simulation for convergent gaussian beam diffration on a crystalline sample written in Python. Code is compatible with Python 2.X and 3.X.
+Simulation for convergent beam diffration on a crystalline sample written in Python. Code is compatible with Python 2.X and 3.X.
 
 For more information regarding the theory behind this see [the article written by Prof. Henry Chapman](https://e-reports-ext.llnl.gov/pdf/314988.pdf).
 
 ## compilation
 
-It's a package called cbc, with which you can program the simulation. See usage examples: [go to cbc structure](#cbc-structure)
+It's a package called cbc, with which you can conduct a diffraction simulation. See usage examples: [go to cbc structure](#cbc-structure)
 
 Required dependencies:
 
@@ -15,7 +15,19 @@ Required dependencies:
 - matplotlib
 - h5py
 
-## cbc structure
+## features
+
+The package can perform convergent beam diffraction simulation of crystalline samples based on first Born approximation theory.
+
+Available incoming beam models:
+
+- gaussian beam
+- Bessel beam
+- Lens beam with rectangular or circular aperture
+
+Samples could be composed of different compound unit cells deffined by array of atom coordinates within the unit cell and corresponding B-factor. These data can be imported by PDB format file. Unit cells are arranged in rectangular grid.
+
+## cbc package structure
 
 The library itself consists of two modules and an utility package:
 
@@ -37,4 +49,4 @@ Also there is a couple of usage examples:
 
 ## upcoming things to do
 
-- consider more complex samples, protein crystalls
+- consider different crystall space groups
