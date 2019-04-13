@@ -26,7 +26,7 @@ if __name__ == "__main__":
                     lat_args=cbc.LatArgs(a=a, b=b, c=c, Nx=Nx, Ny=Ny, Nz=Nz))
 
     # diff.rotate_lat(axis, theta)
-    diff.move_lat([0.5001 * a, 0.5001 * b, 0.0])
+    diff.move_lat([0.5001 * a, 0.5001 * b, 1e-4])
     
     start = timer()
     diffres = diff.henry().pool()

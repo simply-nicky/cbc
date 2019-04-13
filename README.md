@@ -21,11 +21,11 @@ The package can perform convergent beam diffraction simulation of crystalline sa
 
 Available incoming beam models:
 
-- gaussian beam
+- Gaussian beam
 - Bessel beam
 - Lens beam with rectangular or circular aperture
 
-Samples could be composed of different compound unit cells deffined by array of atom coordinates within the unit cell and corresponding B-factor. These data can be imported by PDB format file. Unit cells are arranged in rectangular grid.
+Samples could be composed of different compound unit cells deffined by array of atom coordinates within the unit cell and corresponding B-factors. These data can be imported via PDB format file. Unit cells are arranged in a rectangular grid.
 
 ## cbc package structure
 
