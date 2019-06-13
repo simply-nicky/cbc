@@ -21,7 +21,7 @@ if __name__ == "__main__":
     theta = 2 * np.pi * np.random.random()
 
     logpath = os.path.join('logs', str(datetime.date.today()) + '.log')
-    beam = cbc.RectBeam(waist, wavelength)
+    beam = cbc.CircBeam(f, ap, wavelength)
     diff = cbc.Diff(beam=beam, setup_args=cbc.SetupArgs(handler=logging.FileHandler(logpath), relpath='results/'),
                     det_args=cbc.DetArgs(det_dist=det_dist, detNx=detNx, detNy=detNy, pix_size=pix_size),
                     cell_args=cbc.CellArgs.importpdb('4et8.pdb'),
