@@ -169,7 +169,7 @@ def make_filename(path, filename, i=2):
 
 def get_logpath(filename=str(datetime.date.today()) + '.log'):
     logpath = os.path.join(parpath, log_relpath, filename)
-    make_dirs(logpath)
+    make_dirs(os.path.dirname(logpath))
     return logpath
 
 def rotation_matrix(axis, theta):
