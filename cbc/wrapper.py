@@ -9,7 +9,7 @@ Made by Nikolay Ivanov, 2018-2019.
 
 from .functions import asf_coeffs, rbeam, cbeam, lensbeam_kins, gaussian, gaussian_f, gaussian_kins, gaussian_dist, bessel, bessel_kins, uniform_dist, lattice, det_kouts, diff_henry, diff_conv, diff_nocoh
 from . import utils
-import numpy as np, os, concurrent.futures, h5py, datetime, logging, errno
+import numpy as np, os, concurrent.futures, h5py, datetime, logging
 from functools import partial
 from multiprocessing import cpu_count
 import matplotlib.pyplot as plt
@@ -80,9 +80,8 @@ class SetupArgs(object):
     level - logger level
     relpath - path to save results
     """
-    def __init__(self, timenow=datetime.datetime.now(), handler = NullHandler(), level=logging.INFO, relpath='results'):
-        parpath = os.path.join(os.path.dirname(__file__), os.path.pardir)
-        self.level, self.time, self.path = level, timenow, os.path.join(parpath, relpath)
+    def __init__(self, timenow=datetime.datetime.now(), handler = NullHandler(), level=logging.INFO, relpath=utils.res_relpath):
+        self.level, self.time, self.path = level, timenow, os.path.join(utils.parpath, relpath)
         handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
         self.handler = handler
 
@@ -394,10 +393,7 @@ class DiffRes(object):
     def write(self):
         self.setup.logger.info('Writing the results:')
         self.setup.logger.info('Folder: %s' % self.setup.path)
-        try:
-            os.makedirs(self.setup.path)
-        except OSError as e:
-            if e.errno != errno.EEXIST: raise
+        utils.make_dirs(self.setup.path)
         _filename = utils.make_filename(self.setup.path, 'diff_' + datetime.datetime.now().strftime('%d-%m-%Y_%H-%M-%S') + '.hdf5')
         self.setup.logger.info('Filename: %s' % _filename)
         _filediff = h5py.File(os.path.join(self.setup.path, _filename), 'w')

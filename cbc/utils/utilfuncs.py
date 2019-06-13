@@ -6,7 +6,7 @@ Dependencies: scipy, numpy and numba.
 """
 from __future__ import print_function
 
-import os, numpy as np, numba as nb, matplotlib.pyplot as plt, scipy.integrate as si, ctypes
+import os, numpy as np, numba as nb, matplotlib.pyplot as plt, scipy.integrate as si, ctypes, datetime, errno
 from math import sqrt, cos, sin, exp, pi
 from timeit import default_timer as timer
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -16,6 +16,10 @@ from numba.extending import get_cython_function_address
 addr = get_cython_function_address("scipy.special.cython_special", "j0")
 functype = ctypes.CFUNCTYPE(ctypes.c_double, ctypes.c_double)
 j0_c = functype(addr)
+
+parpath = os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir)
+res_relpath = 'results'
+log_relpath = 'logs'
 
 @nb.vectorize('float64(float64)')
 def j0_vec(x):
@@ -147,6 +151,12 @@ def rotate(m, xs, ys, zs):
             ZS[i,j] = m[2,0] * xs[i,j] + m[2,1] * ys[i,j] + m[2,2] * zs[i,j]
     return XS, YS, ZS
 
+def make_dirs(path):
+    try:
+        os.makedirs(path)
+    except OSError as e:
+        if e.errno != errno.EEXIST: raise
+
 def make_filename(path, filename, i=2):
     name, ext = os.path.splitext(filename)
     newname = name + "_{:d}".format(i) + ext
@@ -156,6 +166,11 @@ def make_filename(path, filename, i=2):
         return make_filename(path, filename, i + 1)
     else:
         return newname
+
+def get_logpath(filename=str(datetime.date.today()) + '.log'):
+    logpath = os.path.join(parpath, log_relpath, filename)
+    make_dirs(logpath)
+    return logpath
 
 def rotation_matrix(axis, theta):
     """
