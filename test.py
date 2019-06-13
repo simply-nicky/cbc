@@ -7,7 +7,7 @@ if __name__ == "__main__":
     f, ap, defoc = 2, 2e-2, 1e-4
     waist = 4.5e-6
     a, b, c = 7.9e-6, 7.9e-6, 3.8e-6
-    Nx, Ny, Nz = 20, 20, 1
+    Nx, Ny, Nz = 20, 20, 20
     detNx, detNy = 512, 512
     pix_size = 55e-3 / 2
     det_dist = 30
