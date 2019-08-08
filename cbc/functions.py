@@ -235,11 +235,12 @@ def lattice(a, b, c, Nx, Ny, Nz, XS=np.zeros(1), YS=np.zeros(1), ZS=np.zeros(1),
     Return a tuple of atom position coordinates (xs, ys, zs).
     """
     assert len(lat_orig) == 3, 'origin argument is invalid, it must have 3 values'
-    xval = a * np.arange((-Nx + 1) / 2.0, (Nx + 1) / 2.0) + lat_orig[0]
-    yval = b * np.arange((-Ny + 1) / 2.0, (Ny + 1) / 2.0) + lat_orig[1]
-    zval = c * np.arange((-Nz + 1) / 2.0, (Nz + 1) / 2.0) + lat_orig[2]
-    xs, ys, zs = np.meshgrid(xval, yval, zval)
-    return np.add.outer(xs.ravel(), XS), np.add.outer(ys.ravel(), YS), np.add.outer(zs.ravel(), ZS)
+    nxval = np.arange((-Nx + 1) / 2., (Nx + 1) / 2.)
+    nyval = np.arange((-Ny + 1) / 2., (Ny + 1) / 2.)
+    nzval = np.arange((-Nz + 1) / 2., (Nz + 1) / 2.)
+    nx, ny, nz = np.meshgrid(nxval, nyval, nzval)
+    pts = np.multiply.outer(a, nx) + np.multiply.outer(b, ny) + np.multiply.outer(c, nz)
+    return np.add.outer(pts[0].ravel(), XS), np.add.outer(pts[1].ravel(), YS), np.add.outer(pts[2].ravel(), ZS)
 
 def diff_henry(kxs, kys, xs, ys, zs, kins, us, asf_coeffs, sigma, wavelength=1.5e-7):
     """
@@ -280,26 +281,6 @@ def diff_conv(kxs, kys, xs, ys, zs, kjs, ufs, asf_coeffs, sigma, wavelength):
     _asfs = utils.asf_sum(_qabs, asf_coeffs)
     _phs = utils.phase_conv(_kouts, kjs, xs, ys, zs, wavelength)
     return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * (ufs * _asfs * _phs).sum(axis=(-2,-1)) / kjs.shape[0]
-
-def diff_nocoh(kxs, kys, xs, ys, zs, kjs, ufs, asf_coeffs, sigma, wavelength):
-    """
-    Return diffraction pattern intensity for given array of output wavevectors based on convolution noncoherent equations.
-
-    kxs, kys - x and y coordinates of output wavevectors
-    xs, ys, zs - coordinates of sample lattice atoms
-    kjs - incoming wavevectors based on gaussian beam distribution
-    ufs - incoming beam phase fourier transform
-    asf_coeffs - atomic scattering factor fit coefficients
-    sigma - the solid angle of a detector pixel
-    wavelength - light wavelength
-
-    Return np.array of diffracted wave values with the same shape as kxs and kys.
-    """
-    _kouts = kout_parax(kxs, kys)
-    _qabs = utils.q_abs(_kouts, kjs, wavelength)
-    _asfs = utils.asf_sum(_qabs, asf_coeffs)
-    _phs = utils.phase_conv(_kouts, kjs, xs, ys, zs, wavelength)
-    return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * np.abs(ufs * _asfs * _phs).sum(axis=(-2,-1)) / kjs.shape[0]
 
 if __name__ == "__main__":
     pass

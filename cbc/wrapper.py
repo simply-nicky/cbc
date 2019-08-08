@@ -7,7 +7,7 @@ Dependencies: numpy, matplotlib and h5py.
 Made by Nikolay Ivanov, 2018-2019.
 """
 
-from .functions import asf_coeffs, rbeam, cbeam, lensbeam_kins, gaussian, gaussian_f, gaussian_kins, gaussian_dist, bessel, bessel_kins, uniform_dist, lattice, det_kouts, diff_henry, diff_conv, diff_nocoh
+from .functions import asf_coeffs, rbeam, cbeam, lensbeam_kins, gaussian, gaussian_f, gaussian_kins, gaussian_dist, bessel, bessel_kins, uniform_dist, lattice, det_kouts, diff_henry, diff_conv
 from . import utils
 import numpy as np, os, concurrent.futures, h5py, datetime, logging
 from functools import partial
@@ -15,7 +15,7 @@ from multiprocessing import cpu_count
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.colors import LogNorm
-from abc import ABCMeta, abstractmethod
+from abc import ABCMeta, abstractmethod, abstractproperty
 
 try:
     from logging import NullHandler
@@ -71,6 +71,10 @@ class DetArgs(object):
     def __init__(self, det_dist=54, detNx=512, detNy=512, pix_size=55e-3):
         self.det_dist, self.detNx, self.detNy, self.pix_size = det_dist, detNx, detNy, pix_size
 
+    @property
+    def arguments(self):
+        return self.det_dist, self.detNx, self.detNy, self.pix_size
+
 class SetupArgs(object):
     """
     diff_setup arguments class.
@@ -97,16 +101,48 @@ class DiffSetup(object):
         self.logger.info('Initializing diff_setup')
         self.logger.info('output path is %s' % self.path)
 
-class Beam(object):
+class ABCBeam(object):
+    __metaclass__ = ABCMeta
+
+    @abstractproperty
+    def wavelength(self): pass
+
+    @abstractmethod
+    def wave(self, xs, ys, zs): pass
+
+    @abstractmethod
+    def wavevectors(self, xs, ys, zs): pass
+
+class Beam(ABCBeam):
     __metaclass__ = ABCMeta
 
     @abstractmethod
-    def wave(self):
-        pass
-        
+    def amplitude(self, xs, ys, zs): pass
+
     @abstractmethod
-    def wavevectors(self):
-        pass
+    def dist(self, N): pass
+
+    def wave(self, xs, ys, zs):
+        return self.amplitude(xs, ys, zs) * utils.phase_inc(self.wavevectors(xs, ys, zs), xs, ys, zs, self.wavelength)
+
+class LensBeam(ABCBeam):
+    __metaclass__ = ABCMeta
+        
+    @abstractproperty
+    def focus(self): pass
+
+    @abstractmethod
+    def worker(self, xs, ys, zs): pass
+
+    def wave(self, xs, ys, zs):
+        us = []
+        with concurrent.futures.ProcessPoolExecutor() as executor:
+            for u in executor.map(worker_star(self.worker), zip(np.array_split(xs, cpu_count()), np.array_split(ys, cpu_count()), np.array_split(zs, cpu_count()))):
+                us.extend(u)
+        return np.array(us)
+
+    def wavevectors(self, xs, ys, zs):
+        return lensbeam_kins(xs, ys, zs, self.focus, self.wavelength)
 
 class GausBeam(Beam):
     """
@@ -115,21 +151,22 @@ class GausBeam(Beam):
     waist - beam waist radius
     wavelength - light wavelength
     """
+    wavelength = None
+
     def __init__(self, waist, wavelength):
         self.waist, self.wavelength = waist, wavelength
-        self.us, self.ds, self.ks, self.uf = gaussian, gaussian_dist, gaussian_kins, gaussian_f
 
-    def wave(self, xs, ys, zs):
-        return self.us(xs, ys, zs, self.waist, self.wavelength) * utils.phase_inc(self.wavevectors(xs, ys, zs), xs, ys, zs, self.wavelength)
+    def amplitude(self, xs, ys, zs):
+        return gaussian(xs, ys, zs, self.waist, self.wavelength)
 
     def wavevectors(self, xs, ys, zs):
-        return self.ks(xs, ys, zs, self.waist, self.wavelength)
+        return gaussian_kins(xs, ys, zs, self.waist, self.wavelength)
 
     def dist(self, N):
-        return self.ds(N, self.waist, self.wavelength)
+        return gaussian_dist(N, self.waist, self.wavelength)
 
     def fphase(self, kxs, kys, z):
-        return self.uf(kxs, kys, z, self.waist, self.wavelength)
+        return gaussian_f(kxs, kys, z, self.waist, self.wavelength)
 
 class BesselBeam(Beam):
     """
@@ -138,20 +175,21 @@ class BesselBeam(Beam):
     waist - beam waist radius
     wavelength - light wavelength
     """
+    wavelength = None
+
     def __init__(self, waist, wavelength):
         self.waist, self.wavelength = waist, wavelength
-        self.us, self.ds, self.ks = bessel, uniform_dist, bessel_kins
 
-    def wave(self, xs, ys, zs):
-        return self.us(xs, ys, zs, self.waist, self.wavelength) * utils.phase_inc(self.wavevectors(xs, ys, zs), xs, ys, zs, self.wavelength)
+    def amplitude(self, xs, ys, zs):
+        return bessel(xs, ys, zs, self.waist, self.wavelength)
 
     def wavevectors(self, xs, ys, zs):
-        return self.ks(xs, ys, zs, self.waist, self.wavelength)
+        return bessel_kins(xs, ys, zs, self.waist, self.wavelength)
 
     def dist(self, N):
-        return self.ds(N, self.waist, self.wavelength)
+        return uniform_dist(N, self.waist, self.wavelength)
 
-class RectBeam(Beam):
+class RectBeam(LensBeam):
     """
     Rectangular aperture lens beam class.
 
@@ -159,22 +197,15 @@ class RectBeam(Beam):
     ap - half aperture size
     wavelength - light wavelength
     """
-    def __init__(self, f, ap, wavelength):
-        self.f, self.ap, self.wavelength = f, ap, wavelength
-        self.us,  self.ks = rbeam, lensbeam_kins
+    wavelength, focus = None, None
 
-    def wave(self, xs, ys, zs):
-        worker = partial(self.us, f=self.f, ap=self.ap, wavelength=self.wavelength)
-        us = []
-        with concurrent.futures.ProcessPoolExecutor() as executor:
-            for u in executor.map(worker_star(worker), zip(np.array_split(xs, cpu_count()), np.array_split(ys, cpu_count()), np.array_split(zs, cpu_count()))):
-                us.extend(u)
-        return np.array(us)
+    def __init__(self, focus, aperture, wavelength):
+        self.focus, self.aperture, self.wavelength = focus, aperture, wavelength
+        
+    def worker(self, xs, ys, zs): 
+        return rbeam(xs, ys, zs, self.focus, self.aperture, self.wavelength)
 
-    def wavevectors(self, xs, ys, zs):
-        return self.ks(xs, ys, zs, self.f, self.wavelength)
-
-class CircBeam(Beam):
+class CircBeam(LensBeam):
     """
     Circular aperture lens beam class.
 
@@ -182,20 +213,13 @@ class CircBeam(Beam):
     ap - half aperture size
     wavelength - light wavelength
     """
-    def __init__(self, f, ap, wavelength):
-        self.f, self.ap, self.wavelength = f, ap, wavelength
-        self.us, self.ks = cbeam, lensbeam_kins
+    wavelength, focus = None, None
 
-    def wave(self, xs, ys, zs):
-        worker = partial(self.us, f=self.f, ap=self.ap, wavelength=self.wavelength)
-        us = []
-        with concurrent.futures.ProcessPoolExecutor() as executor:
-            for u in executor.map(worker_star(worker), zip(np.array_split(xs, cpu_count()), np.array_split(ys, cpu_count()), np.array_split(zs, cpu_count()))):
-                us.extend(u)
-        return np.array(us)
-
-    def wavevectors(self, xs, ys, zs):
-        return self.ks(xs, ys, zs, self.f, self.wavelength)
+    def __init__(self, focus, aperture, wavelength):
+        self.focus, self.aperture, self.wavelength = focus, aperture, wavelength
+        
+    def worker(self, xs, ys, zs): 
+        return cbeam(xs, ys, zs, self.focus, self.aperture, self.wavelength)
 
 class Diff(DiffSetup):
     """
@@ -253,9 +277,9 @@ class Diff(DiffSetup):
         _asf_coeffs = asf_coeffs(self.cell_args.elems, self.cell_args.bs, self.beam.wavelength)
         _kins = self.beam.wavevectors(self.xs, self.ys, self.zs)
         _us = self.beam.wave(self.xs, self.ys, self.zs)
-        _worker = partial(diff_henry, xs=self.xs, ys=self.ys, zs=self.zs, kins=_kins, us=_us, asf_coeffs=_asf_coeffs, sigma=self.sigma, wavelength=self.beam.wavelength)
-        _num = self.xs.size
-        return DiffCalc(self, _worker, _kxs, _kys, _num)
+        _worker = partial(diff_henry, asf_coeffs=_asf_coeffs, sigma=self.sigma, wavelength=self.beam.wavelength)
+        _size = self.xs.size * _kxs.size
+        return DiffHenry(self, _worker, _kxs, _kys, _kins, _us, _size)
 
     def conv(self, knum=1000):
         """
@@ -269,25 +293,10 @@ class Diff(DiffSetup):
         _asf_coeffs = asf_coeffs(self.cell_args.elems, self.cell_args.bs, self.beam.wavelength)
         _kjs = np.repeat(self.beam.dist(knum)[:,np.newaxis], self.xs.shape[-1], axis=1)
         _ufs = self.beam.fphase(_kjs[:,:,0], _kjs[:,:,1], self.lat_args.lat_orig[-1])
-        _worker = partial(diff_conv, xs=self.xs, ys=self.ys, zs=self.zs, kjs=_kjs, ufs=_ufs, asf_coeffs=_asf_coeffs, sigma=self.sigma, wavelength=self.beam.wavelength)
-        _num = knum
-        return DiffCalc(self, _worker, _kxs, _kys, _num)
-
-    def nocoh(self, knum=1000):
-        """
-        Convergent gaussian beam diffraction based on convolution noncoherent equations.
-        """
-        self.logger.info("Setup for diffraction based on convolution equations with following parameters:")
-        for args in (self.lat_args, self.det_args):
-            for (key, value) in args.__dict__.items():
-                self.logger.info('%-9s=%+28s' % (key, value))
-        _kxs, _kys = det_kouts(**self.det_args.__dict__)
-        _asf_coeffs = asf_coeffs(self.cell_args.elems, self.cell_args.bs, self.beam.wavelength)
-        _kjs = np.repeat(self.beam.dist(knum)[:,np.newaxis], self.xs.shape[-1], axis=1)
-        _ufs = self.beam.fphase(_kjs[:,:,0], _kjs[:,:,1], self.lat_args.lat_orig[-1])
-        _worker = partial(diff_nocoh, xs=self.xs, ys=self.ys, zs=self.zs, kjs=_kjs, ufs=_ufs, asf_coeffs=_asf_coeffs, sigma=self.sigma, wavelength=self.beam.wavelength)
-        _num = knum
-        return DiffCalc(self, _worker, _kxs, _kys, _num)
+        print(_ufs.shape, _kjs.shape)
+        _worker = partial(diff_conv, kjs=_kjs, ufs=_ufs, asf_coeffs=_asf_coeffs, sigma=self.sigma, wavelength=self.beam.wavelength)
+        _size = knum * self.xs.size * _kxs.size
+        return DiffConv(self, _worker, _kxs, _kys, _size)
 
 class DiffCalc(object):
     """
@@ -298,32 +307,104 @@ class DiffCalc(object):
     kxs, kys - arguments
     num - number of elements to calculate per one argument element
     """
-    thread_size = 20000000          # ~1-2 Gb peak RAM usage per thread
+    __metaclass__ = ABCMeta
+    thread_size = 2**25
+    k_size = 2**8
 
-    def __init__(self, setup, worker, kxs, kys, num):
-        self.setup, self.worker, self.kxs, self.kys, self.num = setup, worker, kxs, kys, num
+    @abstractproperty
+    def setup(self): pass
+
+    @abstractproperty
+    def kxs(self): pass
+
+    @abstractproperty
+    def size(self): pass
+
+    def _chunkify(self):
+        thread_num = self.size // self.thread_size + 1
+        self.k_thread_num = self.kxs.size // self.k_size + 1
+        self.lat_thread_num = thread_num // self.k_thread_num + 1
+        self.setup.logger.info('Chunking the data, wavevectors data thread number: %d, lattice data thread number: %d' % (self.k_thread_num, self.lat_thread_num))
+
+class DiffHenry(DiffCalc):
+    setup, kxs, size = None, None, None
+
+    def __init__(self, setup, worker, kxs, kys, kins, us, size):
+        self.setup, self.worker, self.kxs, self.kys, self.kins, self.us, self.size = setup, worker, kxs, kys, kins, us, size
     
     def serial(self):
-        _chunk_size = self.thread_size // self.num
-        _thread_num = self.kxs.size // _chunk_size + 1
+        self._chunkify()
         self.setup.logger.info('Starting serial calculation')
         _res = []
-        for diff in map(worker_star(self.worker), zip(np.array_split(self.kxs.ravel(), _thread_num), np.array_split(self.kys.ravel(), _thread_num))):
-                _res.extend(diff)
+        for xs, ys, zs, kins, us in zip(np.array_split(self.setup.xs, self.lat_thread_num),
+                                        np.array_split(self.setup.ys, self.lat_thread_num),
+                                        np.array_split(self.setup.zs, self.lat_thread_num),
+                                        np.array_split(self.kins, self.lat_thread_num),
+                                        np.array_split(self.us, self.lat_thread_num)):
+            _chunkres = []
+            for kxs, kys in zip(np.array_split(self.kxs.ravel(), self.k_thread_num), np.array_split(self.kys.ravel(), self.k_thread_num)):
+                _chunkres.extend(self.worker(kxs=kxs, kys=kys, xs=xs, ys=ys, zs=zs, kins=kins, us=us))
+            _res.append(_chunkres)
+        _res = np.array(_res).sum(axis=0).reshape(self.kxs.shape)
+        self.setup.logger.info('The calculation has ended, %d diffraction pattern values total' % _res.size)
+        return DiffRes(self.setup, _res, self.kxs, self.kys)
+
+    def pool(self):
+        self._chunkify()
+        _res = []
+        self.setup.logger.info('Starting concurrent calculation')
+        for xs, ys, zs, kins, us in zip(np.array_split(self.setup.xs, self.lat_thread_num),
+                                        np.array_split(self.setup.ys, self.lat_thread_num),
+                                        np.array_split(self.setup.zs, self.lat_thread_num),
+                                        np.array_split(self.kins, self.lat_thread_num),
+                                        np.array_split(self.us, self.lat_thread_num)):
+            worker = partial(self.worker, xs=xs, ys=ys, zs=zs, kins=kins, us=us)
+            _chunkres = []
+            with concurrent.futures.ProcessPoolExecutor() as executor:
+                for chunkval in executor.map(worker_star(worker), zip(np.array_split(self.kxs.ravel(), self.k_thread_num), np.array_split(self.kys.ravel(), self.k_thread_num))):
+                    _chunkres.extend(chunkval)
+            _res.append(_chunkres)
+        _res = np.array(_res).sum(axis=0).reshape(self.kxs.shape)
+        self.setup.logger.info('The calculation has ended, %d diffraction pattern values total' % _res.size)
+        return DiffRes(self.setup, _res, self.kxs, self.kys)
+
+class DiffConv(DiffCalc):
+    setup, kxs, size = None, None, None
+
+    def __init__(self, setup, worker, kxs, kys, size):
+        self.setup, self.worker, self.kxs, self.kys, self.size = setup, worker, kxs, kys, size
+    
+    def serial(self):
+        self._chunkify()
+        self.setup.logger.info('Starting serial calculation')
+        _res = []
+        for xs, ys, zs in zip(np.array_split(self.setup.xs, self.lat_thread_num),
+                                np.array_split(self.setup.ys, self.lat_thread_num),
+                                np.array_split(self.setup.zs, self.lat_thread_num)):
+            _chunkres = []
+            for kxs, kys in zip(np.array_split(self.kxs.ravel(), self.k_thread_num), np.array_split(self.kys.ravel(), self.k_thread_num)):
+                _chunkres.extend(self.worker(kxs=kxs, kys=kys, xs=xs, ys=ys, zs=zs))
+            _res.append(_chunkres)
         _res = np.array(_res).reshape(self.kxs.shape)
         self.setup.logger.info('The calculation has ended, %d diffraction pattern values total' % _res.size)
         return DiffRes(self.setup, _res, self.kxs, self.kys)
 
     def pool(self):
-        _chunk_size = self.thread_size // self.num
-        _thread_num = max(cpu_count(), self.kxs.size // _chunk_size)
+        self._chunkify()
         _res = []
-        self.setup.logger.info('Starting concurrent calculation, %d threads, %d chunk size' % (_thread_num, _chunk_size))
-        with concurrent.futures.ProcessPoolExecutor() as executor:
-            for diff in executor.map(worker_star(self.worker), zip(np.array_split(self.kxs.ravel(), _thread_num), np.array_split(self.kys.ravel(), _thread_num))):
-                _res.extend(diff)
-        self.setup.logger.info('The calculation has ended, %d diffraction pattern values total' % len(_res))
-        _res = np.array(_res).reshape(self.kxs.shape)
+        self.setup.logger.info('Starting concurrent calculation')
+        print(self.k_thread_num, self.lat_thread_num)
+        for xs, ys, zs in zip(np.array_split(self.setup.xs, self.lat_thread_num),
+                                np.array_split(self.setup.ys, self.lat_thread_num),
+                                np.array_split(self.setup.zs, self.lat_thread_num)):
+            worker = partial(self.worker, xs=xs, ys=ys, zs=zs)
+            _chunkres = []
+            with concurrent.futures.ProcessPoolExecutor() as executor:
+                for chunkval in executor.map(worker_star(worker), zip(np.array_split(self.kxs.ravel(), self.k_thread_num), np.array_split(self.kys.ravel(), self.k_thread_num))):
+                    _chunkres.extend(chunkval)
+            _res.append(_chunkres)
+        _res = np.array(_res)
+        self.setup.logger.info('The calculation has ended, %d diffraction pattern values total' % _res.size)
         return DiffRes(self.setup, _res, self.kxs, self.kys)
 
 class DiffRes(object):
