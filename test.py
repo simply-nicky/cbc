@@ -7,13 +7,13 @@ if __name__ == "__main__":
     # f, ap, defoc = 2, 2e-2, 1e-4
     waist = wavelength / np.pi / 0.015
     Nx, Ny, Nz = 200, 200, 200
-    detNx, detNy = 512, 512
-    pix_size = 55e-3
-    det_dist = 20
+    detNx, detNy = 2000, 2000
+    pix_size = 88.6e-3
+    det_dist = 250
 
-    astar = np.array([0.0109864094612009, -0.00551908483885947, 0.00294352907953398])
-    bstar = np.array([0.00576393741858660, 0.0112435046699143, -0.000431835526544485])
-    cstar = np.array([-0.00505686021507011, 0.00357471961041716, 0.0255767535096894])
+    astar = np.array([0.00551908483885947, -0.00294352907953398, 0.0109864094612009])
+    bstar = np.array([-0.0112435046699143, 0.000431835526544485, 0.00576393741858660])
+    cstar = np.array([-0.00357471961041716, -0.0255767535096894, -0.00505686021507011])
     aa = np.cross(bstar, cstar) / (np.cross(bstar, cstar).dot(astar)) * 1e-7
     bb = np.cross(cstar, astar) / (np.cross(cstar, astar).dot(bstar)) * 1e-7
     cc = np.cross(astar, bstar) / (np.cross(astar, bstar).dot(cstar)) * 1e-7
