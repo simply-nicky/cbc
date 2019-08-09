@@ -3,16 +3,16 @@ from timeit import default_timer as timer
 import numpy as np
 
 if __name__ == "__main__":
-    wavelength = 1.5e-7
+    wavelength = 1.14e-7
     # f, ap, defoc = 2, 2e-2, 1e-4
     waist = wavelength / np.pi / 0.015
     Nx, Ny, Nz = 200, 200, 200
     detNx, detNy = 512, 512
     pix_size = 55e-3
-    det_dist = 50
+    det_dist = 20
 
     astar = np.array([0.0109864094612009, -0.00551908483885947, 0.00294352907953398])
-    bstar = np.array([ 0.00576393741858660, 0.0112435046699143, -0.000431835526544485])
+    bstar = np.array([0.00576393741858660, 0.0112435046699143, -0.000431835526544485])
     cstar = np.array([-0.00505686021507011, 0.00357471961041716, 0.0255767535096894])
     aa = np.cross(bstar, cstar) / (np.cross(bstar, cstar).dot(astar)) * 1e-7
     bb = np.cross(cstar, astar) / (np.cross(cstar, astar).dot(bstar)) * 1e-7
