@@ -6,7 +6,7 @@ if __name__ == "__main__":
     wavelength = 1.14e-7
     # f, ap, defoc = 2, 2e-2, 1e-4
     waist = wavelength / np.pi / 0.015
-    Nx, Ny, Nz = 200, 200, 200
+    Nx, Ny, Nz = 100, 100, 100
     detNx, detNy = 2000, 2000
     pix_size = 88.6e-3
     det_dist = 250
