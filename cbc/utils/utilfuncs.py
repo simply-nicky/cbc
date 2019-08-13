@@ -97,14 +97,15 @@ def asf_sum(ss, asfcoeffs):
     a, b, c = ss.shape
     asfs = np.empty((a, b, c), dtype=np.float64)
     ss = np.ascontiguousarray(ss)
+    ss_squared_neg = -ss*ss
     asfcoeffs = np.ascontiguousarray(asfcoeffs)
     for i in range(a):
         for j in range(b):
             for k in range(c):
                 dasf = 0.0
                 for l in range(5):
-                    dasf += asfcoeffs[k,l] * exp(-ss[i,j,k] * ss[i,j,k] * asfcoeffs[k,6+l])
-                asfs[i,j,k] = (dasf + asfcoeffs[k,5]) * exp(-ss[i,j,k]**2 * asfcoeffs[k,-1])
+                    dasf += asfcoeffs[k,l] * exp(ss_squared_neg[i,j,k] * asfcoeffs[k,6+l])
+                asfs[i,j,k] = (dasf + asfcoeffs[k,5]) * exp(ss_squared_neg[i,j,k] * asfcoeffs[k,-1])
     return asfs
 
 @nb.njit(nb.float64[:,:,:](nb.float64[:,:], nb.float64[:,:,:], nb.float64), fastmath=True)
