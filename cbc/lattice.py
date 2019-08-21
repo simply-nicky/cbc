@@ -23,9 +23,8 @@ class Cell(object):
         en = constants.c * constants.h / constants.e / wavelength * 1e3     #photon energy in eV
         _asf_list = []
         for elem, b in zip(self.elems, self.bs):
-            _asf_coeffs = np.array([utils.asf.waskif[elem][:5].sum(), utils.asf.waskif[elem][6:8].mean()])
             ens, f1s = utils.asf.henke[elem][0:2]
-            _asf_coeffs.append([interp1d(ens, f1s, kind='cubic')(en) - _asf_coeffs[0], b])
+            _asf_coeffs = np.array([utils.asf.waskif[elem][:5].sum(), utils.asf.waskif[elem][6:8].mean(), interp1d(ens, f1s, kind='cubic')(en) - utils.asf.waskif[elem][:5].sum(), b])
             _asf_list.append(_asf_coeffs)
         return np.array(_asf_list)
 
