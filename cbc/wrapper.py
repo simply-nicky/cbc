@@ -173,25 +173,6 @@ class DiffCalc(object):
 
     def pool(self):
         self._chunkify()
-        res = []
-        self.setup.logger.info('Starting concurrent calculation')
-        for xs, ys, zs, kins, us in zip(np.array_split(self.setup.xs, self.lat_thread_num),
-                                        np.array_split(self.setup.ys, self.lat_thread_num),
-                                        np.array_split(self.setup.zs, self.lat_thread_num),
-                                        np.array_split(self.kins, self.lat_thread_num),
-                                        np.array_split(self.us, self.lat_thread_num)):
-            worker = utils.DiffWorker(kins, xs, ys, zs, us, self.asf_coeffs, self.setup.beam.wavelength, self.setup.sigma)
-            _chunkres = []
-            with concurrent.futures.ProcessPoolExecutor() as executor:
-                for chunkval in executor.map(worker, np.array_split(self.kouts, self.k_thread_num)):
-                    _chunkres.extend(chunkval)
-            res.append(_chunkres)
-        res = np.sum(res, axis=0).reshape(self.kxs.shape)
-        self.setup.logger.info('The calculation has ended, %d diffraction pattern values total' % res.size)
-        return DiffRes(self.setup, res, self.kxs, self.kys)
-
-    def pool_submit(self):
-        self._chunkify()
         fut_list, res = [], []
         self.setup.logger.info('Starting concurrent calculation')
         with concurrent.futures.ProcessPoolExecutor() as executor:
