@@ -12,7 +12,6 @@ from . import utils
 from functools import partial
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.colors import LogNorm
-from scipy import constants
 from math import sqrt
 from abc import ABCMeta, abstractmethod, abstractproperty
 import numpy as np, os, concurrent.futures, h5py, datetime, matplotlib.pyplot as plt, logging
@@ -113,7 +112,7 @@ class Diff(DiffSetup):
         self.zs += (pt[2] - self.lattice.lat_orig[2])
         self.lattice.lat_orig = pt
 
-    def henry(self):
+    def calculate(self):
         """
         Convergent gaussian beam diffraction based on Henry's equations.
         """
@@ -122,23 +121,7 @@ class Diff(DiffSetup):
             for (key, value) in args.arguments.items():
                 self.logger.info('%-9s=%+28s' % (key, value))
         kxs, kys = self.detector.kouts()
-        return DiffHenry(self, kxs, kys)
-
-    def conv(self, knum=1000):
-        """
-        Convergent gaussian beam diffraction based on convolution equations.
-        """
-        self.logger.info("Setup for diffraction based on convolution equations with following parameters:")
-        for args in (self.lattice, self.detector):
-            for (key, value) in args.arguments.items():
-                self.logger.info('%-9s=%+28s' % (key, value))
-        kxs, kys = self.detector.kout()
-        # _asf_coeffs = self.lattice.cell.asf(self.beam.wavelength)
-        # _kjs = np.repeat(self.beam.dist(knum)[:,np.newaxis], self.xs.shape[-1], axis=1)
-        # _ufs = self.beam.fphase(_kjs[:,:,0], _kjs[:,:,1], self.lattice.lat_orig[-1])
-        # _worker = partial(diff_conv, kjs=_kjs, ufs=_ufs, asf_coeffs=_asf_coeffs, sigma=self.sigma, wavelength=self.beam.wavelength)
-        # _size = knum * self.xs.size * _kxs.size
-        return DiffConv(self, kxs, kys, knum)
+        return DiffCalc(self, kxs, kys)
 
 class DiffCalc(object):
     """
@@ -149,21 +132,20 @@ class DiffCalc(object):
     kxs, kys - arguments
     num - number of elements to calculate per one argument element
     """
-    __metaclass__ = ABCMeta
     thread_size = 2**25
     k_size = 2**8
 
-    @abstractproperty
-    def setup(self): pass
+    def __init__(self, setup, kxs, kys):
+        self.setup, self.kxs, self.kys = setup, kxs, kys
+        self.asf_coeffs = setup.lattice.cell.asf(setup.beam.wavelength)
+        self.kins = setup.beam.wavevectors(setup.xs, setup.ys, setup.zs)
+        self.us = setup.beam.wave(setup.xs, setup.ys, setup.zs)
 
-    @abstractproperty
-    def kxs(self): pass
+    @property
+    def size(self): return self.setup.xs.size * self.kxs.size
 
-    @abstractproperty
-    def kys(self): pass
-
-    @abstractproperty
-    def size(self): pass
+    @property
+    def asf_coeffs(self): return self.setup.lattice.cell.asf(self.setup.beam.wavelength)
 
     @property
     def kouts(self): return np.stack((self.kxs.ravel(), self.kys.ravel(), 1.0 - (self.kxs.ravel()**2 + self.kys.ravel()**2) / 2.0), axis=1)
@@ -174,23 +156,6 @@ class DiffCalc(object):
         self.lat_thread_num = thread_num // self.k_thread_num + 1
         self.setup.logger.info('Chunking the data, wavevectors data thread number: %d, lattice data thread number: %d' % (self.k_thread_num, self.lat_thread_num))
 
-class DiffHenry(DiffCalc):
-    setup, kxs, kys = None, None, None
-
-    @property
-    def size(self): self.setup.xs.size * self.kxs.size
-
-    def __init__(self, setup, kxs, kys):
-        self.setup, self.kxs, self.kys = setup, kxs, kys
-        self.asf_coeffs = setup.lattice.asf(setup.beam.wavelength)
-        self.kins = setup.beam.wavevectors(setup.xs, setup.ys, setup.zs)
-        self.us = setup.beam.wave(setup.xs, setup.ys, setup.zs)
-    
-    def worker(self, kouts, kins, xs, ys, zs, us):
-        _asfs = utils.asf_vals(kouts, kins, self.asf_coeffs, self.setup.beam.wavelength)
-        _phs = utils.phase(kouts, xs, ys, zs, self.setup.beam.wavelength)
-        return sqrt(self.setup.sigma) * constants.value('classical electron radius') * 1e3 * (_asfs * _phs * us).sum(axis=(-2,-1))
-
     def serial(self):
         self._chunkify()
         self.setup.logger.info('Starting serial calculation')
@@ -201,8 +166,9 @@ class DiffHenry(DiffCalc):
                                         np.array_split(self.kins, self.lat_thread_num),
                                         np.array_split(self.us, self.lat_thread_num)):
             _chunkres = []
+            worker = utils.HenryWorker(kins, xs, ys, zs, us, self.asf_coeffs, self.setup.beam.wavelength, self.setup.sigma)
             for kouts in np.array_split(self.kouts, self.k_thread_num):
-                _chunkres.extend(self.worker(kouts=kouts, xs=xs, ys=ys, zs=zs, kins=kins, us=us))
+                _chunkres.extend(worker(kouts))
             _res.append(_chunkres)
         _res = np.array(_res).sum(axis=0).reshape(self.kxs.shape)
         self.setup.logger.info('The calculation has ended, %d diffraction pattern values total' % _res.size)
@@ -217,67 +183,13 @@ class DiffHenry(DiffCalc):
                                         np.array_split(self.setup.zs, self.lat_thread_num),
                                         np.array_split(self.kins, self.lat_thread_num),
                                         np.array_split(self.us, self.lat_thread_num)):
-            worker = partial(self.worker, xs=xs, ys=ys, zs=zs, kins=kins, us=us)
+            worker = utils.HenryWorker(kins, xs, ys, zs, us, self.asf_coeffs, self.setup.beam.wavelength, self.setup.sigma)
             _chunkres = []
             with concurrent.futures.ProcessPoolExecutor() as executor:
                 for chunkval in executor.map(worker, np.array_split(self.kouts, self.k_thread_num)):
                     _chunkres.extend(chunkval)
             _res.append(_chunkres)
         _res = np.array(_res).sum(axis=0).reshape(self.kxs.shape)
-        self.setup.logger.info('The calculation has ended, %d diffraction pattern values total' % _res.size)
-        return DiffRes(self.setup, _res, self.kxs, self.kys)
-
-class DiffConv(DiffCalc):
-    setup, kxs, kys = None, None, None
-
-    @property
-    def size(self): return self.knum * self.setup.xs.size * self.kxs.size
-
-    def __init__(self, setup, kxs, kys, knum):
-        self.setup, self.kxs, self.kys, self.knum = setup, kxs, kys, knum
-        self.asf_coeffs = setup.lattice.asf(setup.beam.wavelength)
-        self.kjs = np.repeat(setup.beam.dist(knum)[:,np.newaxis], setup.xs.shape[-1], axis=1)
-        self.ufs = setup.beam.fphase(self.kjs[:,:,0], self.kjs[:,:,1], setup.lattice.lat_orig[-1])
-    
-    def worker(self, kouts, kjs, xs, ys, zs, ufs):
-        _asfs = utils.asf_vals(kouts, kjs, self.asf_coeffs, self.setup.beam.wavelength)
-        _phs = utils.phase_conv(kouts, kjs, xs, ys, zs, self.setup.beam.wavelength)
-        return sqrt(self.setup.sigma) * constants.value('classical electron radius') * 1e3 * (ufs * _asfs * _phs).sum(axis=(-2,-1)) / kjs.shape[0]
-
-    def serial(self):
-        self._chunkify()
-        self.setup.logger.info('Starting serial calculation')
-        _res = []
-        for xs, ys, zs, kjs, ufs in zip(np.array_split(self.setup.xs, self.lat_thread_num),
-                                        np.array_split(self.setup.ys, self.lat_thread_num),
-                                        np.array_split(self.setup.zs, self.lat_thread_num),
-                                        np.array_split(self.kjs, self.lat_thread_num),
-                                        np.array_split(self.ufs, self.lat_thread_num)):
-            _chunkres = []
-            for kouts in np.array_split(self.kouts, self.k_thread_num):
-                _chunkres.extend(self.worker(kouts=kouts, xs=xs, ys=ys, zs=zs, kjs=kjs, ufs=ufs))
-            _res.append(_chunkres)
-        _res = np.array(_res).reshape(self.kxs.shape)
-        self.setup.logger.info('The calculation has ended, %d diffraction pattern values total' % _res.size)
-        return DiffRes(self.setup, _res, self.kxs, self.kys)
-
-    def pool(self):
-        self._chunkify()
-        _res = []
-        self.setup.logger.info('Starting concurrent calculation')
-        print(self.k_thread_num, self.lat_thread_num)
-        for xs, ys, zs, kjs, ufs in zip(np.array_split(self.setup.xs, self.lat_thread_num),
-                                        np.array_split(self.setup.ys, self.lat_thread_num),
-                                        np.array_split(self.setup.zs, self.lat_thread_num),
-                                        np.array_split(self.kjs, self.lat_thread_num),
-                                        np.array_split(self.ufs, self.lat_thread_num)):
-            worker = partial(self.worker, xs=xs, ys=ys, zs=zs, kjs=kjs, ufs=ufs)
-            _chunkres = []
-            with concurrent.futures.ProcessPoolExecutor() as executor:
-                for chunkval in executor.map(worker, np.array_split(self.kouts, self.k_thread_num)):
-                    _chunkres.extend(chunkval)
-            _res.append(_chunkres)
-        _res = np.array(_res)
         self.setup.logger.info('The calculation has ended, %d diffraction pattern values total' % _res.size)
         return DiffRes(self.setup, _res, self.kxs, self.kys)
 

@@ -27,6 +27,6 @@ if __name__ == "__main__":
                     lattice=cbc.CubicLattice(a=a, b=b, c=c, Nx=Nx, Ny=Ny, Nz=Nz))
     diff.rotate_lat(axis, theta)
     start = timer()
-    diffres = diff.henry().pool()
+    diffres = diff.calculate().pool()
     diffres.write()
     print('Estimated time: %fs' % (timer() - start))

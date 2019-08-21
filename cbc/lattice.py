@@ -64,7 +64,7 @@ class Lattice(object):
     def _write_size(self, outfile): pass
 
     def _write_vectors(self, outfile):
-        vec_group = outfile.create_dataset('lattice_vectors')
+        vec_group = outfile.create_group('lattice_vectors')
         vec_group.create_dataset('a', data=self.a)
         vec_group.create_dataset('b', data=self.b)
         vec_group.create_dataset('c', data=self.c)

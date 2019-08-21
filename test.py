@@ -37,6 +37,6 @@ if __name__ == "__main__":
     diff.move_lat([0, 0, dz])
     
     start = timer()
-    diffres = diff.henry().serial()
-    diffres.write()
+    diffres = diff.calculate().serial()
+    # diffres.write()
     print('Estimated time: %fs' % (timer() - start))

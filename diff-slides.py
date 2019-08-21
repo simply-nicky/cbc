@@ -29,5 +29,5 @@ if __name__ == "__main__":
         detector = cbc.Detector(det_dist=det_dist, detNx=detNx, detNy=detNy, pix_size=pix_size)
         diff = cbc.Diff(beam=beam, setup=setup, lattice=lattice, detector=detector)
         diff.move_lat(lat_orig)
-        diffres = diff.henry().pool()
+        diffres = diff.calculate().pool()
         diffres.write()

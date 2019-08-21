@@ -138,13 +138,17 @@ class RectBeam(LensBeam):
     """
     wavelength, focus, aperture = None, None, None
 
-    @utils.jit_integrand
     def rbeam_integrand_re(self, xx, x, z):
-        return cos(self.k * xx**2 / 2 * (1 / self.focus - 1 / z) + self.k / z * x * xx)
+        @utils.jit_integrand
+        def integrand(xx, x, z):
+            return cos(self.k * xx**2 / 2 * (1 / self.focus - 1 / z) + self.k / z * x * xx)
+        return integrand
 
-    @utils.jit_integrand
     def rbeam_integrand_im(self, xx, x, z):
-        return -sin(self.k * xx**2 / 2 * (1 / self.focus - 1 / z) + self.k / z * x * xx)
+        @utils.jit_integrand
+        def integrand(xx, x, z):
+            return -sin(self.k * xx**2 / 2 * (1 / self.focus - 1 / z) + self.k / z * x * xx)
+        return integrand
 
     def __init__(self, focus, aperture, wavelength):
         self.focus, self.aperture, self.wavelength = focus, aperture, wavelength
@@ -165,13 +169,17 @@ class CircBeam(LensBeam):
     """
     wavelength, focus, aperture = None, None, None
 
-    @utils.jit_integrand
     def circ_re(self, rr, r, z):
-        return cos(self.k * rr**2 / 2 * (1 / self.focus - 1 / z)) * utils.j0(self.k * r * rr / z) * 2 * pi * rr
+        @utils.jit_integrand
+        def integrand(rr, r, z):
+            return cos(self.k * rr**2 / 2 * (1 / self.focus - 1 / z)) * utils.j0(self.k * r * rr / z) * 2 * pi * rr
+        return integrand
 
-    @utils.jit_integrand
     def circ_im(self, rr, r, z):
-        return -sin(self.k * rr**2 / 2 * (1 / self.focus - 1 / z)) * utils.j0(self.k * r * rr / z) * 2 * pi * rr
+        @utils.jit_integrand
+        def integrand(rr, r, z):
+            return -sin(self.k * rr**2 / 2 * (1 / self.focus - 1 / z)) * utils.j0(self.k * r * rr / z) * 2 * pi * rr
+        return integrand
 
     def __init__(self, focus, aperture, wavelength):
         self.focus, self.aperture, self.wavelength = focus, aperture, wavelength

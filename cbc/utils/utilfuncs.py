@@ -10,7 +10,7 @@ import os, numpy as np, numba as nb, matplotlib.pyplot as plt, scipy.integrate a
 from math import sqrt, cos, sin, exp, pi
 from timeit import default_timer as timer
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-from scipy import LowLevelCallable
+from scipy import LowLevelCallable, constants
 from numba.extending import get_cython_function_address
 from multiprocessing import cpu_count
 
@@ -36,50 +36,13 @@ def jit_integrand(func):
     jit_func = nb.njit(func)
     @nb.cfunc(nb.float64(nb.intc, nb.types.CPointer(nb.float64)))
     def wrapper(n, args):
-        return jit_func(args[0], args[1], args[2], args[3], args[4])
+        return jit_func(args[0], args[1], args[2])
     return LowLevelCallable(wrapper.ctypes)
 
 def quad_complex(func_re, func_im, a, b, **args):
     re = si.quad(func_re, a, b, **args)[0]
     im = si.quad(func_im, a, b, **args)[0]
     return re + 1j * im
-
-@nb.njit(nb.complex128[:,:,:](nb.float64[:,:], nb.float64[:,:], nb.float64[:,:], nb.float64[:,:], nb.float64), fastmath=True)
-def phase(kouts, xs, ys, zs, wavelength):
-    a = kouts.shape[0]
-    b, c = xs.shape
-    res = np.empty((a, b, c), dtype=np.complex128)
-    kouts = np.ascontiguousarray(kouts)
-    xs = np.ascontiguousarray(xs)
-    ys = np.ascontiguousarray(ys)
-    zs = np.ascontiguousarray(zs)
-    for i in range(a):
-        for j in range(b):
-            for k in range(c):
-                _ph = kouts[i,0] * xs[j,k] + kouts[i,1] * ys[j,k] + kouts[i,2] * zs[j,k]
-                res[i,j,k] = cos(2 * pi / wavelength * _ph) + sin(2 * pi / wavelength * _ph) * 1j
-    return res
-
-@nb.njit(nb.complex128[:,:,:](nb.float64[:,:], nb.float64[:,:,:], nb.float64[:,:], nb.float64[:,:], nb.float64[:,:], nb.float64), fastmath=True)
-def phase_conv(kos, kjs, xs, ys, zs, wavelength):
-    a = kos.shape[0]
-    b, c = kjs.shape[:-1]
-    d = xs.shape[0]
-    res = np.empty((a, b, c), dtype=np.complex128)
-    kos = np.ascontiguousarray(kos)
-    kjs = np.ascontiguousarray(kjs)
-    xs = np.ascontiguousarray(xs)
-    ys = np.ascontiguousarray(ys)
-    zs = np.ascontiguousarray(zs)
-    for i in range(a):
-        for j in range(b):
-            for k in range(c):
-                _ph = 0j
-                for l in range(d):
-                    _arg = (kos[i,0] - kjs[j,k,0]) * xs[l,k] + (kos[i,1] - kjs[j,k,1]) * ys[l,k] + (kos[i,2] - kjs[j,k,2]) * zs[l,k]
-                    _ph += cos(2 * pi / wavelength * _arg) + sin(2 * pi / wavelength * _arg) * 1j
-                res[i,j,k] = _ph
-    return res
 
 @nb.njit(nb.complex128[:,:](nb.float64[:,:,:], nb.float64[:,:], nb.float64[:,:], nb.float64[:,:], nb.float64), fastmath=True)
 def phase_inc(kins, xs, ys, zs, wavelength):
@@ -95,19 +58,26 @@ def phase_inc(kins, xs, ys, zs, wavelength):
             res[i,j] = cos(2 * pi / wavelength * _ph) - sin(2 * pi / wavelength * _ph) * 1j
     return res
 
-@nb.njit(nb.float64[:,:,:](nb.float64[:,:], nb.float64[:,:,:], nb.float64[:,:], nb.float64), fastmath=True)
-def asf_vals(kout, kin, asfcoeffs, wavelength):
-    a = kout.shape[0]
-    b, c = kin.shape[:-1]
-    asfs = np.empty((a, b, c), dtype=np.float64)
-    kout = np.ascontiguousarray(kout)
-    kin = np.ascontiguousarray(kin)
+@nb.njit(nb.complex128[:](nb.float64[:,:], nb.float64[:,:,:], nb.float64[:,:], nb.float64[:,:], nb.float64[:,:], nb.float64[:,:], nb.complex128[:,:], nb.float64), fastmath=True)
+def diff(kouts, kins, xs, ys, zs, asfcoeffs, us, wavelength):
+    a = kouts.shape[0]
+    b, c = xs.shape
+    res = np.empty(a, dtype=np.complex128)
+    kouts = np.ascontiguousarray(kouts)
+    kins = np.ascontiguousarray(kins)
+    us = np.ascontiguousarray(us)
+    xs = np.ascontiguousarray(xs)
+    ys = np.ascontiguousarray(ys)
+    zs = np.ascontiguousarray(zs)
     for i in range(a):
+        _res = 0.0
         for j in range(b):
             for k in range(c):
-                qs = ((kout[i,0] - kin[j,k,0])**2 + (kout[i,1] - kin[j,k,1])**2 + (kout[i,2] - kin[j,k,2])**2) / 2e7 / wavelength
-                asfs[i,j,k] = asfcoeffs[k,0] * exp(-asfcoeffs[k, 6] * qs) + asfcoeffs[k, 5]
-    return asfs
+                _qs = ((kouts[i,0] - kins[j,k,0])**2 + (kouts[i,1] - kins[j,k,1])**2 + (kouts[i,2] - kins[j,k,2])**2) / 2e7 / wavelength
+                _ph = kouts[i,0] * xs[j,k] + kouts[i,1] * ys[j,k] + kouts[i,2] * zs[j,k]
+                _res += us[j,k] * (asfcoeffs[k,0] * exp(-asfcoeffs[k, 6] * _qs) + asfcoeffs[k, 5]) * (cos(2 * pi / wavelength * _ph) + sin(2 * pi / wavelength * _ph) * 1j)
+        res[i] = _res
+    return res
 
 @nb.njit(nb.types.UniTuple(nb.float64[:,:], 3)(nb.float64[:,:], nb.float64[:,:], nb.float64[:,:], nb.float64[:,:]), fastmath=True)
 def rotate(m, xs, ys, zs):
@@ -253,3 +223,11 @@ class worker_star(object):
     
     def __call__(self, args):
         return self.worker(*args)
+
+class DiffWorker(object):
+    def __init__(self, kins, xs, ys, zs, us, asf_coeffs, wavelength, sigma):
+        self.xs, self.ys, self.zs, self.us, self.kins, self.asf_coeffs, self.wavelength, self.sigma = xs, ys, zs, us, kins, asf_coeffs, wavelength, sigma
+
+    def __call__(self, kouts):
+        res = diff(kouts, self.kins, self.xs, self.ys, self.zs, self.asf_coeffs, self.us, self.wavelength)
+        return sqrt(self.sigma) * constants.value('classical electron radius') * 1e3 * res    
