@@ -7,8 +7,8 @@ if __name__ == "__main__":
     thdiv = 0.015
     waist = wavelength / np.pi / thdiv
     Nx, Ny, Nz = 100, 100, 100
-    r = 3e-4
-    detNx, detNy = 100, 100
+    r = 5e-4
+    detNx, detNy = 2000, 2000
     pix_size = 88.6e-3
     det_dist = 250
 
@@ -29,7 +29,6 @@ if __name__ == "__main__":
     diff.move_lat([0, 0, dz])
     
     start = timer()
-    diffres = diff.calculate().pool_submit()
-    # diffres.write()
-    print(diffres.res.shape)
+    diffres = diff.calculate().pool()
+    diffres.write()
     print('Estimated time: %fs' % (timer() - start))
