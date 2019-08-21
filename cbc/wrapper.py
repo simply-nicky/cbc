@@ -132,7 +132,7 @@ class DiffCalc(object):
     kxs, kys - arguments
     num - number of elements to calculate per one argument element
     """
-    thread_size = 2**30
+    thread_size = 2**25
     k_size = 2**8
 
     def __init__(self, setup, kxs, kys):
@@ -173,7 +173,7 @@ class DiffCalc(object):
 
     def pool(self):
         self._chunkify()
-        _res = []
+        res = []
         self.setup.logger.info('Starting concurrent calculation')
         for xs, ys, zs, kins, us in zip(np.array_split(self.setup.xs, self.lat_thread_num),
                                         np.array_split(self.setup.ys, self.lat_thread_num),
@@ -185,10 +185,30 @@ class DiffCalc(object):
             with concurrent.futures.ProcessPoolExecutor() as executor:
                 for chunkval in executor.map(worker, np.array_split(self.kouts, self.k_thread_num)):
                     _chunkres.extend(chunkval)
-            _res.append(_chunkres)
-        _res = np.array(_res).sum(axis=0).reshape(self.kxs.shape)
-        self.setup.logger.info('The calculation has ended, %d diffraction pattern values total' % _res.size)
-        return DiffRes(self.setup, _res, self.kxs, self.kys)
+            res.append(_chunkres)
+        res = np.sum(res, axis=0).reshape(self.kxs.shape)
+        self.setup.logger.info('The calculation has ended, %d diffraction pattern values total' % res.size)
+        return DiffRes(self.setup, res, self.kxs, self.kys)
+
+    def pool_submit(self):
+        self._chunkify()
+        fut_list, res = [], []
+        self.setup.logger.info('Starting concurrent calculation')
+        with concurrent.futures.ProcessPoolExecutor() as executor:
+            for xs, ys, zs, kins, us in zip(np.array_split(self.setup.xs, self.lat_thread_num),
+                                            np.array_split(self.setup.ys, self.lat_thread_num),
+                                            np.array_split(self.setup.zs, self.lat_thread_num),
+                                            np.array_split(self.kins, self.lat_thread_num),
+                                            np.array_split(self.us, self.lat_thread_num)):
+                worker = utils.DiffWorker(kins, xs, ys, zs, us, self.asf_coeffs, self.setup.beam.wavelength, self.setup.sigma)
+                futs = [executor.submit(worker, kouts) for kouts in np.array_split(self.kouts, self.k_thread_num)]
+                fut_list.append(futs)
+        for futs in fut_list:
+            chunkres = np.concatenate([fut.result() for fut in futs])
+            res.append(chunkres)
+        res = np.sum(res, axis=0).reshape(self.kxs.shape)
+        self.setup.logger.info('The calculation has ended, %d diffraction pattern values total' % res.size)
+        return DiffRes(self.setup, res, self.kxs, self.kys)
 
 class DiffRes(object):
     """
