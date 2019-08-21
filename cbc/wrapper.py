@@ -132,7 +132,7 @@ class DiffCalc(object):
     kxs, kys - arguments
     num - number of elements to calculate per one argument element
     """
-    thread_size = 2**25
+    thread_size = 2**30
     k_size = 2**8
 
     def __init__(self, setup, kxs, kys):
