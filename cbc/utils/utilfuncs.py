@@ -75,10 +75,7 @@ def diff(kouts, kins, xs, ys, zs, asfcoeffs, us, wavelength):
             for k in range(c):
                 _qs = ((kouts[i,0] - kins[j,k,0])**2 + (kouts[i,1] - kins[j,k,1])**2 + (kouts[i,2] - kins[j,k,2])**2) / 2e7 / wavelength
                 _ph = kouts[i,0] * xs[j,k] + kouts[i,1] * ys[j,k] + kouts[i,2] * zs[j,k]
-                _asf = 0.0
-                for l in range(5):
-                    _asf += asfcoeffs[k,l] * exp(-asfcoeffs[k,l + 6] * _qs)
-                _res += us[j,k] * (_asf + asfcoeffs[k, 5]) * exp(-asfcoeffs[k,-1] * _qs) * (cos(2 * pi / wavelength * _ph) + sin(2 * pi / wavelength * _ph) * 1j)
+                _res += us[j,k] * (asfcoeffs[k,0] * exp(-asfcoeffs[k,1] * _qs) + asfcoeffs[k, 2]) * exp(-asfcoeffs[k,3] * _qs) * (cos(2 * pi / wavelength * _ph) + sin(2 * pi / wavelength * _ph) * 1j)
         res[i] = _res
     return res
 
