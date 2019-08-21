@@ -6,12 +6,15 @@ Dependencies: scipy, numpy and numba.
 """
 from __future__ import print_function
 
-import os, numpy as np, numba as nb, matplotlib.pyplot as plt, scipy.integrate as si, ctypes, datetime, errno
+import os, numpy as np, numba as nb, matplotlib.pyplot as plt, scipy.integrate as si, ctypes, datetime, errno, logging
 from math import sqrt, cos, sin, exp, pi
 from timeit import default_timer as timer
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from scipy import LowLevelCallable
 from numba.extending import get_cython_function_address
+from multiprocessing import cpu_count
+
+cores_num = cpu_count()
 
 addr = get_cython_function_address("scipy.special.cython_special", "j0")
 functype = ctypes.CFUNCTYPE(ctypes.c_double, ctypes.c_double)
@@ -92,48 +95,19 @@ def phase_inc(kins, xs, ys, zs, wavelength):
             res[i,j] = cos(2 * pi / wavelength * _ph) - sin(2 * pi / wavelength * _ph) * 1j
     return res
 
-@nb.njit(nb.float64[:,:,:](nb.float64[:,:,:], nb.float64[:,:]), fastmath=True)
-def asf_sum(ss, asfcoeffs):
-    a, b, c = ss.shape
-    asfs = np.empty((a, b, c), dtype=np.float64)
-    ss = np.ascontiguousarray(ss)
-    ss_squared_neg = -ss*ss
-    asfcoeffs = np.ascontiguousarray(asfcoeffs)
-    for i in range(a):
-        for j in range(b):
-            for k in range(c):
-                dasf = 0.0
-                for l in range(5):
-                    dasf += asfcoeffs[k,l] * exp(ss_squared_neg[i,j,k] * asfcoeffs[k,6+l])
-                asfs[i,j,k] = (dasf + asfcoeffs[k,5]) * exp(ss_squared_neg[i,j,k] * asfcoeffs[k,-1])
-    return asfs
-
-@nb.njit(nb.float64[:,:,:](nb.float64[:,:], nb.float64[:,:,:], nb.float64), fastmath=True)
-def q_abs(kout, kin, wavelength):
+@nb.njit(nb.float64[:,:,:](nb.float64[:,:], nb.float64[:,:,:], nb.float64[:,:], nb.float64), fastmath=True)
+def asf_vals(kout, kin, asfcoeffs, wavelength):
     a = kout.shape[0]
     b, c = kin.shape[:-1]
-    qs = np.empty((a, b, c), dtype=np.float64)
+    asfs = np.empty((a, b, c), dtype=np.float64)
     kout = np.ascontiguousarray(kout)
     kin = np.ascontiguousarray(kin)
     for i in range(a):
         for j in range(b):
             for k in range(c):
-                qs[i,j,k] = sqrt((kout[i,0] - kin[j,k,0])**2 + (kout[i,1] - kin[j,k,1])**2 + (kout[i,2] - kin[j,k,2])**2) / 2e7 / wavelength
-    return qs
-
-@nb.njit(nb.float64[:,:,:,:](nb.float64[:,:], nb.float64[:,:,:], nb.float64), fastmath=True)
-def qs(kout, kin, wavelength):
-    a = kout.shape[0]
-    b, c, d = kin.shape
-    qs = np.empty((a, b, c, d), dtype=np.float64)
-    kout = np.ascontiguousarray(kout)
-    kin = np.ascontiguousarray(kin)
-    for i in range(a):
-        for j in range(b):
-            for k in range(c):
-                for l in range(d):
-                    qs[i,j,k,l] = (kout[i,l] - kin[j,k,l]) / 2e7 / wavelength
-    return qs
+                qs = ((kout[i,0] - kin[j,k,0])**2 + (kout[i,1] - kin[j,k,1])**2 + (kout[i,2] - kin[j,k,2])**2) / 2e7 / wavelength
+                asfs[i,j,k] = asfcoeffs[k,0] * exp(-asfcoeffs[k, 6] * qs) + asfcoeffs[k, 5]
+    return asfs
 
 @nb.njit(nb.types.UniTuple(nb.float64[:,:], 3)(nb.float64[:,:], nb.float64[:,:], nb.float64[:,:], nb.float64[:,:]), fastmath=True)
 def rotate(m, xs, ys, zs):
@@ -265,3 +239,17 @@ class AxesSeq(object):
         self.ax.set_title(filename)
         self.fig.canvas.draw()
         plt.show()
+
+try:
+    from logging import NullHandler
+except ImportError:
+    class NullHandler(logging.Handler):
+        def emit(self, record):
+            pass
+
+class worker_star(object):
+    def __init__(self, worker):
+        self.worker = worker
+    
+    def __call__(self, args):
+        return self.worker(*args)

@@ -223,9 +223,9 @@ def det_kouts(det_dist=54, detNx=512, detNy=512, pix_size=55e-3):
     y_det = np.arange((-detNy + 1) / 2.0, (detNy + 1) / 2.0) * pix_size
     return np.meshgrid(x_det / det_dist, y_det / det_dist)
 
-def lattice(a, b, c, Nx, Ny, Nz, XS=np.zeros(1), YS=np.zeros(1), ZS=np.zeros(1), lat_orig=[0, 0, 0]):
+def lattice_cube(a, b, c, Nx, Ny, Nz, XS=np.zeros(1), YS=np.zeros(1), ZS=np.zeros(1)):
     """
-    Return atom coordinates of a crystalline sample.
+    Return atom coordinates of a cubic crystalline sample.
 
     Nx, Ny, Nz - numbers of unit cells in a sample
     a, b, c - unit cell edge lengths
@@ -234,13 +234,29 @@ def lattice(a, b, c, Nx, Ny, Nz, XS=np.zeros(1), YS=np.zeros(1), ZS=np.zeros(1),
 
     Return a tuple of atom position coordinates (xs, ys, zs).
     """
-    assert len(lat_orig) == 3, 'origin argument is invalid, it must have 3 values'
     nxval = np.arange((-Nx + 1) / 2., (Nx + 1) / 2.)
     nyval = np.arange((-Ny + 1) / 2., (Ny + 1) / 2.)
     nzval = np.arange((-Nz + 1) / 2., (Nz + 1) / 2.)
     nx, ny, nz = np.meshgrid(nxval, nyval, nzval)
     pts = np.multiply.outer(a, nx) + np.multiply.outer(b, ny) + np.multiply.outer(c, nz)
     return np.add.outer(pts[0].ravel(), XS), np.add.outer(pts[1].ravel(), YS), np.add.outer(pts[2].ravel(), ZS)
+
+def lattice_ball(a, b, c, r, XS=np.zeros(1), YS=np.zeros(1), ZS=np.zeros(1)):
+    """
+    Return atom coordinates of a ball crystalline sample.
+
+    a, b, c - unit cell edge lengths
+    XS, YS, ZS - atom coordinates within the unit cell
+    lat_orig - lattice origin point
+
+    Return a tuple of atom position coordinates (xs, ys, zs).
+    """
+    Nx, Ny, Nz = r / np.sqrt(a.dot(a)), r / np.sqrt(b.dot(b)), r / np.sqrt(c.dot(c))
+    nxval, nyval, nzval = np.arange(-Nx, Nx), np.arange(-Ny, Ny), np.arange(-Nz, Nz)
+    nx, ny, nz = np.meshgrid(nxval, nyval, nzval)
+    pts = np.multiply.outer(a, nx) + np.multiply.outer(b, ny) + np.multiply.outer(c, nz)
+    mask = (np.sqrt(pts[0]**2 + pts[1]**2 + pts[2]**2) < r)
+    return np.add.outer(pts[0][mask].ravel(), XS), np.add.outer(pts[1][mask].ravel(), YS), np.add.outer(pts[2][mask].ravel(), ZS)
 
 def diff_henry(kxs, kys, xs, ys, zs, kins, us, asf_coeffs, sigma, wavelength=1.5e-7):
     """
@@ -257,8 +273,7 @@ def diff_henry(kxs, kys, xs, ys, zs, kins, us, asf_coeffs, sigma, wavelength=1.5
     Return np.array of diffracted wave values with the same shape as kxs and kys.
     """
     _kouts = kout_parax(kxs, kys)
-    _qabs = utils.q_abs(_kouts, kins, wavelength)
-    _asfs = utils.asf_sum(_qabs, asf_coeffs)
+    _asfs = utils.asf_vals(_kouts, kins, asf_coeffs, wavelength)
     _phs = utils.phase(_kouts, xs, ys, zs, wavelength)
     return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * (_asfs * _phs * us).sum(axis=(-2,-1))
 
@@ -277,10 +292,6 @@ def diff_conv(kxs, kys, xs, ys, zs, kjs, ufs, asf_coeffs, sigma, wavelength):
     Return np.array of diffracted wave values with the same shape as kxs and kys.
     """
     _kouts = kout_parax(kxs, kys)
-    _qabs = utils.q_abs(_kouts, kjs, wavelength)
-    _asfs = utils.asf_sum(_qabs, asf_coeffs)
+    _asfs = utils.asf_vals(_kouts, kjs, asf_coeffs, wavelength)
     _phs = utils.phase_conv(_kouts, kjs, xs, ys, zs, wavelength)
     return sqrt(sigma) * constants.value('classical electron radius') * 1e3 * (ufs * _asfs * _phs).sum(axis=(-2,-1)) / kjs.shape[0]
-
-if __name__ == "__main__":
-    pass

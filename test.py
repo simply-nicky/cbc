@@ -7,7 +7,7 @@ if __name__ == "__main__":
     # f, ap, defoc = 2, 2e-2, 1e-4
     waist = wavelength / np.pi / 0.015
     Nx, Ny, Nz = 100, 100, 100
-    detNx, detNy = 2000, 2000
+    detNx, detNy = 16, 16
     pix_size = 88.6e-3
     det_dist = 250
 
@@ -27,16 +27,16 @@ if __name__ == "__main__":
 
     logpath = cbc.utils.get_logpath()
     beam = cbc.GausBeam(waist, wavelength)
-    diff = cbc.Diff(beam=beam, setup_args=cbc.SetupArgs(handler=logging.FileHandler(logpath)),
-                    det_args=cbc.DetArgs(det_dist=det_dist, detNx=detNx, detNy=detNy, pix_size=pix_size),
+    diff = cbc.Diff(beam=beam, setup=cbc.Setup(handler=logging.FileHandler(logpath)),
+                    detector=cbc.Detector(det_dist=det_dist, detNx=detNx, detNy=detNy, pix_size=pix_size),
                     # cell_args=cbc.CellArgs.importpdb('4et8.pdb'),
                     # cell_args=cbc.CellArgs(XS=np.array([0, 0.5*a]), YS=np.zeros(2), ZS=np.zeros(2), bs=np.zeros(2), elems=['Au', 'Ag']),
-                    lat_args=cbc.LatArgs(a=aa, b=bb, c=cc, Nx=Nx, Ny=Ny, Nz=Nz))
+                    lattice=cbc.CubicLattice(a=aa, b=bb, c=cc, Nx=Nx, Ny=Ny, Nz=Nz))
 
     # diff.rotate_lat(axis, theta)
     diff.move_lat([0, 0, dz])
     
     start = timer()
-    diffres = diff.henry().pool()
+    diffres = diff.henry().serial()
     diffres.write()
     print('Estimated time: %fs' % (timer() - start))

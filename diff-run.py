@@ -10,7 +10,7 @@ import numpy as np
 if __name__ == "__main__":
     waist = 4e-6
     wavelength = 1.5e-7
-    a, b, c = 2e-5, 2.5e-5, 3e-5
+    a, b, c = np.array([7.9e-6, 0, 0]), np.array([0, 7.9e-6, 0]), np.array([0, 0, 3.8e-6])
     Nx, Ny, Nz = 20, 20, 20
 
     detNx, detNy = 512, 512
@@ -20,12 +20,13 @@ if __name__ == "__main__":
     axis = np.random.rand(3)
     theta = 2 * np.pi * np.random.random()
 
-    logpath = os.path.join('logs', str(datetime.date.today()) + '.log')
+    logpath = cbc.utils.get_logpath()
     beam = cbc.GausBeam(waist, wavelength)
-    diff = cbc.Diff(beam=beam, setup_args=cbc.SetupArgs(handler=logging.FileHandler(logpath), relpath='results/'),
-                    det_args=cbc.DetArgs(det_dist=det_dist, detNx=detNx, detNy=detNy, pix_size=pix_size), lat_args=cbc.LatArgs(a=a, b=b, c=c, Nx=Nx, Ny=Ny, Nz=Nz))
+    diff = cbc.Diff(beam=beam, setup=cbc.Setup(handler=logging.FileHandler(logpath)),
+                    detector=cbc.Detector(det_dist=det_dist, detNx=detNx, detNy=detNy, pix_size=pix_size),
+                    lattice=cbc.CubicLattice(a=a, b=b, c=c, Nx=Nx, Ny=Ny, Nz=Nz))
     diff.rotate_lat(axis, theta)
     start = timer()
     diffres = diff.henry().pool()
-    print('Estimated time: %fs' % (timer() - start))
     diffres.write()
+    print('Estimated time: %fs' % (timer() - start))
