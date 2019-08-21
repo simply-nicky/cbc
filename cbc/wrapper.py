@@ -145,9 +145,6 @@ class DiffCalc(object):
     def size(self): return self.setup.xs.size * self.kxs.size
 
     @property
-    def asf_coeffs(self): return self.setup.lattice.cell.asf(self.setup.beam.wavelength)
-
-    @property
     def kouts(self): return np.stack((self.kxs.ravel(), self.kys.ravel(), 1.0 - (self.kxs.ravel()**2 + self.kys.ravel()**2) / 2.0), axis=1)
 
     def _chunkify(self):
@@ -166,7 +163,7 @@ class DiffCalc(object):
                                         np.array_split(self.kins, self.lat_thread_num),
                                         np.array_split(self.us, self.lat_thread_num)):
             _chunkres = []
-            worker = utils.HenryWorker(kins, xs, ys, zs, us, self.asf_coeffs, self.setup.beam.wavelength, self.setup.sigma)
+            worker = utils.DiffWorker(kins, xs, ys, zs, us, self.asf_coeffs, self.setup.beam.wavelength, self.setup.sigma)
             for kouts in np.array_split(self.kouts, self.k_thread_num):
                 _chunkres.extend(worker(kouts))
             _res.append(_chunkres)
@@ -183,7 +180,7 @@ class DiffCalc(object):
                                         np.array_split(self.setup.zs, self.lat_thread_num),
                                         np.array_split(self.kins, self.lat_thread_num),
                                         np.array_split(self.us, self.lat_thread_num)):
-            worker = utils.HenryWorker(kins, xs, ys, zs, us, self.asf_coeffs, self.setup.beam.wavelength, self.setup.sigma)
+            worker = utils.DiffWorker(kins, xs, ys, zs, us, self.asf_coeffs, self.setup.beam.wavelength, self.setup.sigma)
             _chunkres = []
             with concurrent.futures.ProcessPoolExecutor() as executor:
                 for chunkval in executor.map(worker, np.array_split(self.kouts, self.k_thread_num)):
