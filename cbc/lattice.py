@@ -1,5 +1,6 @@
-from .functions import asf_coeffs, lattice_cube, lattice_ball
 from . import utils
+from scipy import constants
+from scipy.interpolate import interp1d
 from abc import ABCMeta, abstractmethod, abstractproperty
 import numpy as np, h5py
     
@@ -19,7 +20,14 @@ class Cell(object):
         return cls(*utils.pdb.importpdb(filename))
 
     def asf(self, wavelength):
-        return asf_coeffs(self.elems, self.bs, wavelength)
+        en = constants.c * constants.h / constants.e / wavelength * 1e3     #photon energy in eV
+        _asf_list = []
+        for elem, b in zip(self.elems, self.bs):
+            _asf_coeffs = np.append(utils.asf.waskif[elem], b)
+            ens, f1s = utils.asf.henke[elem][0:2]
+            _asf_coeffs[5] = interp1d(ens, f1s, kind='cubic')(en) - _asf_coeffs[:5].sum()
+            _asf_list.append(_asf_coeffs)
+        return np.array(_asf_list)
 
     def write(self, outfile):
         cell_group = outfile.create_group(self.__class__.__name__)
@@ -87,7 +95,12 @@ class CubicLattice(Lattice):
         return {'lattice_vectors': (self.a, self.b, self.c), 'lattice_size': (self.Nx, self.Ny, self.Nz), 'lattice_origin': self.lat_orig}
 
     def coordinates(self):
-        return lattice_cube(self.a, self.b, self.c, self.Nx, self.Ny, self.Nz, self.cell.XS, self.cell.YS, self.cell.ZS)
+        nxval = np.arange((-self.Nx + 1) / 2., (self.Nx + 1) / 2.)
+        nyval = np.arange((-self.Ny + 1) / 2., (self.Ny + 1) / 2.)
+        nzval = np.arange((-self.Nz + 1) / 2., (self.Nz + 1) / 2.)
+        nx, ny, nz = np.meshgrid(nxval, nyval, nzval)
+        pts = np.multiply.outer(self.a, nx) + np.multiply.outer(self.b, ny) + np.multiply.outer(self.c, nz)
+        return np.add.outer(pts[0].ravel(), self.cell.XS), np.add.outer(pts[1].ravel(), self.cell.YS), np.add.outer(pts[2].ravel(), self.cell.ZS)
 
     def _write_size(self, outfile):
         size_group = outfile.create_group('lattice_size')
@@ -114,7 +127,12 @@ class BallLattice(Lattice):
         return {'lattice_vectors': (self.a, self.b, self.c), 'lattice_radius': self.r, 'lattice_origin': self.lat_orig}
 
     def coordinates(self):
-        return lattice_ball(self.a, self.b, self.c, self.r, self.cell.XS, self.cell.YS, self.cell.ZS)
+        Nx, Ny, Nz = self.r / np.sqrt(self.a.dot(self.a)), self.r / np.sqrt(self.b.dot(self.b)), self.r / np.sqrt(self.c.dot(self.c))
+        nxval, nyval, nzval = np.arange(-Nx, Nx), np.arange(-Ny, Ny), np.arange(-Nz, Nz)
+        nx, ny, nz = np.meshgrid(nxval, nyval, nzval)
+        pts = np.multiply.outer(self.a, nx) + np.multiply.outer(self.b, ny) + np.multiply.outer(self.c, nz)
+        mask = (np.sqrt(pts[0]**2 + pts[1]**2 + pts[2]**2) < self.r)
+        return np.add.outer(pts[0][mask].ravel(), self.cell.XS), np.add.outer(pts[1][mask].ravel(), self.cell.YS), np.add.outer(pts[2][mask].ravel(), self.cell.ZS)
 
     def _write_size(self, outfile):
         outfile.create_dataset('radius', data=self.r)
