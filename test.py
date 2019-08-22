@@ -18,7 +18,7 @@ if __name__ == "__main__":
     aa = np.cross(bstar, cstar) / (np.cross(bstar, cstar).dot(astar)) * 1e-7
     bb = np.cross(cstar, astar) / (np.cross(cstar, astar).dot(bstar)) * 1e-7
     cc = np.cross(astar, bstar) / (np.cross(astar, bstar).dot(cstar)) * 1e-7
-    dz = Nx * np.sqrt(aa.dot(aa)) / thdiv
+    dz = r / thdiv
 
     logpath = cbc.utils.get_logpath()
     beam = cbc.GausBeam(waist, wavelength)
