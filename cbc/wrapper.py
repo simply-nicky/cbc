@@ -20,28 +20,47 @@ class Detector(object):
     """
     det_kouts function arguments class.
 
-    det_dist - distance between detector and sample
-    detNx, detNy - numbers of pixels in x and y axes
-    pix_size - pixel size
+    detdist - distance between detector and sample
+    Nx, Ny - numbers of pixels in x and y axes
+    pixsize - pixel size
     """
-    def __init__(self, det_dist=54, detNx=512, detNy=512, pix_size=55e-3):
-        self.det_dist, self.detNx, self.detNy, self.pix_size = det_dist, detNx, detNy, pix_size
+    def __init__(self, detdist=54, Nx=512, Ny=512, pixsize=55e-3):
+        self.detdist, self.Nx, self.Ny, self.pixsize = detdist, Nx, Ny, pixsize
 
     @property
     def arguments(self):
-        return {'detector_distance': self.det_dist, 'detector_size': (self.detNx, self.detNy), 'pixel_size': self.pix_size}
+        return {'detector_distance': self.detdist, 'detector_size': (self.Nx, self.Ny), 'pixel_size': self.pixsize}
+
+    @property
+    def shape(self): return (self.Nx, self.Ny)
+
+    @property
+    def size(self): return self.Nx * self.Ny
+
+    def det_coordinates(self):
+        x_det = np.arange((-self.Nx + 1) / 2.0, (self.Nx + 1) / 2.0) * self.pixsize
+        y_det = np.arange((-self.Ny + 1) / 2.0, (self.Ny + 1) / 2.0) * self.pixsize
+        xs, ys = np.meshgrid(x_det, y_det)
+        return xs.ravel(), ys.ravel()
 
     def kouts(self):
-        x_det = np.arange((-self.detNx + 1) / 2.0, (self.detNx + 1) / 2.0) * self.pix_size
-        y_det = np.arange((-self.detNy + 1) / 2.0, (self.detNy + 1) / 2.0) * self.pix_size
-        return np.meshgrid(x_det / self.det_dist, y_det / self.det_dist)
+        xs, ys = self.det_coordinates()
+        kxs = np.sin(np.arctan(np.sqrt(xs**2 + ys**2) / self.detdist)) * np.cos(np.arctan2(ys, xs))
+        kys = np.sin(np.arctan(np.sqrt(xs**2 + ys**2) / self.detdist)) * np.sin(np.arctan2(ys, xs))
+        return np.stack((kxs, kys, np.sqrt(1 - kxs**2 - kys**2)), axis=1)
+
+    def kouts_yar(self):
+        xs, ys = self.det_coordinates()
+        kxs = np.tan(np.sqrt(xs**2 + ys**2) / self.detdist) * np.cos(np.arctan2(ys, xs))
+        kys = np.tan(np.sqrt(xs**2 + ys**2) / self.detdist) * np.sin(np.arctan2(ys, xs))
+        return np.stack((kxs, kys, np.sqrt(1 - kxs**2 - kys**2)), axis=1)
 
     def write(self, outfile):
         det_group = outfile.create_group('detector')
-        det_group.create_dataset('distance', data=self.det_dist)
-        det_group.create_dataset('Nx', data=self.detNx)
-        det_group.create_dataset('Ny', data=self.detNy)
-        det_group.create_dataset('pixel_size', data=self.pix_size)
+        det_group.create_dataset('distance', data=self.detdist)
+        det_group.create_dataset('Nx', data=self.Nx)
+        det_group.create_dataset('Ny', data=self.Ny)
+        det_group.create_dataset('pixel_size', data=self.pixsize)
 
 class Setup(object):
     """
@@ -79,11 +98,12 @@ class Diff(DiffSetup):
     lat_args - LatArgs class object
     det_args - DetArgs class object
     """
+    orig = np.zeros(3)
+
     def __init__(self, beam, lattice, setup=Setup(), detector=Detector()):
         DiffSetup.__init__(self, setup)
-        self.sigma = detector.pix_size**2 / detector.det_dist**2
+        self.sigma = detector.pixsize**2 / detector.detdist**2
         self.beam, self.lattice, self.detector = beam, lattice, detector
-        self.xs, self.ys, self.zs = self.lattice.coordinates()
 
     def rotate_lat(self, axis, theta):
         """
@@ -92,13 +112,10 @@ class Diff(DiffSetup):
         axis = [nx, ny, nz] - rotation axis vector
         theta - rotation angle
         """
-        self.xs -= self.lattice.lat_orig[0]
-        self.ys -= self.lattice.lat_orig[1]
-        self.zs -= self.lattice.lat_orig[2]
-        self.xs, self.ys, self.zs = utils.rotate(utils.rotation_matrix(axis, theta), self.xs, self.ys, self.zs)
-        self.xs += self.lattice.lat_orig[0]
-        self.ys += self.lattice.lat_orig[1]
-        self.zs += self.lattice.lat_orig[2]
+        m = utils.rotation_matrix(axis, theta)
+        self.lattice.a = m.dot(self.lattice.a)
+        self.lattice.b = m.dot(self.lattice.b)
+        self.lattice.c = m.dot(self.lattice.c)
     
     def move_lat(self, pt):
         """
@@ -106,22 +123,21 @@ class Diff(DiffSetup):
 
         pt = [x, y, z] - array of point coordinates
         """
-        assert len(pt) == 3, 'Point mest be size of three'
-        self.xs += (pt[0] - self.lattice.lat_orig[0])
-        self.ys += (pt[1] - self.lattice.lat_orig[1])
-        self.zs += (pt[2] - self.lattice.lat_orig[2])
-        self.lattice.lat_orig = pt
+        self.lat_orig = pt
+
+    def coordinates(self):
+        xs, ys, zs = self.lattice.coordinates()
+        return xs + self.lat_orig[0], ys + self.lat_orig[1], zs + self.lat_orig[2]
 
     def calculate(self):
         """
         Convergent gaussian beam diffraction based on Henry's equations.
         """
-        self.logger.info("Setup for diffraction based on Henry's equations with following parameters:")
+        self.logger.info("Setting up the convergent beam diffraction with following parameters:")
         for args in (self.lattice, self.detector):
             for (key, value) in args.arguments.items():
                 self.logger.info('%-9s=%+28s' % (key, value))
-        kxs, kys = self.detector.kouts()
-        return DiffCalc(self, kxs, kys)
+        return DiffCalc(self)
 
 class DiffCalc(object):
     """
@@ -135,21 +151,20 @@ class DiffCalc(object):
     thread_size = 2**25
     k_size = 2**10
 
-    def __init__(self, setup, kxs, kys):
-        self.setup, self.kxs, self.kys = setup, kxs, kys
+    def __init__(self, setup):
+        self.setup = setup
+        self.kouts = self.setup.detector.kouts_yar()
+        self.xs, self.ys, self.zs = self.setup.coordinates()
         self.asf_coeffs = setup.lattice.cell.asf(setup.beam.wavelength)
-        self.kins = setup.beam.wavevectors(setup.xs, setup.ys, setup.zs)
-        self.us = setup.beam.wave(setup.xs, setup.ys, setup.zs)
+        self.kins = setup.beam.wavevectors(self.xs, self.ys, self.zs)
+        self.us = setup.beam.wave(self.xs, self.ys, self.zs)
 
     @property
-    def size(self): return self.setup.xs.size * self.kxs.size
-
-    @property
-    def kouts(self): return np.stack((self.kxs.ravel(), self.kys.ravel(), 1.0 - (self.kxs.ravel()**2 + self.kys.ravel()**2) / 2.0), axis=1)
+    def size(self): return self.xs.size * self.setup.detector.size
 
     def _chunkify(self):
         thread_num = self.size // self.thread_size + 1
-        self.k_thread_num = self.kxs.size // self.k_size + 1
+        self.k_thread_num = self.setup.detector.size // self.k_size + 1
         self.lat_thread_num = thread_num // self.k_thread_num + 1
         self.setup.logger.info('Chunking the data, wavevectors data thread number: %d, lattice data thread number: %d' % (self.k_thread_num, self.lat_thread_num))
 
@@ -157,9 +172,9 @@ class DiffCalc(object):
         self._chunkify()
         self.setup.logger.info('Starting serial calculation')
         _res = []
-        for xs, ys, zs, kins, us in zip(np.array_split(self.setup.xs, self.lat_thread_num),
-                                        np.array_split(self.setup.ys, self.lat_thread_num),
-                                        np.array_split(self.setup.zs, self.lat_thread_num),
+        for xs, ys, zs, kins, us in zip(np.array_split(self.xs, self.lat_thread_num),
+                                        np.array_split(self.ys, self.lat_thread_num),
+                                        np.array_split(self.zs, self.lat_thread_num),
                                         np.array_split(self.kins, self.lat_thread_num),
                                         np.array_split(self.us, self.lat_thread_num)):
             _chunkres = []
@@ -167,18 +182,18 @@ class DiffCalc(object):
             for kouts in np.array_split(self.kouts, self.k_thread_num):
                 _chunkres.extend(worker(kouts))
             _res.append(_chunkres)
-        _res = np.array(_res).sum(axis=0).reshape(self.kxs.shape)
+        _res = np.array(_res).sum(axis=0).reshape(self.setup.detector.shape)
         self.setup.logger.info('The calculation has ended, %d diffraction pattern values total' % _res.size)
-        return DiffRes(self.setup, _res, self.kxs, self.kys)
+        return DiffRes(self.setup, _res)
 
     def pool(self):
         self._chunkify()
         fut_list, res = [], []
         self.setup.logger.info('Starting concurrent calculation')
         with concurrent.futures.ProcessPoolExecutor() as executor:
-            for xs, ys, zs, kins, us in zip(np.array_split(self.setup.xs, self.lat_thread_num),
-                                            np.array_split(self.setup.ys, self.lat_thread_num),
-                                            np.array_split(self.setup.zs, self.lat_thread_num),
+            for xs, ys, zs, kins, us in zip(np.array_split(self.xs, self.lat_thread_num),
+                                            np.array_split(self.ys, self.lat_thread_num),
+                                            np.array_split(self.zs, self.lat_thread_num),
                                             np.array_split(self.kins, self.lat_thread_num),
                                             np.array_split(self.us, self.lat_thread_num)):
                 worker = utils.DiffWorker(kins, xs, ys, zs, us, self.asf_coeffs, self.setup.beam.wavelength, self.setup.sigma)
@@ -187,9 +202,9 @@ class DiffCalc(object):
         for futs in fut_list:
             chunkres = np.concatenate([fut.result() for fut in futs])
             res.append(chunkres)
-        res = np.sum(res, axis=0).reshape(self.kxs.shape)
+        res = np.sum(res, axis=0).reshape(self.setup.detector.shape)
         self.setup.logger.info('The calculation has ended, %d diffraction pattern values total' % res.size)
-        return DiffRes(self.setup, res, self.kxs, self.kys)
+        return DiffRes(self.setup, res)
 
 class DiffRes(object):
     """
@@ -199,8 +214,8 @@ class DiffRes(object):
     res - diffracted wave values for given kxs and kys
     kxs, kys - x and y coordinates of output wavevectors
     """
-    def __init__(self, setup, res, kxs, kys):
-        self.setup, self.res, self.kxs, self.kys = setup, res, kxs, kys
+    def __init__(self, setup, res):
+        self.setup, self.res = setup, res
 
     def plot(self, figsize=(10, 10), xlim=None, ylim=None):
         if xlim == None:
@@ -213,7 +228,6 @@ class DiffRes(object):
         divider = make_axes_locatable(ax)
         cax = divider.append_axes('right', size='5%', pad=0.1)
         im = ax.imshow(ints, cmap='viridis', vmin=ints.min(), vmax=ints.max(),
-                                extent = [self.kxs.min(), self.kxs.max(), self.kys.min(), self.kys.max()],
                                 interpolation='nearest', origin='lower')
         fig.colorbar(im, cax=cax, orientation='vertical')
         plt.show()
@@ -232,7 +246,6 @@ class DiffRes(object):
         divider = make_axes_locatable(ax)
         cax = divider.append_axes('right', size='5%', pad=0.1)
         im = ax.imshow(ints, cmap='viridis', vmin=ints.min(), vmax=ints.max(),
-                                extent = [self.kxs.min(), self.kxs.max(), self.kys.min(), self.kys.max()],
                                 interpolation='nearest', origin='lower')
         fig.colorbar(im, cax=cax, orientation='vertical')
         fig.savefig(_filename, format='eps')
@@ -249,7 +262,6 @@ class DiffRes(object):
         divider = make_axes_locatable(ax)
         cax = divider.append_axes('right', size='5%', pad=0.1)
         im = ax.imshow(ints, cmap='viridis', norm=LogNorm(vmin=ints.min(), vmax=ints.max()),
-                                extent = [self.kxs.min(), self.kxs.max(), self.kys.min(), self.kys.max()],
                                 interpolation='nearest', origin='lower')
         fig.colorbar(im, cax=cax, orientation='vertical')
         plt.show()
@@ -263,11 +275,10 @@ class DiffRes(object):
         self.setup.logger.info('Filename: %s' % _filename)
         _filediff = h5py.File(os.path.join(self.setup.path, _filename), 'w')
         _diff_setup = _filediff.create_group('experiment setup')
+        _diff_setup.create_dataset('sample position', data=self.setup.orig)
         for args in (self.setup.beam, self.setup.lattice, self.setup.detector):
             args.write(_diff_setup)
-        _diff_res = _filediff.create_group('results')
-        _diff_res.create_dataset('x coordinate of output wavevectors', data=self.kxs)
-        _diff_res.create_dataset('y coordinate of output wavevectors', data=self.kys)
+        _diff_res = _filediff.create_group('data')
         _diff_res.create_dataset('diffracted lightwave values', data=self.res)
         _filediff.close()
         self.setup.logger.info('Writing is completed')

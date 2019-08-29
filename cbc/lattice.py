@@ -6,7 +6,7 @@ import numpy as np, h5py
     
 class Cell(object):
     """
-    Unit cell function arguments class.
+    Unit cell class.
     
     XS, YS, ZS - atom coordinates within the unit cell
     bs - an array of B-factors
@@ -39,7 +39,6 @@ class Cell(object):
 
 class Lattice(object): 
     __metaclass__ = ABCMeta
-    lat_orig = np.zeros(3)
 
     @abstractproperty
     def a(self): pass
@@ -76,44 +75,42 @@ class Lattice(object):
 
 class CubicLattice(Lattice):
     """
-    Lattice function arguments class.
+    Cube shaped lattice class.
     
-    Nx, Ny, Nz - numbers of unit cells in a sample
-    a, b, c - unit cell edge lengths
-    lat_orig - lattice origin point
+    a, b, c - unit cell vectors [mm]
+    Na, Nb, Nc - numbers of unit cells in a sample
     """
     a, b, c, cell = None, None, None, None
 
-    def __init__(self, cell=Cell(), a=np.array([7.9e-6, 0, 0]), b=np.array([0, 7.9e-6, 0]), c=np.array([0, 0, 3.8e-6]), Nx=20, Ny=20, Nz=20):
+    def __init__(self, cell=Cell(), a=np.array([7.9e-6, 0, 0]), b=np.array([0, 7.9e-6, 0]), c=np.array([0, 0, 3.8e-6]), Na=20, Nb=20, Nc=20):
         self.cell = cell
         self.a, self.b, self.c = a, b, c
-        self.Nx, self.Ny, self.Nz = Nx, Ny, Nz
+        self.Na, self.Nb, self.Nc = Na, Nb, Nc
 
     @property
     def arguments(self):
-        return {'lattice_vectors': (self.a, self.b, self.c), 'lattice_size': (self.Nx, self.Ny, self.Nz), 'lattice_origin': self.lat_orig}
+        return {'lattice_vectors': (self.a, self.b, self.c), 'lattice_size': (self.Na, self.Nb, self.Nc)}
 
     def coordinates(self):
-        nxval = np.arange((-self.Nx + 1) / 2., (self.Nx + 1) / 2.)
-        nyval = np.arange((-self.Ny + 1) / 2., (self.Ny + 1) / 2.)
-        nzval = np.arange((-self.Nz + 1) / 2., (self.Nz + 1) / 2.)
-        nx, ny, nz = np.meshgrid(nxval, nyval, nzval)
-        pts = np.multiply.outer(self.a, nx) + np.multiply.outer(self.b, ny) + np.multiply.outer(self.c, nz)
+        narng = np.arange((-self.Na + 1) / 2., (self.Na + 1) / 2.)
+        nbrng = np.arange((-self.Nb + 1) / 2., (self.Nb + 1) / 2.)
+        ncrng = np.arange((-self.Nc + 1) / 2., (self.Nc + 1) / 2.)
+        nas, nbs, ncs = np.meshgrid(narng, nbrng, ncrng)
+        pts = np.multiply.outer(self.a, nas) + np.multiply.outer(self.b, nbs) + np.multiply.outer(self.c, ncs)
         return np.add.outer(pts[0].ravel(), self.cell.XS), np.add.outer(pts[1].ravel(), self.cell.YS), np.add.outer(pts[2].ravel(), self.cell.ZS)
 
     def _write_size(self, outfile):
         size_group = outfile.create_group('lattice_size')
-        size_group.create_dataset('Nx', data=self.Nx)
-        size_group.create_dataset('Ny', data=self.Ny)
-        size_group.create_dataset('Nz', data=self.Nz)
+        size_group.create_dataset('Na', data=self.Na)
+        size_group.create_dataset('Nb', data=self.Nb)
+        size_group.create_dataset('Nc', data=self.Nc)
 
 class BallLattice(Lattice):
     """
-    Lattice function arguments class.
+    Ball shaped lattice class.
     
-    Nx, Ny, Nz - numbers of unit cells in a sample
-    a, b, c - unit cell edge lengths
-    lat_orig - lattice origin point
+    a, b, c - unit cell edge vectors [mm]
+    r - ball radius [mm]
     """
     a, b, c, cell = None, None, None, None
 
@@ -123,13 +120,13 @@ class BallLattice(Lattice):
 
     @property
     def arguments(self):
-        return {'lattice_vectors': (self.a, self.b, self.c), 'lattice_radius': self.r, 'lattice_origin': self.lat_orig}
+        return {'lattice_vectors': (self.a, self.b, self.c), 'lattice_radius': self.r}
 
     def coordinates(self):
-        Nx, Ny, Nz = self.r / np.sqrt(self.a.dot(self.a)), self.r / np.sqrt(self.b.dot(self.b)), self.r / np.sqrt(self.c.dot(self.c))
-        nxval, nyval, nzval = np.arange(-Nx, Nx), np.arange(-Ny, Ny), np.arange(-Nz, Nz)
-        nx, ny, nz = np.meshgrid(nxval, nyval, nzval)
-        pts = np.multiply.outer(self.a, nx) + np.multiply.outer(self.b, ny) + np.multiply.outer(self.c, nz)
+        Na, Nb, Nc = self.r / np.sqrt(self.a.dot(self.a)), self.r / np.sqrt(self.b.dot(self.b)), self.r / np.sqrt(self.c.dot(self.c))
+        Naval, Nbval, Ncval = np.arange(-Na, Na), np.arange(-Nb, Nb), np.arange(-Nc, Nc)
+        Na, Nb, Nc = np.meshgrid(Naval, Nbval, Ncval)
+        pts = np.multiply.outer(self.a, Na) + np.multiply.outer(self.b, Nb) + np.multiply.outer(self.c, Nc)
         mask = (np.sqrt(pts[0]**2 + pts[1]**2 + pts[2]**2) < self.r)
         return np.add.outer(pts[0][mask].ravel(), self.cell.XS), np.add.outer(pts[1][mask].ravel(), self.cell.YS), np.add.outer(pts[2][mask].ravel(), self.cell.ZS)
 

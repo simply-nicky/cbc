@@ -36,7 +36,7 @@ def jit_integrand(func):
     jit_func = nb.njit(func)
     @nb.cfunc(nb.float64(nb.intc, nb.types.CPointer(nb.float64)))
     def wrapper(n, args):
-        return jit_func(args[0], args[1], args[2])
+        return jit_func(args[0], args[1], args[2], args[3], args[4])
     return LowLevelCallable(wrapper.ctypes)
 
 def quad_complex(func_re, func_im, a, b, **args):
@@ -78,23 +78,6 @@ def diff(kouts, kins, xs, ys, zs, asfcoeffs, us, wavelength):
                 _res += us[j,k] * (asfcoeffs[k,0] * exp(-asfcoeffs[k,1] * _qs) + asfcoeffs[k,2]) * exp(-asfcoeffs[k,3] * _qs) * (cos(2 * pi / wavelength * _ph) + sin(2 * pi / wavelength * _ph) * 1j)
         res[i] = _res
     return res
-
-@nb.njit(nb.types.UniTuple(nb.float64[:,:], 3)(nb.float64[:,:], nb.float64[:,:], nb.float64[:,:], nb.float64[:,:]), fastmath=True)
-def rotate(m, xs, ys, zs):
-    a, b = xs.shape
-    XS = np.empty((a, b), dtype=np.float64)
-    YS = np.empty((a, b), dtype=np.float64)
-    ZS = np.empty((a, b), dtype=np.float64)
-    m = np.ascontiguousarray(m)
-    xs = np.ascontiguousarray(xs)
-    ys = np.ascontiguousarray(ys)
-    zs = np.ascontiguousarray(zs)
-    for i in range(a):
-        for j in range(b):
-            XS[i,j] = m[0,0] * xs[i,j] + m[0,1] * ys[i,j] + m[0,2] * zs[i,j]
-            YS[i,j] = m[1,0] * xs[i,j] + m[1,1] * ys[i,j] + m[1,2] * zs[i,j]
-            ZS[i,j] = m[2,0] * xs[i,j] + m[2,1] * ys[i,j] + m[2,2] * zs[i,j]
-    return XS, YS, ZS
 
 def make_dirs(path):
     try:
@@ -216,13 +199,6 @@ except ImportError:
     class NullHandler(logging.Handler):
         def emit(self, record):
             pass
-
-class worker_star(object):
-    def __init__(self, worker):
-        self.worker = worker
-    
-    def __call__(self, args):
-        return self.worker(*args)
 
 class DiffWorker(object):
     def __init__(self, kins, xs, ys, zs, us, asf_coeffs, wavelength, sigma):

@@ -6,11 +6,11 @@ if __name__ == "__main__":
     wavelength = 1.14e-7
     thdiv = 0.015
     waist = wavelength / np.pi / thdiv
-    Nx, Ny, Nz = 100, 100, 100
+    Na, Nb, Nc = 100, 100, 100
     r = 5e-4
     detNx, detNy = 2000, 2000
-    pix_size = 88.6e-3
-    det_dist = 250
+    pixsize = 88.6e-3
+    detdist = 250
 
     astar = np.array([0.00551908483885947, -0.00294352907953398, 0.0109864094612009])
     bstar = np.array([-0.0112435046699143, 0.000431835526544485, 0.00576393741858660])
@@ -23,7 +23,7 @@ if __name__ == "__main__":
     logpath = cbc.utils.get_logpath()
     beam = cbc.GausBeam(waist, wavelength)
     diff = cbc.Diff(beam=beam, setup=cbc.Setup(handler=logging.FileHandler(logpath)),
-                    detector=cbc.Detector(det_dist=det_dist, detNx=detNx, detNy=detNy, pix_size=pix_size),
+                    detector=cbc.Detector(detdist=detdist, Nx=detNx, Ny=detNy, pixsize=pixsize),
                     lattice=cbc.BallLattice(a=aa, b=bb, c=cc, r=r))
 
     diff.move_lat([0, 0, dz])
