@@ -51,8 +51,8 @@ class Detector(object):
 
     def kouts_yar(self):
         xs, ys = self.det_coordinates()
-        kxs = np.tan(np.sqrt(xs**2 + ys**2) / self.detdist) * np.cos(np.arctan2(ys, xs))
-        kys = np.tan(np.sqrt(xs**2 + ys**2) / self.detdist) * np.sin(np.arctan2(ys, xs))
+        kxs = np.arctan(np.sqrt(xs**2 + ys**2) / self.detdist) * np.cos(np.arctan2(ys, xs))
+        kys = np.arctan(np.sqrt(xs**2 + ys**2) / self.detdist) * np.sin(np.arctan2(ys, xs))
         return np.stack((kxs, kys, np.sqrt(1 - kxs**2 - kys**2)), axis=1)
 
     def write(self, outfile):
