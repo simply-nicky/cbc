@@ -56,7 +56,7 @@ class Detector(object):
         return np.stack((kxs, kys, np.sqrt(1 - kxs**2 - kys**2)), axis=1)
 
     def write(self, outfile):
-        det_group = outfile.create_group('detector')
+        det_group = outfile.create_group('Detector')
         det_group.create_dataset('distance', data=self.detdist)
         det_group.create_dataset('Nx', data=self.Nx)
         det_group.create_dataset('Ny', data=self.Ny)
@@ -98,7 +98,7 @@ class Diff(DiffSetup):
     lat_args - LatArgs class object
     det_args - DetArgs class object
     """
-    orig = np.zeros(3)
+    origin = np.zeros(3)
 
     def __init__(self, beam, lattice, setup=Setup(), detector=Detector()):
         DiffSetup.__init__(self, setup)
@@ -123,11 +123,11 @@ class Diff(DiffSetup):
 
         pt = [x, y, z] - array of point coordinates
         """
-        self.lat_orig = pt
+        self.origin = pt
 
     def coordinates(self):
         xs, ys, zs = self.lattice.coordinates()
-        return xs + self.lat_orig[0], ys + self.lat_orig[1], zs + self.lat_orig[2]
+        return xs + self.origin[0], ys + self.origin[1], zs + self.origin[2]
 
     def calculate(self):
         """
@@ -275,7 +275,7 @@ class DiffRes(object):
         self.setup.logger.info('Filename: %s' % _filename)
         _filediff = h5py.File(os.path.join(self.setup.path, _filename), 'w')
         _diff_setup = _filediff.create_group('experiment setup')
-        _diff_setup.create_dataset('sample position', data=self.setup.orig)
+        _diff_setup.create_dataset('sample position', data=self.setup.origin)
         for args in (self.setup.beam, self.setup.lattice, self.setup.detector):
             args.write(_diff_setup)
         _diff_res = _filediff.create_group('data')
