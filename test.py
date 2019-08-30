@@ -12,9 +12,6 @@ if __name__ == "__main__":
     pixsize = 88.6e-3
     detdist = 250
 
-    axis = np.random.rand(3)
-    theta = 2 * np.pi * np.random.random()
-
     astar = np.array([0.00551908483885947, -0.00294352907953398, 0.0109864094612009])
     bstar = np.array([-0.0112435046699143, 0.000431835526544485, 0.00576393741858660])
     cstar = np.array([-0.00357471961041716, -0.0255767535096894, -0.00505686021507011])
@@ -28,9 +25,6 @@ if __name__ == "__main__":
     diff = cbc.Diff(beam=beam, setup=cbc.Setup(handler=logging.FileHandler(logpath)),
                     detector=cbc.Detector(detdist=detdist, Nx=detNx, Ny=detNy, pixsize=pixsize),
                     lattice=cbc.BallLattice(a=aa, b=bb, c=cc, r=r))
-
-    diff.rotate_lat(axis, theta)
-    diff.move_lat([0, 0, dz])
     
     start = timer()
     diffres = diff.calculate().pool()
