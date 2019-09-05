@@ -43,18 +43,6 @@ class Detector(object):
         xs, ys = np.meshgrid(x_det, y_det)
         return xs.ravel(), ys.ravel()
 
-    def kouts(self):
-        xs, ys = self.det_coordinates()
-        kxs = np.sin(np.arctan(np.sqrt(xs**2 + ys**2) / self.detdist)) * np.cos(np.arctan2(ys, xs))
-        kys = np.sin(np.arctan(np.sqrt(xs**2 + ys**2) / self.detdist)) * np.sin(np.arctan2(ys, xs))
-        return np.stack((kxs, kys, np.sqrt(1 - kxs**2 - kys**2)), axis=1)
-
-    def kouts_yar(self):
-        xs, ys = self.det_coordinates()
-        kxs = np.arctan(np.sqrt(xs**2 + ys**2) / self.detdist) * np.cos(np.arctan2(ys, xs))
-        kys = np.arctan(np.sqrt(xs**2 + ys**2) / self.detdist) * np.sin(np.arctan2(ys, xs))
-        return np.stack((kxs, kys, np.sqrt(1 - kxs**2 - kys**2)), axis=1)
-
     def write(self, outfile):
         det_group = outfile.create_group('Detector')
         det_group.create_dataset('distance', data=self.detdist)
@@ -64,31 +52,23 @@ class Detector(object):
 
 class Setup(object):
     """
-    diff_setup arguments class.
+    Setup class. Initializes the output folder and the logger.
 
     timenow - starting time
     handler - hadler for logger
     level - logger level
     relpath - path to save results
     """
-    def __init__(self, timenow=datetime.datetime.now(), handler = utils.NullHandler(), level=logging.INFO, relpath=utils.res_relpath):
-        self.level, self.time, self.path = level, timenow, os.path.join(utils.parpath, relpath)
+    def __init__(self, timenow, handler, level, relpath):
+        self.time, self.path = timenow, os.path.join(utils.parpath, relpath)
         handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-        self.handler = handler
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger.addHandler(handler)
+        self.logger.level = level
+        self.logger.info('Initializing')
+        self.logger.info('Output path is %s' % self.path)
 
-class DiffSetup(object):
-    """
-    Diffraction setup class.
-    Initializes logger, the path where to save results and starting time.
-    """
-    def __init__(self, setup=Setup()):
-        self.time, self.path, self.logger = setup.time, setup.path, logging.getLogger(self.__class__.__name__)
-        self.logger.addHandler(setup.handler)
-        self.logger.level = setup.level
-        self.logger.info('Initializing diff_setup')
-        self.logger.info('output path is %s' % self.path)
-
-class Diff(DiffSetup):
+class DiffABC(object):
     """
     Diffraction simulation setup class.
 
@@ -98,12 +78,19 @@ class Diff(DiffSetup):
     lat_args - LatArgs class object
     det_args - DetArgs class object
     """
-    origin = np.zeros(3)
+    latorigin = np.zeros(3)
 
-    def __init__(self, beam, lattice, setup=Setup(), detector=Detector()):
-        DiffSetup.__init__(self, setup)
+    def __init__(self, beam, lattice, detector, timenow, handler, level, relpath):
+        Setup.__init__(self, timenow, handler, level, relpath)
         self.sigma = detector.pixsize**2 / detector.detdist**2
         self.beam, self.lattice, self.detector = beam, lattice, detector
+        self.detorigin = np.array([0, 0, self.detector.detdist])
+
+    @property
+    def distance(self): return self.detorigin - self.latorigin
+
+    @abstractmethod
+    def kouts(self): pass
 
     def rotate_lat(self, axis, theta):
         """
@@ -123,15 +110,24 @@ class Diff(DiffSetup):
 
         pt = [x, y, z] - array of point coordinates
         """
-        self.origin = pt
+        self.latorigin = pt
+
+    def move_det(self, x, y):
+        """
+        Move the center of detector to the point [x, y].
+        """
+        self.detorigin[:2] = [x,y]
 
     def coordinates(self):
+        """
+        Return lattice atoms coordinates
+        """
         xs, ys, zs = self.lattice.coordinates()
-        return xs + self.origin[0], ys + self.origin[1], zs + self.origin[2]
+        return xs + self.latorigin[0], ys + self.latorigin[1], zs + self.latorigin[2]
 
     def calculate(self):
         """
-        Convergent gaussian beam diffraction based on Henry's equations.
+        Convergent gaussian beam diffraction based on Kinematical theory equations.
         """
         self.logger.info("Setting up the convergent beam diffraction with following parameters:")
         for args in (self.lattice, self.detector):
@@ -139,21 +135,49 @@ class Diff(DiffSetup):
                 self.logger.info('%-9s=%+28s' % (key, value))
         return DiffCalc(self)
 
+class DiffSA(DiffABC):
+    def __init__(self, beam, lattice, detector=Detector(), timenow=datetime.datetime.now(), handler=utils.NullHandler(), level=logging.INFO, relpath=utils.res_relpath):
+        DiffABC.__init__(self, beam, lattice, detector, timenow, handler, level, relpath)
+
+    def kouts(self):
+        xs, ys = self.detector.det_coordinates()
+        dx, dy, dz = xs + self.distance[0], ys + self.distance[1], self.distance[2]
+        return np.stack((dx / dz, dy / dz, 1 - (dx**2 + dy**2) / dz**2 / 2), axis=1)
+
+class Diff(DiffABC):
+    def __init__(self, beam, lattice, detector=Detector(), timenow=datetime.datetime.now(), handler=utils.NullHandler(), level=logging.INFO, relpath=utils.res_relpath):
+        DiffABC.__init__(self, beam, lattice, detector, timenow, handler, level, relpath)
+
+    def kouts(self):
+        xs, ys = self.detector.det_coordinates()
+        dx, dy, dz = xs + self.distance[0], ys + self.distance[1], self.distance[2]
+        kxs = np.sin(np.arctan(np.sqrt(dx**2 + dy**2) / dz)) * np.cos(np.arctan2(dy, dx))
+        kys = np.sin(np.arctan(np.sqrt(dx**2 + dy**2) / dz)) * np.sin(np.arctan2(dy, dx))
+        return np.stack((kxs, kys, np.sqrt(1 - kxs**2 - kys**2)), axis=1)
+
+class DiffYar(DiffABC):
+    def __init__(self, beam, lattice, detector=Detector(), timenow=datetime.datetime.now(), handler=utils.NullHandler(), level=logging.INFO, relpath=utils.res_relpath):
+        DiffABC.__init__(self, beam, lattice, detector, timenow, handler, level, relpath)
+
+    def kouts(self):
+        xs, ys = self.detector.det_coordinates()
+        dx, dy, dz = xs + self.distance[0], ys + self.distance[1], self.distance[2]
+        kxs = np.arctan(np.sqrt(dx**2 + dy**2) / dz) * np.cos(np.arctan2(dy, dx))
+        kys = np.arctan(np.sqrt(dx**2 + dy**2) / dz) * np.sin(np.arctan2(dy, dx))
+        return np.stack((kxs, kys, 1 - (kxs**2 - kys**2) / 2), axis=1)
+
 class DiffCalc(object):
     """
     Diffraction calculation class.
 
     setup - diff class object
-    worker - worker function
-    kxs, kys - arguments
-    num - number of elements to calculate per one argument element
     """
     thread_size = 2**25
     k_size = 2**10
 
     def __init__(self, setup):
         self.setup = setup
-        self.kouts = self.setup.detector.kouts_yar()
+        self.kouts = self.setup.kouts()
         self.xs, self.ys, self.zs = self.setup.coordinates()
         self.asf_coeffs = setup.lattice.cell.asf(setup.beam.wavelength)
         self.kins = setup.beam.wavevectors(self.xs, self.ys, self.zs)
@@ -275,7 +299,8 @@ class DiffRes(object):
         self.setup.logger.info('Filename: %s' % _filename)
         _filediff = h5py.File(os.path.join(self.setup.path, _filename), 'w')
         _diff_setup = _filediff.create_group('experiment setup')
-        _diff_setup.create_dataset('sample position', data=self.setup.origin)
+        _diff_setup.create_dataset('sample position', data=self.setup.latorigin)
+        _diff_setup.create_dataset('detector position', data=self.setup.detorigin)
         for args in (self.setup.beam, self.setup.lattice, self.setup.detector):
             args.write(_diff_setup)
         _diff_res = _filediff.create_group('data')

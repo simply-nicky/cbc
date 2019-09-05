@@ -22,7 +22,7 @@ if __name__ == "__main__":
 
     logpath = cbc.utils.get_logpath()
     beam = cbc.GausBeam(waist, wavelength)
-    diff = cbc.Diff(beam=beam, setup=cbc.Setup(handler=logging.FileHandler(logpath)),
+    diff = cbc.Diff(beam=beam, handler=logging.FileHandler(logpath),
                     detector=cbc.Detector(detdist=detdist, Nx=detNx, Ny=detNy, pixsize=pixsize),
                     lattice=cbc.BallLattice(a=aa, b=bb, c=cc, r=r))
     
