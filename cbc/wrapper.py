@@ -171,7 +171,7 @@ class DiffCalc(object):
     def serial(self):
         self._chunkify()
         self.setup.logger.info('Starting serial calculation')
-        _res = []
+        res = []
         for xs, ys, zs, kins, us in zip(np.array_split(self.xs, self.lat_thread_num),
                                         np.array_split(self.ys, self.lat_thread_num),
                                         np.array_split(self.zs, self.lat_thread_num),
@@ -181,10 +181,10 @@ class DiffCalc(object):
             worker = utils.DiffWorker(kins, xs, ys, zs, us, self.asf_coeffs, self.setup.beam.wavelength, self.setup.sigma)
             for kouts in np.array_split(self.kouts, self.k_thread_num):
                 _chunkres.extend(worker(kouts))
-            _res.append(_chunkres)
-        _res = np.array(_res).sum(axis=0).reshape(self.setup.detector.shape)
-        self.setup.logger.info('The calculation has ended, %d diffraction pattern values total' % _res.size)
-        return DiffRes(self.setup, _res)
+            res.append(_chunkres)
+        res = np.array(res).sum(axis=0).reshape(self.setup.detector.shape)
+        self.setup.logger.info('The calculation has ended, %d diffraction pattern values total' % res.size)
+        return DiffRes(self.setup, res, self.kouts)
 
     def pool(self):
         self._chunkify()
@@ -204,7 +204,7 @@ class DiffCalc(object):
             res.append(chunkres)
         res = np.sum(res, axis=0).reshape(self.setup.detector.shape)
         self.setup.logger.info('The calculation has ended, %d diffraction pattern values total' % res.size)
-        return DiffRes(self.setup, res)
+        return DiffRes(self.setup, res, self.kouts)
 
 class DiffRes(object):
     """
@@ -214,8 +214,8 @@ class DiffRes(object):
     res - diffracted wave values for given kxs and kys
     kxs, kys - x and y coordinates of output wavevectors
     """
-    def __init__(self, setup, res):
-        self.setup, self.res = setup, res
+    def __init__(self, setup, res, kouts):
+        self.setup, self.res, self.kouts = setup, res, kouts
 
     def plot(self, figsize=(10, 10), xlim=None, ylim=None):
         if xlim == None:
@@ -279,6 +279,7 @@ class DiffRes(object):
         for args in (self.setup.beam, self.setup.lattice, self.setup.detector):
             args.write(_diff_setup)
         _diff_res = _filediff.create_group('data')
-        _diff_res.create_dataset('diffracted lightwave values', data=self.res)
+        _diff_res.create_dataset('data', data=self.res)
+        _diff_res.create_dataset('wavevectors', data=self.kouts)
         _filediff.close()
         self.setup.logger.info('Writing is completed')
