@@ -164,7 +164,7 @@ class DiffYar(DiffABC):
         dx, dy, dz = xs + self.distance[0], ys + self.distance[1], self.distance[2]
         kxs = np.arctan(np.sqrt(dx**2 + dy**2) / dz) * np.cos(np.arctan2(dy, dx))
         kys = np.arctan(np.sqrt(dx**2 + dy**2) / dz) * np.sin(np.arctan2(dy, dx))
-        return np.stack((kxs, kys, 1 - (kxs**2 - kys**2) / 2), axis=1)
+        return np.stack((kxs, kys, 1 - (kxs**2 + kys**2) / 2), axis=1)
 
 class DiffCalc(object):
     """
