@@ -68,7 +68,7 @@ class Setup(object):
         self.logger.info('Initializing')
         self.logger.info('Output path is %s' % self.path)
 
-class DiffABC(object):
+class DiffABC(Setup):
     """
     Diffraction simulation setup class.
 
@@ -81,7 +81,7 @@ class DiffABC(object):
     latorigin = np.zeros(3)
 
     def __init__(self, beam, lattice, detector, timenow, handler, level, relpath):
-        Setup.__init__(self, timenow, handler, level, relpath)
+        super(DiffABC, self).__init__(timenow, handler, level, relpath)
         self.sigma = detector.pixsize**2 / detector.detdist**2
         self.beam, self.lattice, self.detector = beam, lattice, detector
         self.detorigin = np.array([0, 0, self.detector.detdist])
@@ -137,7 +137,7 @@ class DiffABC(object):
 
 class DiffSA(DiffABC):
     def __init__(self, beam, lattice, detector=Detector(), timenow=datetime.datetime.now(), handler=utils.NullHandler(), level=logging.INFO, relpath=utils.res_relpath):
-        DiffABC.__init__(self, beam, lattice, detector, timenow, handler, level, relpath)
+        super(DiffSA, self).__init__(beam, lattice, detector, timenow, handler, level, relpath)
 
     def kouts(self):
         xs, ys = self.detector.det_coordinates()
@@ -146,7 +146,7 @@ class DiffSA(DiffABC):
 
 class Diff(DiffABC):
     def __init__(self, beam, lattice, detector=Detector(), timenow=datetime.datetime.now(), handler=utils.NullHandler(), level=logging.INFO, relpath=utils.res_relpath):
-        DiffABC.__init__(self, beam, lattice, detector, timenow, handler, level, relpath)
+        super(Diff, self).__init__(beam, lattice, detector, timenow, handler, level, relpath)
 
     def kouts(self):
         xs, ys = self.detector.det_coordinates()
@@ -157,7 +157,7 @@ class Diff(DiffABC):
 
 class DiffYar(DiffABC):
     def __init__(self, beam, lattice, detector=Detector(), timenow=datetime.datetime.now(), handler=utils.NullHandler(), level=logging.INFO, relpath=utils.res_relpath):
-        DiffABC.__init__(self, beam, lattice, detector, timenow, handler, level, relpath)
+        super(DiffYar, self).__init__(beam, lattice, detector, timenow, handler, level, relpath)
 
     def kouts(self):
         xs, ys = self.detector.det_coordinates()
