@@ -123,10 +123,10 @@ class BallLattice(Lattice):
         return {'lattice_vectors': (self.a, self.b, self.c), 'lattice_radius': self.r}
 
     def coordinates(self):
-        Na, Nb, Nc = self.r / np.sqrt(self.a.dot(self.a)), self.r / np.sqrt(self.b.dot(self.b)), self.r / np.sqrt(self.c.dot(self.c))
-        Naval, Nbval, Ncval = np.arange(-Na, Na), np.arange(-Nb, Nb), np.arange(-Nc, Nc)
-        Na, Nb, Nc = np.meshgrid(Naval, Nbval, Ncval)
-        pts = np.multiply.outer(self.a, Na) + np.multiply.outer(self.b, Nb) + np.multiply.outer(self.c, Nc)
+        Na, Nb, Nc = self.r // np.sqrt(self.a.dot(self.a)), self.r // np.sqrt(self.b.dot(self.b)), self.r // np.sqrt(self.c.dot(self.c))
+        arng, brng, crng = np.arange(-Na, Na), np.arange(-Nb, Nb), np.arange(-Nc, Nc)
+        na, nb, nc = np.meshgrid(arng, brng, crng)
+        pts = np.multiply.outer(self.a, na) + np.multiply.outer(self.b, nb) + np.multiply.outer(self.c, nc)
         mask = (np.sqrt(pts[0]**2 + pts[1]**2 + pts[2]**2) < self.r)
         return np.add.outer(pts[0][mask].ravel(), self.cell.XS), np.add.outer(pts[1][mask].ravel(), self.cell.YS), np.add.outer(pts[2][mask].ravel(), self.cell.ZS)
 

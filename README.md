@@ -31,8 +31,9 @@ Samples could be composed of different compound unit cells deffined by array of 
 
 The library itself consists of two modules and an utility package:
 
-- functions.py - a module with all functions for convergent gaussian beam crystallography simulation
-- wrapper.py - class wrapper for settting up and running diffraction simulations as well as plotting and writing into HDF5 file diffraction results
+- beam.py - a module with incoming beam classes
+- lattice.py - a module with sample lattice classes
+- wrapper.py - simulation calculation wrapper module
 - utils - utility package:
     - utilfuncs.py - utility functions for convergent beam diffraction project
     - asf - atomic scattering factor calculation package:

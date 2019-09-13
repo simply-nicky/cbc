@@ -18,7 +18,7 @@ import numpy as np, os, concurrent.futures, h5py, datetime, matplotlib.pyplot as
 
 class Detector(object):
     """
-    det_kouts function arguments class.
+    Detector class.
 
     detdist - distance between detector and sample
     Nx, Ny - numbers of pixels in x and y axes
@@ -106,9 +106,7 @@ class DiffABC(Setup):
     
     def move_lat(self, pt):
         """
-        Move the sample to the point pt.
-
-        pt = [x, y, z] - array of point coordinates
+        Move the sample to the point pt = [x, y, z].
         """
         self.latorigin = pt
 
@@ -120,7 +118,7 @@ class DiffABC(Setup):
 
     def coordinates(self):
         """
-        Return lattice atoms coordinates
+        Return lattice atoms coordinates.
         """
         xs, ys, zs = self.lattice.coordinates()
         return xs + self.latorigin[0], ys + self.latorigin[1], zs + self.latorigin[2]
@@ -170,7 +168,7 @@ class DiffCalc(object):
     """
     Diffraction calculation class.
 
-    setup - diff class object
+    setup - diffraction simulation setup class object
     """
     thread_size = 2**25
     k_size = 2**10
@@ -208,7 +206,7 @@ class DiffCalc(object):
             res.append(_chunkres)
         res = np.array(res).sum(axis=0).reshape(self.setup.detector.shape)
         self.setup.logger.info('The calculation has ended, %d diffraction pattern values total' % res.size)
-        return DiffRes(self.setup, res, self.kouts)
+        return DiffRes(self.setup, res, self.kouts.reshape((self.setup.detector.shape + (3,))))
 
     def pool(self):
         self._chunkify()
@@ -228,15 +226,15 @@ class DiffCalc(object):
             res.append(chunkres)
         res = np.sum(res, axis=0).reshape(self.setup.detector.shape)
         self.setup.logger.info('The calculation has ended, %d diffraction pattern values total' % res.size)
-        return DiffRes(self.setup, res, self.kouts)
+        return DiffRes(self.setup, res, self.kouts.reshape((self.setup.detector.shape + (3,))))
 
 class DiffRes(object):
     """
     Diffraction results class.
 
-    setup - diff class object
-    res - diffracted wave values for given kxs and kys
-    kxs, kys - x and y coordinates of output wavevectors
+    setup - diffraction simulation setup class object
+    res - diffracted wave values for given output wavevectors
+    kouts - output wavevectors
     """
     def __init__(self, setup, res, kouts):
         self.setup, self.res, self.kouts = setup, res, kouts
@@ -252,6 +250,7 @@ class DiffRes(object):
         divider = make_axes_locatable(ax)
         cax = divider.append_axes('right', size='5%', pad=0.1)
         im = ax.imshow(ints, cmap='viridis', vmin=ints.min(), vmax=ints.max(),
+                                extent = [],
                                 interpolation='nearest', origin='lower')
         fig.colorbar(im, cax=cax, orientation='vertical')
         plt.show()
