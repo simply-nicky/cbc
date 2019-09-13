@@ -20,14 +20,14 @@ if __name__ == "__main__":
     zmax = max(np.sqrt(a.dot(a)) * Na, np.sqrt(b.dot(b)) * Nb, np.sqrt(c.dot(c)) * Nc) * np.pi * waist / wavelength
     pts = np.linspace(0, zmax, num=11, endpoint=True)
     beam = cbc.GausBeam(waist, wavelength)
+    logpath = cbc.utils.get_logpath()
 
     for counter, pt in enumerate(pts):
         logpath = cbc.utils.get_logpath()
         relpath = os.path.join('results/zseries', str(counter))
-        setup = cbc.Setup(handler=logging.FileHandler(logpath), relpath=relpath)
         lattice = cbc.CubicLattice(a=a, b=b, c=c, Na=Na, Nb=Nb, Nc=Nc)
         detector = cbc.Detector(detdist=detdist, Nx=detNx, Ny=detNy, pixsize=pixsize)
-        diff = cbc.Diff(beam=beam, setup=setup, lattice=lattice, detector=detector)
+        diff = cbc.Diff(beam=beam, handler=logging.FileHandler(logpath), lattice=lattice, detector=detector)
         diff.move_lat(pt)
         diffres = diff.calculate().pool()
         diffres.write()
