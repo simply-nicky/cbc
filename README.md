@@ -66,8 +66,10 @@ Experimental convergent diffraction data processing package. Data is acquired fr
 
 ### Line detection
 
-    - Progressive Probabilistic Hough line transform, [the article](https://ieeexplore.ieee.org/document/786993)
-    - Line Segment Detector (LSD), [the article](https://www.ipol.im/pub/art/2012/gjmr-lsd/)
+    - Progressive Probabilistic Hough line transform
+    - Line Segment Detector (LSD)
+
+More information about Progressive Hough transform is written in [this article](https://ieeexplore.ieee.org/document/786993) and about Line Segment Detector in [this article](https://www.ipol.im/pub/art/2012/gjmr-lsd/).
 
 ### Indexing:
 
