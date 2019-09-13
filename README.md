@@ -1,5 +1,5 @@
 # Convergent beam crystallography project
-This project consists of two packages - convergent beam simulation program ([cbc](#convergent-beam-simulation)) and experimental data processing package ()
+This project consists of two packages - convergent beam simulation program ([cbc](#1.-convergent-beam-simulation)) and experimental data processing package ([cbc_dp](#2.-convergent-crystallography-data-processing))
 
 ## 1. Convergent beam simulation
 Simulation for convergent beam diffration on a crystalline sample written in Python. Code is compatible with Python 2.X and 3.X.
@@ -55,7 +55,7 @@ Also there is a couple of usage examples:
 
 - consider different crystall space groups
 
-## 2. Convergent crystallography dataprocessing
+## 2. Convergent crystallography data processing
 Experimental convergent diffraction data processing package. Data is acquired from PETRA P06 beamtime on June 13, 2019.
 
 ### Data correction:
