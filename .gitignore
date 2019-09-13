@@ -1,6 +1,8 @@
 # Diffraction pattern results
 results/
+exp_results/
 logs/
+movies/
 figures/
 *.hdf5
 *.png
