@@ -1,6 +1,6 @@
 import numpy as np, numba as nb, concurrent.futures
 from . import utils
-from math import sqrt, sin, cos
+from math import sqrt, sin, cos, pi, atan2
 from itertools import accumulate
 from multiprocessing import cpu_count
 from skimage.transform import probabilistic_hough_line
@@ -321,3 +321,24 @@ class ReciprocalPeaks(object):
 
     def correlation(self, qmax):
         return self._cor_func(self.qs, qmax)
+
+@nb.njit(nb.float64[:, :](nb.float64[:, :]))
+def NMS(image):
+    a, b = image.shape
+    res = np.zeros((a, b), dtype=np.float64)
+    for i in range(1, a - 1):
+        for j in range(1, b - 1):
+            phase = atan2(image[i+1, j] - image[i-1, j], image[i, j+1] - image[i,j-1])
+            if (phase >= 0.875 * pi or phase < -0.875 * pi) or (phase >= -0.125 * pi and phase < 0.125 * pi):
+                if image[i,j] >= image[i,j+1] and image[i,j] >= image[i,j-1]:
+                    res[i,j] = image[i,j]
+            if (phase >= 0.625 * pi and phase < 0.875 * pi) or (phase >= -0.375 * pi and phase < -0.125 * pi):
+                if image[i,j] >= image[i-1,j+1] and image[i,j] >= image[i+1,j-1]:
+                    res[i,j] = image[i,j]
+            if (phase >= 0.375 * pi and phase < 0.625 * pi) or (phase >= -0.625 * pi and phase < -0.375 * pi):
+                if image[i,j] >= image[i-1,j] and image[i,j] >= image[i+1,j]:
+                    res[i,j] = image[i,j]
+            if (phase >= 0.125 * pi and phase < 0.375 * pi) or (phase >= -0.875 * pi and phase < -0.625 * pi):
+                if image[i,j] >= image[i-1,j-1] and image[i,j] >= image[i+1,j+1]:
+                    res[i,j] = image[i,j]
+    return res
