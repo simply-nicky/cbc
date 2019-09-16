@@ -212,9 +212,9 @@ class VolumeViewer(Viewer3D):
         self.roi = roi
         self.setCamera()
 
-def volumedata(data, col=[255, 255, 255]):
+def volumedata(data, col=[255, 255, 255], alpha=1.0):
     voldata = np.empty(data.shape + (4,), dtype=np.ubyte)
     adata = np.log(data - data.min() + 1)
     voldata[..., 0:3] = col
-    voldata[..., 3] = adata * (255 / adata.max())
+    voldata[..., 3] = adata * (255 / adata.max() * alpha)
     return voldata
