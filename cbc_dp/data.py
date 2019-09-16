@@ -259,7 +259,7 @@ class ScanStreaks(object):
     def __getitem__(self, index): return self.strkslist[index]
 
     def __iter__(self):
-        for strks in self.strkslist: yield strks.astype(np.int64)
+        for strks in self.strkslist: yield strks
 
     def qs(self, axis, thetas, pixsize, detdist):
         qslist = []
