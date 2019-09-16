@@ -204,7 +204,7 @@ class FrameStreaks(object):
         return taus / np.sqrt(taus[:,0]**2 + taus[:,1]**2)[:, np.newaxis]
 
     def __iter__(self):
-        for line in self.lines: yield line
+        for line in self.lines: yield line.astype(np.int64)
 
     def indexpoints(self):
         ts = self.dlines[:, 0, 1] * self.taus[:, 0] - self.dlines[:, 0, 0] * self.taus[:, 1]
@@ -259,7 +259,7 @@ class ScanStreaks(object):
     def __getitem__(self, index): return self.strkslist[index]
 
     def __iter__(self):
-        for strks in self.strkslist: yield strks
+        for strks in self.strkslist: yield strks.astype(np.int64)
 
     def qs(self, axis, thetas, pixsize, detdist):
         qslist = []
