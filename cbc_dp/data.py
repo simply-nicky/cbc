@@ -24,7 +24,7 @@ class RecLattice(object):
         arng, brng, crng = np.arange(-Na, Na), np.arange(-Nb, Nb), np.arange(-Nc, Nc)
         na, nb, nc = np.meshgrid(arng, brng, crng)
         pts = np.multiply.outer(self.a, na) + np.multiply.outer(self.b, nb) + np.multiply.outer(self.c, nc)
-        mask = (np.sqrt(pts[0]**2 + pts[1]**2 + pts[2]**2) < self.qmax)
+        mask = (np.sqrt(pts[0]**2 + pts[1]**2 + pts[2]**2) < self.qmax) & (np.sqrt(pts[0]**2 + pts[1]**2 + pts[2]**2) != 0)
         return pts[0][mask].ravel(), pts[1][mask].ravel(), pts[2][mask].ravel(), np.sqrt(pts[0]**2 + pts[1]**2 + pts[2]**2)[mask].ravel()
 
 class ConvLines(object):
@@ -72,7 +72,7 @@ class ConvLines(object):
 
     def exitpts(self):
         dphi = np.arccos((self.qabs**2 + 2 * self.qz * cos(self.NA)) / (2 * np.sqrt(self.qx**2 + self.qy**2) * sin(self.NA)))
-        return -sin(self.NA) * np.cos(self.phi + dphi), -sin(self.NA) * np.sin(self.phi + dphi), np.repeat(cos(self.NA), self.qx.shape)
+        return -sin(self.NA) * np.cos(self.phi - dphi), -sin(self.NA) * np.sin(self.phi - dphi), np.repeat(cos(self.NA), self.qx.shape)
 
     def outputwavevectors(self):
         onx, ony, onz = self.entrypts()
@@ -98,7 +98,7 @@ class LineDetector(object, metaclass=ABCMeta):
 
     def detectFrame(self, frame, zero, drtau, drn):
         lines = FrameStreaks(self.detectFrameRaw(frame), zero)
-        return FrameStreaks(self._refiner(lines.lines, lines.angles, lines.radii, lines.taus, drtau, drn), zero)
+        return FrameStreaks(type(self)._refiner(lines.lines, lines.angles, lines.radii, lines.taus, drtau, drn), zero)
 
     def detectScanRaw(self, data): return [self.detectFrameRaw(frame) for frame in data]
 
@@ -208,7 +208,7 @@ class FrameStreaks(object):
 
     def indexpoints(self):
         ts = self.dlines[:, 0, 1] * self.taus[:, 0] - self.dlines[:, 0, 0] * self.taus[:, 1]
-        return ts * np.stack((-self.taus[:, 1], self.taus[:, 0]), axis=1)
+        return np.stack((-self.taus[:, 1] * ts + self.zero[0], self.taus[:, 0] * ts + self.zero[1]), axis=1)
 
     def intensities(self, frame):
         ints = []
@@ -222,7 +222,7 @@ class ScanStreaks(object):
         self.strkslist = streakslist
 
     @property
-    def shapes(self): return np.array(list(accumulate([self.strkslist.size for strks in self.strkslist], lambda x, y: x + y)))
+    def shapes(self): return np.array(list(accumulate([strks.size for strks in self.strkslist], lambda x, y: x + y)))
 
     @property
     def zero(self): return self.__getitem__(0).zero
@@ -264,16 +264,16 @@ class ScanStreaks(object):
     def qs(self, axis, thetas, pixsize, detdist):
         qslist = []
         for strks, theta in zip(iter(self), thetas):
-            kxs = np.arctan(strks.radii / detdist) * np.cos(strks.angles)
-            kys = np.arctan(strks.radii / detdist) * np.sin(strks.angles)
+            kxs = np.arctan(pixsize * strks.radii / detdist) * np.cos(strks.angles)
+            kys = np.arctan(pixsize * strks.radii / detdist) * np.sin(strks.angles)
             rotm = utils.rotation_matrix(axis, theta)
             qxs, qys, qzs = utils.rotate(rotm, kxs, kys, np.sqrt(1 - kxs**2 - kys**2) - 1)
             qslist.append(np.stack((qxs, qys, qzs), axis=1))
         return ReciprocalPeaks(np.concatenate(qslist))
 
     def refined_qs(self, axis, thetas, pixsize, detdist, dk):
-        qs = self.qs(axis, thetas, pixsize, detdist)
-        return ReciprocalPeaks(self._refiner(qs, self.shapes, dk))
+        qs = self.qs(axis, thetas, pixsize, detdist).qs
+        return ReciprocalPeaks(ScanStreaks._refiner(qs, self.shapes, dk))
 
     def save(self, data, outfile):
         linesgroup = outfile.create_group('bragg_lines')
