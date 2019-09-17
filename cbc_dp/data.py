@@ -302,6 +302,10 @@ class ReciprocalPeaks(object):
                     corgrid[ii, jj, kk] += 1
         return corgrid
 
+    @property
+    def range(self):
+        return self.qs.max(axis=0) - self.qs.min(axis=0)    
+
     @staticmethod
     @nb.njit(nb.float64[:, :](nb.float64[:,:], nb.float64), parallel=True)
     def _cor_func(qs, qmax):
@@ -316,11 +320,32 @@ class ReciprocalPeaks(object):
                     count += 1
         return cor[:count]
 
+    @staticmethod
+    @nb.njit(nb.int64[:, :, :](nb.float64[:, :], nb.int64), parallel=True)
+    def _grid(qs, size):
+        a = qs.shape[0]
+        grid = np.zeros((size, size, size), dtype=np.int64)
+        xs = np.linspace(qs[:, 0].min(), qs[:, 0].max(), size)
+        ys = np.linspace(qs[:, 1].min(), qs[:, 1].max(), size)
+        zs = np.linspace(qs[:, 2].min(), qs[:, 2].max(), size)
+        xs[0] -= (xs[-1] - xs[0]) / 10; xs[-1] += (xs[-1] - xs[0]) / 10
+        ys[0] -= (ys[-1] - ys[0]) / 10; ys[-1] += (ys[-1] - ys[0]) / 10
+        zs[0] -= (zs[-1] - zs[0]) / 10; zs[-1] += (zs[-1] - zs[0]) / 10
+        for i in nb.prange(a):
+            ii = np.searchsorted(xs, qs[i, 0])
+            jj = np.searchsorted(ys, qs[i, 1])
+            kk = np.searchsorted(zs, qs[i, 2])
+            grid[ii, jj, kk] += 1
+        return grid
+
     def correlation_grid(self, qmax, size):
-        return self._corgrid_func(self.qs, qmax, size)
+        return ReciprocalPeaks._corgrid_func(self.qs, qmax, size)
 
     def correlation(self, qmax):
-        return self._cor_func(self.qs, qmax)
+        return ReciprocalPeaks._cor_func(self.qs, qmax)
+
+    def grid(self, size):
+        return ReciprocalPeaks._grid(self.qs, size)
 
 @nb.njit(nb.float64[:, :](nb.float64[:, :]))
 def NMS(image):
