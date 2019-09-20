@@ -46,10 +46,8 @@ The library itself consists of two modules and an utility package:
 
 Also there is a couple of usage examples:
 
-- diff-run.py - conducting diffraction simulation and saving results to HDF5 file
-- diff-slides.py - calculating and saving diffraction pattern series
 - read.py - reading and ploting diffraction results
-- test.py - testing diffraction simulation
+- diff_run.py - diffraction simulation example
 
 ### Upcoming things to do
 

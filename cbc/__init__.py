@@ -7,5 +7,5 @@ from __future__ import absolute_import
 
 from .wrapper import Setup, Diff, DiffSA, DiffYar, DiffRes, Detector
 from .beam import GausBeam, BesselBeam, CircLens, RectLens
-from .lattice import Cell, CubicLattice, BallLattice
+from .lattice import Cell, CubicLattice, BallLattice, RecLattice, rec_basis
 from . import utils

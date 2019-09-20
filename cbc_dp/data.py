@@ -1,4 +1,9 @@
-import numpy as np, numba as nb, concurrent.futures
+"""
+data.py - data processing main classes
+"""
+import numpy as np
+import numba as nb
+import concurrent.futures
 from . import utils
 from math import sqrt, sin, cos, pi, atan2
 from itertools import accumulate
@@ -6,103 +11,165 @@ from multiprocessing import cpu_count
 from skimage.transform import probabilistic_hough_line
 from skimage.draw import line_aa
 from cv2 import createLineSegmentDetector
-from abc import ABCMeta, abstractmethod
+from abc import ABCMeta, abstractmethod, abstractproperty
 
-class RecLattice(object):
-    """
-    Reciprocal lattice class
-
-    arec, brec, crec - basis vectors of the reciprocal lattice [mm^-1]
-    wavelength - light carrier  wavelength [mm]
-    qmax - maximum lattice vector in dimensionless units
-    """
-    def __init__(self, arec, brec, crec, qmax, wavelength=1.14e-7):
-        self.a, self.b, self.c, self.qmax = arec * wavelength, brec * wavelength, crec * wavelength, qmax
-
-    def vectors(self):
-        Na, Nb, Nc = self.qmax // np.sqrt(self.a.dot(self.a)), self.qmax // np.sqrt(self.b.dot(self.b)), self.qmax // np.sqrt(self.c.dot(self.c))
-        arng, brng, crng = np.arange(-Na, Na), np.arange(-Nb, Nb), np.arange(-Nc, Nc)
-        na, nb, nc = np.meshgrid(arng, brng, crng)
-        pts = np.multiply.outer(self.a, na) + np.multiply.outer(self.b, nb) + np.multiply.outer(self.c, nc)
-        mask = (np.sqrt(pts[0]**2 + pts[1]**2 + pts[2]**2) < self.qmax) & (np.sqrt(pts[0]**2 + pts[1]**2 + pts[2]**2) != 0)
-        return pts[0][mask].ravel(), pts[1][mask].ravel(), pts[2][mask].ravel(), np.sqrt(pts[0]**2 + pts[1]**2 + pts[2]**2)[mask].ravel()
-
-class ConvLines(object):
-    def __init__(self, reclat, NA):
-        if reclat.qmax > 2: raise ValueError('qmax must be less than 2')
-        self.reclat, self.NA = reclat, NA
-        self.gx, self.gy, self.gz, self.gabs = reclat.vectors()
+class ABCPropagator(object, metaclass=ABCMeta):
+    def __init__(self, rec_lat, num_ap):
+        if rec_lat.q_max > 2:
+            raise ValueError('q_max must be less than 2')
+        self.rec_lat, self.num_ap = rec_lat, num_ap
+        self.g_x, self.g_y, self.g_z, self.g_abs = rec_lat.vectors()
 
     @property
-    def betta(self): return np.arccos(-self.gz / self.gabs)
+    def alpha(self):
+        return np.arctan2(self.g_y, self.g_x)
 
     @property
-    def condition(self): return (2 * np.cos(self.betta + self.NA) < self.gabs) & (2 * np.cos(self.betta - self.NA) > self.gabs)
+    def betta(self):
+        return np.arccos(-self.g_z / self.g_abs)
+
+    @abstractproperty
+    def condition(self): pass
 
     @property
-    def qx(self): return self.gx[self.condition]
+    def q_x(self):
+        return self.g_x[self.condition]
+
+    @property
+    def q_y(self):
+        return self.g_y[self.condition]
+
+    @property
+    def q_z(self):
+        return self.g_z[self.condition]
+
+    @property
+    def q_abs(self):
+        return self.g_abs[self.condition]
+
+    @property
+    def theta(self):
+        return np.arccos(-self.q_z / self.q_abs)
+
+    @property
+    def phi(self):
+        return np.arctan2(self.q_y, self.q_x)
+
+    def laue_vectors(self):
+        return self.q_x, self.q_y, self.q_z, self.q_abs
     
+    def source_pts(self):
+        o_x = -np.sin(self.theta - np.arccos(self.q_abs / 2)) * np.cos(self.phi)
+        o_y = -np.sin(self.theta - np.arccos(self.q_abs / 2)) * np.sin(self.phi)
+        o_z = np.cos(self.theta - np.arccos(self.q_abs / 2))
+        return o_x, o_y, o_z
+
+    @abstractmethod
+    def entry_pts(self): pass
+
+    @abstractmethod
+    def exit_pts(self): pass
+
+    def out_wavevectors(self):
+        onx, ony, onz = self.entry_pts()
+        oxx, oxy, oxz = self.exit_pts()
+        return (np.stack((self.q_x + onx, self.q_x + oxx), axis=1),
+                np.stack((self.q_y + ony, self.q_y + oxy), axis=1),
+                np.stack((self.q_z + onz, self.q_z + oxz), axis=1))
+
+    def detector_pts(self, detdist):
+        k_x, k_y, k_z = self.out_wavevectors()
+        det_x = detdist * np.tan(np.sqrt(2 - 2 * k_z)) * np.cos(np.arctan2(k_y, k_x))
+        det_y = detdist * np.tan(np.sqrt(2 - 2 * k_z)) * np.sin(np.arctan2(k_y, k_x))
+        return det_x, det_y
+
+class CircPropagator(ABCPropagator):
     @property
-    def qy(self): return self.gy[self.condition]
+    def condition(self):
+        return np.abs(np.sin(self.betta - np.arccos(self.g_abs / 2))) < self.num_ap
+
+    def entry_pts(self):
+        dphi = np.arccos((self.q_abs**2 + 2 * self.q_z * sqrt(1 - self.num_ap**2)) / (2 * np.sqrt(self.q_x**2 + self.q_y**2) * self.num_ap))
+        return (-self.num_ap * np.cos(self.phi + dphi),
+                -self.num_ap * np.sin(self.phi + dphi),
+                np.repeat(sqrt(1 - self.num_ap**2), self.q_x.shape))
+
+    def exit_pts(self):
+        dphi = np.arccos((self.q_abs**2 + 2 * self.q_z * sqrt(1 - self.num_ap**2)) / (2 * np.sqrt(self.q_x**2 + self.q_y**2) * self.num_ap))
+        return (-self.num_ap * np.cos(self.phi - dphi),
+                -self.num_ap * np.sin(self.phi - dphi),
+                np.repeat(sqrt(1 - self.num_ap**2), self.q_x.shape))
+
+class SquarePropagator(ABCPropagator):
+    condition = None
+
+    def __init__(self, rec_lat, num_ap):
+        super(SquarePropagator, self).__init__(rec_lat, num_ap)
+        self.condition = np.abs(np.sin(self.betta - np.arccos(self.g_abs / 2))) < sqrt(2) * self.num_ap
+        self._pts_x, self._pts_y, self.condition = self._source_lines()
 
     @property
-    def qz(self): return self.gz[self.condition]
+    def bounds(self):
+        return np.stack(([self.num_ap, 0, 0],
+                         [-self.num_ap, 0, 0],
+                         [0, self.num_ap, 0],
+                         [0, -self.num_ap, 0]), axis=1)
 
-    @property
-    def qabs(self): return self.gabs[self.condition]
+    def _source_lines(self):
+        boundary_prd = (np.multiply.outer(self.q_x, self.bounds[0]) +
+                        np.multiply.outer(self.q_y, self.bounds[1]) +
+                        np.multiply.outer(self.q_z, self.bounds[2]))
+        c_1 = self.source_prd()[:, np.newaxis] - boundary_prd
+        c_2 = np.stack((self.q_y, self.q_y, self.q_x, self.q_x), axis=1)
+        c_3 = np.stack(([0, 1], [0, 1], [1, 0], [1, 0]), axis=1)
+        a_coeff, b_coeff, c_coeff = (c_2**2 + self.q_z[:, np.newaxis]**2,
+                                     c_2 * c_1,
+                                     c_1**2 - (self.q_z**2 * (1 - self.num_ap**2))[:, np.newaxis])
+        delta = b_coeff**2 - a_coeff * c_coeff
+        delta_mask = np.where((delta > 0).all(axis=1))
+        a_masked, b_masked, delta_masked = a_coeff[delta_mask], b_coeff[delta_mask], delta[delta_mask]
+        pts = np.concatenate((self.bounds + (c_3 * ((b_masked + np.sqrt(delta_masked)) / a_masked)[:, np.newaxis]),
+                              self.bounds + (c_3 * ((b_masked - np.sqrt(delta_masked)) / a_masked)[:, np.newaxis])), axis=2)
+        pts_mask = np.where((np.abs(pts) <= self.num_ap).sum(axis=(1, 2)) == 10)
+        pts_x = pts[pts_mask][:, 0][(np.abs(pts) <= self.num_ap).all(axis=1)].reshape(-1, 2)
+        pts_y = pts[pts_mask][:, 1][(np.abs(pts) <= self.num_ap).all(axis=1)].reshape(-1, 2)
+        return pts_x, pts_y, (delta_mask[0][pts_mask],)
 
-    @property
-    def theta(self): return np.arccos(-self.qx / self.qabs)
+    def source_prd(self):
+        o_x, o_y, o_z = self.source_pts()
+        return o_x * self.q_x + o_y * self.q_y + o_z * self.q_z
 
-    @property
-    def phi(self): return np.arctan2(self.qy, self.qx)
+    def entry_pts(self):
+        return self._pts_x[:, 0], self._pts_y[:, 0], np.sqrt(1 - self._pts_x[:, 0]**2 - self._pts_y[:, 0]**2)
 
-    def lauevectors(self):
-        return self.qx, self.qy, self.qz, self.qabs
-    
-    def sourcepts(self):
-        ox = -np.sin(self.theta - np.arccos(self.qabs / 2)) * np.cos(self.phi)
-        oy = -np.sin(self.theta - np.arccos(self.qabs / 2)) * np.sin(self.phi)
-        oz = np.cos(self.phi)
-        return ox, oy, oz
-
-    def entrypts(self):
-        dphi = np.arccos((self.qabs**2 + 2 * self.qz * cos(self.NA)) / (2 * np.sqrt(self.qx**2 + self.qy**2) * sin(self.NA)))
-        return -sin(self.NA) * np.cos(self.phi + dphi), -sin(self.NA) * np.sin(self.phi + dphi), np.repeat(cos(self.NA), self.qx.shape)
-
-    def exitpts(self):
-        dphi = np.arccos((self.qabs**2 + 2 * self.qz * cos(self.NA)) / (2 * np.sqrt(self.qx**2 + self.qy**2) * sin(self.NA)))
-        return -sin(self.NA) * np.cos(self.phi - dphi), -sin(self.NA) * np.sin(self.phi - dphi), np.repeat(cos(self.NA), self.qx.shape)
-
-    def outputwavevectors(self):
-        onx, ony, onz = self.entrypts()
-        oxx, oxy, oxz = self.exitpts()
-        return np.stack((self.qx + onx, self.qx + oxx), axis=1), np.stack((self.qy + ony, self.qy + oxy), axis=1), np.stack((self.qz + onz, self.qz + oxz), axis=1)
-
-    def detectorpts(self, detdist):
-        kx, ky, kz = self.outputwavevectors()
-        x = detdist * np.tan(np.sqrt(2 - 2 * kz)) * np.cos(np.arctan2(ky, kx))
-        y = detdist * np.tan(np.sqrt(2 - 2 * kz)) * np.sin(np.arctan2(ky, kx))
-        return x, y
+    def exit_pts(self):
+        return self._pts_x[:, 1], self._pts_y[:, 1], np.sqrt(1 - self._pts_x[:, 1]**2 - self._pts_y[:, 1]**2)
 
 class LineDetector(object, metaclass=ABCMeta):
     @staticmethod
     @abstractmethod
     def _refiner(lines, angles, rs, taus, drtau, drn): pass
-    
+
     @abstractmethod
     def _detector(self, frame): pass
 
-    def detectFrameRaw(self, frame):
+    def det_frame_raw(self, frame):
         return np.array([[[x0, y0], [x1, y1]] for (x0, y0), (x1, y1) in self._detector(frame)])
 
-    def detectFrame(self, frame, zero, drtau, drn):
-        lines = FrameStreaks(self.detectFrameRaw(frame), zero)
-        return FrameStreaks(type(self)._refiner(lines.lines, lines.angles, lines.radii, lines.taus, drtau, drn), zero)
+    def det_frame(self, frame, zero, drtau, drn):
+        lines = FrameStreaks(self.det_frame_raw(frame), zero)
+        return FrameStreaks(type(self)._refiner(lines.lines,
+                                                lines.angles,
+                                                lines.radii,
+                                                lines.taus,
+                                                drtau,
+                                                drn), zero)
 
-    def detectScanRaw(self, data): return [self.detectFrameRaw(frame) for frame in data]
+    def det_scan_raw(self, data):
+        return [self.det_frame_raw(frame) for frame in data]
 
-    def detectScan(self, data, zero, drtau, drn): return ScanStreaks([self.detectFrame(frame, zero, drtau, drn) for frame in data])
+    def det_scan(self, data, zero, drtau, drn):
+        return ScanStreaks([self.det_frame(frame, zero, drtau, drn) for frame in data])
 
 class HoughLineDetector(LineDetector):
     def __init__(self, threshold, line_length, line_gap, dth):
@@ -110,7 +177,12 @@ class HoughLineDetector(LineDetector):
         self.thetas = np.linspace(-np.pi / 2, np.pi / 2, int(np.pi / dth), endpoint=True)
 
     @staticmethod
-    @nb.njit(nb.int64[:, :, :](nb.int64[:, :, :], nb.float64[:], nb.float64[:], nb.float64[:, :], nb.float64, nb.float64))
+    @nb.njit(nb.int64[:, :, :](nb.int64[:, :, :],
+                               nb.float64[:],
+                               nb.float64[:],
+                               nb.float64[:, :],
+                               nb.float64,
+                               nb.float64))
     def _refiner(lines, angles, rs, taus, drtau, drn):
         newlines = np.empty(lines.shape, dtype=np.int64)
         idxs = []
@@ -137,14 +209,25 @@ class HoughLineDetector(LineDetector):
         return newlines[:count]
 
     def _detector(self, frame):
-        return probabilistic_hough_line(frame, threshold=self.trhd, line_length=self.ll, line_gap=self.lg, theta=self.thetas)
+        return probabilistic_hough_line(frame,
+                                        threshold=self.trhd,
+                                        line_length=self.ll,
+                                        line_gap=self.lg,
+                                        theta=self.thetas)
 
 class LineSegmentDetector(LineDetector):
     def __init__(self, scale=0.8, sigma_scale=0.6, log_eps=0):
-        self.detector = createLineSegmentDetector(_scale=scale, _sigma_scale=sigma_scale, _log_eps=log_eps)
+        self.detector = createLineSegmentDetector(_scale=scale,
+                                                  _sigma_scale=sigma_scale,
+                                                  _log_eps=log_eps)
     
     @staticmethod
-    @nb.njit(nb.float64[:, :, :](nb.float64[:, :, :], nb.float64[:], nb.float64[:], nb.float64[:, :], nb.float64, nb.float64))
+    @nb.njit(nb.float64[:, :, :](nb.float64[:, :, :],
+                                 nb.float64[:],
+                                 nb.float64[:],
+                                 nb.float64[:, :],
+                                 nb.float64,
+                                 nb.float64))
     def _refiner(lines, angles, rs, taus, drtau, drn):
         lsdlines = np.empty(lines.shape, dtype=np.float64)
         idxs = []
@@ -184,29 +267,34 @@ class FrameStreaks(object):
         self.pts = self.dlines.mean(axis=1)
 
     @property
-    def size(self): return self.lines.shape[0]
+    def size(self):
+        return self.lines.shape[0]
 
     @property
-    def xs(self): return self.pts[:, 0]
+    def xs(self):
+        return self.pts[:, 0]
 
     @property
-    def ys(self): return self.pts[:, 1]
+    def ys(self):
+        return self.pts[:, 1]
 
     @property
-    def radii(self): return np.sqrt(self.xs**2 + self.ys**2)
+    def radii(self):
+        return np.sqrt(self.xs**2 + self.ys**2)
 
     @property
-    def angles(self): return np.arctan2(self.ys, self.xs)
+    def angles(self):
+        return np.arctan2(self.ys, self.xs)
 
     @property
     def taus(self):
         taus = (self.lines[:, 1] - self.lines[:, 0])
-        return taus / np.sqrt(taus[:,0]**2 + taus[:,1]**2)[:, np.newaxis]
+        return taus / np.sqrt(taus[:, 0]**2 + taus[:, 1]**2)[:, np.newaxis]
 
     def __iter__(self):
         for line in self.lines: yield line.astype(np.int64)
 
-    def indexpoints(self):
+    def index_pts(self):
         ts = self.dlines[:, 0, 1] * self.taus[:, 0] - self.dlines[:, 0, 0] * self.taus[:, 1]
         return np.stack((-self.taus[:, 1] * ts + self.zero[0], self.taus[:, 0] * ts + self.zero[1]), axis=1)
 
@@ -222,13 +310,15 @@ class ScanStreaks(object):
         self.strkslist = streakslist
 
     @property
-    def shapes(self): return np.array(list(accumulate([strks.size for strks in self.strkslist], lambda x, y: x + y)))
+    def shapes(self):
+        return np.array(list(accumulate([strks.size for strks in self.strkslist], lambda x, y: x + y)))
 
     @property
-    def zero(self): return self.__getitem__(0).zero
+    def zero(self):
+        return self.__getitem__(0).zero
 
     @staticmethod
-    @nb.njit(nb.float64[:,:](nb.float64[:,:],  nb.int64[:], nb.float64))
+    @nb.njit(nb.float64[:, :](nb.float64[:, :], nb.int64[:], nb.float64))
     def _refiner(qs, shapes, dk):
         b = len(shapes)
         out = np.empty(qs.shape, dtype=np.float64)
@@ -238,7 +328,7 @@ class ScanStreaks(object):
             if i in idxs: continue
             qslist = []
             for j in range(shapes[jj], shapes[jj + 1]):
-                if sqrt((qs[i,0] - qs[j,0])**2 + (qs[i,1] - qs[j,1])**2 + (qs[i,2] - qs[j,2])**2) < dk:
+                if sqrt((qs[i, 0] - qs[j, 0])**2 + (qs[i, 1] - qs[j, 1])**2 + (qs[i, 2] - qs[j, 2])**2) < dk:
                     qslist.append(qs[i]); idxs.append(i)
                     break
             else:
@@ -247,7 +337,7 @@ class ScanStreaks(object):
             for k in range(jj, b - 1):
                 skip = True; q = qslist[-1]
                 for l in range(shapes[k], shapes[k + 1]):
-                    if sqrt((q[0] - qs[l,0])**2 + (q[1] - qs[l,1])**2 + (q[2] - qs[l,2])**2) < dk:
+                    if sqrt((q[0] - qs[l, 0])**2 + (q[1] - qs[l, 1])**2 + (q[2] - qs[l, 2])**2) < dk:
                         skip = False; qslist.append(qs[l]); idxs.append(l)
                 if skip: break
             qsum = np.copy(qslist[0])
@@ -261,26 +351,26 @@ class ScanStreaks(object):
     def __iter__(self):
         for strks in self.strkslist: yield strks
 
-    def qs(self, axis, thetas, pixsize, detdist):
-        qslist = []
+    def rec_vectors(self, axis, thetas, pixsize, detdist):
+        qs_list = []
         for strks, theta in zip(iter(self), thetas):
-            kxs = np.arctan(pixsize * strks.radii / detdist) * np.cos(strks.angles)
-            kys = np.arctan(pixsize * strks.radii / detdist) * np.sin(strks.angles)
+            k_x = np.arctan(pixsize * strks.radii / detdist) * np.cos(strks.angles)
+            k_y = np.arctan(pixsize * strks.radii / detdist) * np.sin(strks.angles)
             rotm = utils.rotation_matrix(axis, theta)
-            qxs, qys, qzs = utils.rotate(rotm, kxs, kys, np.sqrt(1 - kxs**2 - kys**2) - 1)
-            qslist.append(np.stack((qxs, qys, qzs), axis=1))
-        return ReciprocalPeaks(np.concatenate(qslist))
+            q_x, q_y, q_z = utils.rotate(rotm, k_x, k_y, np.sqrt(1 - k_x**2 - k_y**2) - 1)
+            qs_list.append(np.stack((q_x, q_y, q_z), axis=1))
+        return ReciprocalPeaks(np.concatenate(qs_list))
 
-    def refined_qs(self, axis, thetas, pixsize, detdist, dk):
-        qs = self.qs(axis, thetas, pixsize, detdist).qs
-        return ReciprocalPeaks(ScanStreaks._refiner(qs, self.shapes, dk))
+    def refined_rec_vectors(self, axis, thetas, pixsize, detdist, dk):
+        _qs = self.rec_vectors(axis, thetas, pixsize, detdist).qs
+        return ReciprocalPeaks(ScanStreaks._refiner(_qs, self.shapes, dk))
 
     def save(self, data, outfile):
-        linesgroup = outfile.create_group('bragg_lines')
-        intsgroup = outfile.create_group('bragg_intensities')
+        lines_group = outfile.create_group('bragg_lines')
+        ints_group = outfile.create_group('bragg_intensities')
         for idx, (streaks, frame) in enumerate(zip(iter(self), data)):
-            linesgroup.create_dataset(str(idx), data=streaks.lines)
-            intsgroup.create_dataset(str(idx), data=streaks.intensities(frame))
+            lines_group.create_dataset(str(idx), data=streaks.lines)
+            ints_group.create_dataset(str(idx), data=streaks.intensities(frame))
 
 class ReciprocalPeaks(object):
     def __init__(self, qs):
@@ -288,14 +378,14 @@ class ReciprocalPeaks(object):
 
     @staticmethod
     @nb.njit(nb.uint64[:, :, :](nb.float64[:,:], nb.float64, nb.int64), parallel=True)
-    def _corgrid_func(qs, qmax, size):
+    def _corgrid_func(qs, q_max, size):
         a = qs.shape[0]
         corgrid = np.zeros((size, size, size), dtype=np.uint64)
-        ks = np.linspace(-qmax, qmax, size)
+        ks = np.linspace(-q_max, q_max, size)
         for i in nb.prange(a):
             for j in range(i + 1, a):
                 dk = qs[i] - qs[j]
-                if abs(dk[0]) < qmax and abs(dk[1]) < qmax and abs(dk[2]) < qmax:
+                if abs(dk[0]) < q_max and abs(dk[1]) < q_max and abs(dk[2]) < q_max:
                     ii = np.searchsorted(ks, dk[0])
                     jj = np.searchsorted(ks, dk[1])
                     kk = np.searchsorted(ks, dk[2])
@@ -308,14 +398,14 @@ class ReciprocalPeaks(object):
 
     @staticmethod
     @nb.njit(nb.float64[:, :](nb.float64[:,:], nb.float64), parallel=True)
-    def _cor_func(qs, qmax):
+    def _cor_func(qs, q_max):
         a = qs.shape[0]
         cor = np.empty((int(a * (a - 1) / 2), 3), dtype=np.float64)
         count = 0
         for i in nb.prange(a):
             for j in range(i + 1, a):
                 dk = qs[i] - qs[j]
-                if abs(dk[0]) < qmax and abs(dk[1]) < qmax and abs(dk[2]) < qmax:
+                if abs(dk[0]) < q_max and abs(dk[1]) < q_max and abs(dk[2]) < q_max:
                     cor[count] = dk
                     count += 1
         return cor[:count]
@@ -338,11 +428,11 @@ class ReciprocalPeaks(object):
             grid[ii, jj, kk] += 1
         return grid
 
-    def correlation_grid(self, qmax, size):
-        return ReciprocalPeaks._corgrid_func(self.qs, qmax, size)
+    def correlation_grid(self, q_max, size):
+        return ReciprocalPeaks._corgrid_func(self.qs, q_max, size)
 
-    def correlation(self, qmax):
-        return ReciprocalPeaks._cor_func(self.qs, qmax)
+    def correlation(self, q_max):
+        return ReciprocalPeaks._cor_func(self.qs, q_max)
 
     def grid(self, size):
         return ReciprocalPeaks._grid(self.qs, size)
@@ -353,17 +443,17 @@ def NMS(image):
     res = np.zeros((a, b), dtype=np.float64)
     for i in range(1, a - 1):
         for j in range(1, b - 1):
-            phase = atan2(image[i+1, j] - image[i-1, j], image[i, j+1] - image[i,j-1])
+            phase = atan2(image[i + 1, j] - image[i - 1, j], image[i, j+1] - image[i, j - 1])
             if (phase >= 0.875 * pi or phase < -0.875 * pi) or (phase >= -0.125 * pi and phase < 0.125 * pi):
-                if image[i,j] >= image[i,j+1] and image[i,j] >= image[i,j-1]:
-                    res[i,j] = image[i,j]
+                if image[i, j] >= image[i, j + 1] and image[i, j] >= image[i, j - 1]:
+                    res[i, j] = image[i, j]
             if (phase >= 0.625 * pi and phase < 0.875 * pi) or (phase >= -0.375 * pi and phase < -0.125 * pi):
-                if image[i,j] >= image[i-1,j+1] and image[i,j] >= image[i+1,j-1]:
-                    res[i,j] = image[i,j]
+                if image[i, j] >= image[i - 1, j + 1] and image[i, j] >= image[i + 1, j - 1]:
+                    res[i, j] = image[i, j]
             if (phase >= 0.375 * pi and phase < 0.625 * pi) or (phase >= -0.625 * pi and phase < -0.375 * pi):
-                if image[i,j] >= image[i-1,j] and image[i,j] >= image[i+1,j]:
-                    res[i,j] = image[i,j]
+                if image[i, j] >= image[i - 1, j] and image[i, j] >= image[i + 1, j]:
+                    res[i, j] = image[i, j]
             if (phase >= 0.125 * pi and phase < 0.375 * pi) or (phase >= -0.875 * pi and phase < -0.625 * pi):
-                if image[i,j] >= image[i-1,j-1] and image[i,j] >= image[i+1,j+1]:
-                    res[i,j] = image[i,j]
+                if image[i, j] >= image[i - 1, j - 1] and image[i, j] >= image[i + 1, j + 1]:
+                    res[i, j] = image[i, j]
     return res

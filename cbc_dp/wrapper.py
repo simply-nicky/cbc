@@ -1,14 +1,20 @@
-import os, numpy as np, h5py, concurrent.futures
-from . import utils
-from .data import LineSegmentDetector
+"""
+wrapper.py - interface module with all the main classes
+"""
+import os
+import concurrent.futures
 from abc import ABCMeta, abstractmethod, abstractproperty
 from multiprocessing import cpu_count
 from functools import partial
 from scipy.ndimage.filters import median_filter
 from scipy import constants
+import numpy as np
+import h5py
+from . import utils
+from .data import LineSegmentDetector
 
 class Measurement(metaclass=ABCMeta):
-    mask = utils.hotmask
+    mask = utils.HOTMASK
 
     @abstractproperty
     def mode(self): pass
@@ -30,7 +36,9 @@ class Measurement(metaclass=ABCMeta):
 
     @property
     def path(self):
-        return os.path.join(os.path.join(utils.raw_path, utils.prefixes[self.prefix], utils.measpath[self.mode].format(self.scan_num)))
+        return os.path.join(os.path.join(utils.RAW_PATH,
+                                         utils.PREFIXES[self.prefix],
+                                         utils.MEAS_PATH[self.mode].format(self.scan_num)))
 
     @property
     def nxsfilepath(self):
@@ -42,30 +50,37 @@ class Measurement(metaclass=ABCMeta):
 
     @property
     def datapath(self):
-        return os.path.join(self.path, utils.datafolder)
+        return os.path.join(self.path, utils.EIGER_PATH)
 
     @property
     def energy(self):
-        return utils.energy(self.nxsfilepath)[0] * constants.e
+        return utils.energy(self.nxsfilepath) * constants.e
 
     @property
     def exposure(self):
         parts = self.command.split(" ")
-        try: exposure = float(parts[-1])
-        except: exposure = float(parts[-2])
+        try:
+            exposure = float(parts[-1])
+        except ValueError:
+            exposure = float(parts[-2])
         return exposure
-    
+
     @property
     def data(self):
         return self.mask * self.rawdata
 
-    def filename(self, tag, ext): return utils.filename[self.mode].format(tag, self.scan_num, ext)
+    @property
+    def outpath(self):
+        return os.path.join(os.path.dirname(__file__),
+                            utils.OUT_PATH[self.mode].format(self.scan_num))
+
+    def filename(self, tag, ext):
+        return utils.FILENAME[self.mode].format(tag, self.scan_num, ext)
 
     def _create_outfile(self, tag, ext='h5'):
-        self.outpath = os.path.join(os.path.dirname(__file__), utils.outpath[self.mode].format(self.scan_num))
         utils.make_output_dir(self.outpath)
         return h5py.File(os.path.join(self.outpath, self.filename(tag, ext)), 'w')
-    
+
     def _save_parameters(self, outfile):
         arggroup = outfile.create_group('arguments')
         arggroup.create_dataset('experiment',data=self.prefix)
@@ -83,31 +98,32 @@ class Measurement(metaclass=ABCMeta):
         outfile.close()
 
 def OpenScan(prefix, scan_num, good_frames=None):
-    path = os.path.join(os.path.join(utils.raw_path, utils.prefixes[prefix], utils.measpath['scan'].format(scan_num)))
+    path = os.path.join(os.path.join(utils.RAW_PATH,
+                                     utils.PREFIXES[prefix],
+                                     utils.MEAS_PATH['scan'].format(scan_num)))
     command = utils.scan_command(path + '.nxs')
-    if command.startswith(utils.commands['scan1d']):
+    if command.startswith(utils.COMMANDS['scan1d']):
         return Scan1D(prefix, scan_num, good_frames)
-    elif command.startswith(utils.commands['scan2d']):
+    elif command.startswith(utils.COMMANDS['scan2d']):
         return Scan2D(prefix, scan_num, good_frames)
     else:
         raise ValueError('Unknown scan type')
 
 class Frame(Measurement):
     prefix, scan_num, mode, framenum = None, None, None, 1
+    size = (1,)
 
     def __init__(self, prefix, scan_num, mode='frame'):
         self.prefix, self.scan_num, self.mode = prefix, scan_num, mode
 
     @property
     def datafilename(self):
-        return utils.datafilename[self.mode].format(self.scan_num, self.framenum)
+        return utils.DATA_FILENAME[self.mode].format(self.scan_num, self.framenum)
 
     @property
     def rawdata(self):
-        return h5py.File(os.path.join(self.datapath, self.datafilename), 'r')[utils.datapath][:].sum(axis=0, dtype=np.uint64)
-
-    @property
-    def size(self): return (1,)
+        raw_file = h5py.File(os.path.join(self.datapath, self.datafilename), 'r')
+        return raw_file[utils.DATA_PATH][:].sum(axis=0, dtype=np.uint64)
 
     def _save_data(self, outfile):
         datagroup = outfile.create_group('data')
@@ -122,19 +138,27 @@ class ABCScan(Measurement, metaclass=ABCMeta):
 
     @property
     def good_frames(self):
-        if np.any(self._good_frames): return self._good_frames
-        else: return np.arange(0, self.rawdata.shape[0])
+        if np.any(self._good_frames):
+            return self._good_frames
+        else:
+            return np.arange(0, self.rawdata.shape[0])
 
     @property
     def rawdata(self):
-        if np.any(self._rawdata): return self._rawdata
+        if np.any(self._rawdata):
+            return self._rawdata
         else:
-            _paths = np.sort(np.array([os.path.join(self.datapath, filename) for filename in os.listdir(self.datapath) if not filename.endswith('master.h5')], dtype=object))
+            _paths_list = [os.path.join(self.datapath, filename)
+                           for filename in os.listdir(self.datapath)
+                           if not filename.endswith('master.h5')]
+            _paths = np.sort(np.array(_paths_list, dtype=object))
             _thread_num = min(_paths.size, cpu_count())
             _data_list = []
             with concurrent.futures.ProcessPoolExecutor() as executor:
-                for _data_chunk in executor.map(self.data_chunk, np.array_split(_paths, _thread_num)):
-                    if np.any(_data_chunk): _data_list.append(_data_chunk)
+                for _data_chunk in executor.map(self.data_chunk,
+                                                np.array_split(_paths, _thread_num)):
+                    if np.any(_data_chunk):
+                        _data_list.append(_data_chunk)
             self._rawdata = np.concatenate(_data_list, axis=0)
             return self.rawdata
 
@@ -146,14 +170,17 @@ class Scan(ABCScan, metaclass=ABCMeta):
     def fast_crds(self): pass
 
     @property
-    def size(self): return (self.fast_size,)
+    def size(self):
+        return (self.fast_size,)
 
     def data_chunk(self, paths):
         data_list = []
         for path in paths:
             with h5py.File(path, 'r') as datafile:
-                try: data_list.append(datafile[utils.datapath][:].sum(axis=0, dtype=np.uint64))
-                except KeyError: continue
+                try:
+                    data_list.append(datafile[utils.DATA_PATH][:].sum(axis=0, dtype=np.uint64))
+                except KeyError:
+                    continue
         return None if not data_list else np.stack(data_list, axis=0)
 
     def corrected_data(self, ffnum):
@@ -199,7 +226,8 @@ class Scan2D(Scan):
         self.fast_crds, self.fast_size, self.slow_crds, self.slow_size = utils.coordinates2d(self.command)
 
     @property
-    def size(self): return (self.slow_size, self.fast_size)
+    def size(self):
+        return (self.slow_size, self.fast_size)
 
     def _save_data(self, outfile):
         datagroup = outfile.create_group('data')
@@ -213,21 +241,26 @@ class ScanST(ABCScan):
     pixel_vector = np.array([7.5e-5, 7.5e-5, 0])
     unit_vector_fs = np.array([0, -1, 0])
     unit_vector_ss = np.array([-1, 0, 0])
-    
-    @property
-    def detector_distance(self): return utils.det_dist[self.prefix]
 
     @property
-    def x_pixel_size(self): return self.pixel_vector[0]
+    def detector_distance(self): 
+        return utils.DET_DIST[self.prefix]
 
     @property
-    def y_pixel_size(self): return self.pixel_vector[1]
+    def x_pixel_size(self):
+        return self.pixel_vector[0]
 
     @property
-    def size(self): return self.slow_size * self.fast_size
+    def y_pixel_size(self):
+        return self.pixel_vector[1]
 
     @property
-    def wavelength(self): return constants.c * constants.h / self.energy
+    def size(self):
+        return self.slow_size * self.fast_size
+
+    @property
+    def wavelength(self):
+        return constants.c * constants.h / self.energy
 
     def __init__(self, prefix, scan_num, ff_num, good_frames=None, flip_axes=False):
         self.prefix, self.scan_num, self.good_frames, self.flip = prefix, scan_num, good_frames, flip_axes
@@ -238,13 +271,16 @@ class ScanST(ABCScan):
     def basis_vectors(self):
         _vec_fs = np.tile(self.pixel_vector * self.unit_vector_fs, (self.size, 1))
         _vec_ss = np.tile(self.pixel_vector * self.unit_vector_ss, (self.size, 1))
-        return np.stack((_vec_ss, _vec_fs), axis=1) if self.flip else np.stack((_vec_fs, _vec_ss), axis=1)
+        if self.flip:
+            return np.stack((_vec_ss, _vec_fs), axis=1)
+        else:
+            return np.stack((_vec_fs, _vec_ss), axis=1)
 
     def data_chunk(self, paths):
         data_list = []
         for path in paths:
             with h5py.File(path, 'r') as datafile:
-                try: data_list.append(datafile[utils.datapath][:])
+                try: data_list.append(datafile[utils.DATA_PATH][:])
                 except KeyError: continue
         return None if not data_list else np.concatenate(data_list, axis=0)
 
@@ -281,11 +317,12 @@ class CorrectedData(object):
 
     def __init__(self, data, flatfield, scan_num, good_frames):
         self.data, self.flatfield = data[good_frames], flatfield
-        self.mask = utils.mask.get(scan_num, np.ones(self.flatfield.shape))
+        self.mask = utils.MASKS.get(scan_num, np.ones(self.flatfield.shape))
 
     @property
     def subdata(self):
-        if np.any(self._subdata): return self._subdata
+        if np.any(self._subdata):
+            return self._subdata
         else:
             self._subdata = (self.data - self.flatfield[np.newaxis, :]).astype(np.int64)
             self._subdata[self.subdata < 0] = 0
@@ -293,13 +330,15 @@ class CorrectedData(object):
 
     @property
     def background(self):
-        if np.any(self._bgd): return self._bgd
+        if np.any(self._bgd):
+            return self._bgd
         else:
             idx = np.where(self.mask == 1)
             filtdata = self.subdata[:, idx[0], idx[1]]
             datalist = []
             with concurrent.futures.ProcessPoolExecutor() as executor:
-                for chunk in executor.map(self.bgd_worker, np.array_split(filtdata, cpu_count(), axis=1)):
+                for chunk in executor.map(self.bgd_worker,
+                                          np.array_split(filtdata, cpu_count(), axis=1)):
                     datalist.append(chunk)
             self._bgd = np.copy(self.subdata)
             self._bgd[:, idx[0], idx[1]] = np.concatenate(datalist, axis=1)
@@ -307,12 +346,19 @@ class CorrectedData(object):
 
     @property
     def streaksdata(self):
-        if np.any(self._strksdata): return self._strksdata
+        if np.any(self._strksdata):
+            return self._strksdata
         else:
             sub = (self.subdata - self.background).astype(np.int64)
-            self._strksdata = np.where(sub - self.background > self.feature_threshold, self.subdata, 0)
+            self._strksdata = np.where(sub - self.background > self.feature_threshold,
+                                       self.subdata,
+                                       0)
             with concurrent.futures.ProcessPoolExecutor() as executor:
-                self._strksdata = np.concatenate([chunk for chunk in executor.map(self.bgd_filter, np.array_split(self._strksdata, cpu_count()))])
+                _strks_list = [chunk
+                               for chunk
+                               in executor.map(self.bgd_filter,
+                                               np.array_split(self._strksdata, cpu_count()))]
+                self._strksdata = np.concatenate(_strks_list)
             return self.streaksdata
 
     def save(self, outfile):

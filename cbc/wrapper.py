@@ -7,48 +7,55 @@ Dependencies: numpy, matplotlib and h5py.
 Made by Nikolay Ivanov, 2018-2019.
 """
 
-from .lattice import Cell
-from . import utils
-from functools import partial
-from mpl_toolkits.axes_grid1 import make_axes_locatable
+import os
+import concurrent.futures
+import datetime
+import logging
+from abc import ABCMeta, abstractmethod
+import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
-from math import sqrt
-from abc import ABCMeta, abstractmethod, abstractproperty
-import numpy as np, os, concurrent.futures, h5py, datetime, matplotlib.pyplot as plt, logging
+import h5py
+import numpy as np
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+from . import utils
 
 class Detector(object):
     """
     Detector class.
 
-    detdist - distance between detector and sample
-    Nx, Ny - numbers of pixels in x and y axes
-    pixsize - pixel size
+    det_dist - distance between detector and sample
+    det_nx, det_ny - numbers of pixels in x and y axes
+    pix_size - pixel size
     """
-    def __init__(self, detdist=54, Nx=512, Ny=512, pixsize=55e-3):
-        self.detdist, self.Nx, self.Ny, self.pixsize = detdist, Nx, Ny, pixsize
+    def __init__(self, det_dist=54, det_nx=512, det_ny=512, pix_size=55e-3):
+        self.det_dist, self.det_nx, self.det_ny, self.pix_size = det_dist, det_nx, det_ny, pix_size
 
     @property
     def arguments(self):
-        return {'detector_distance': self.detdist, 'detector_size': (self.Nx, self.Ny), 'pixel_size': self.pixsize}
+        return {'detector_distance': self.det_dist,
+                'detector_size': (self.det_nx, self.det_ny),
+                'pixel_size': self.pix_size}
 
     @property
-    def shape(self): return (self.Nx, self.Ny)
+    def shape(self):
+        return (self.det_nx, self.det_ny)
 
     @property
-    def size(self): return self.Nx * self.Ny
+    def size(self):
+        return self.det_nx * self.det_ny
 
     def det_coordinates(self):
-        x_det = np.arange((-self.Nx + 1) / 2.0, (self.Nx + 1) / 2.0) * self.pixsize
-        y_det = np.arange((-self.Ny + 1) / 2.0, (self.Ny + 1) / 2.0) * self.pixsize
+        x_det = np.arange((-self.det_nx + 1) / 2.0, (self.det_nx + 1) / 2.0) * self.pix_size
+        y_det = np.arange((-self.det_ny + 1) / 2.0, (self.det_ny + 1) / 2.0) * self.pix_size
         xs, ys = np.meshgrid(x_det, y_det)
         return xs.ravel(), ys.ravel()
 
     def write(self, outfile):
         det_group = outfile.create_group('Detector')
-        det_group.create_dataset('distance', data=self.detdist)
-        det_group.create_dataset('Nx', data=self.Nx)
-        det_group.create_dataset('Ny', data=self.Ny)
-        det_group.create_dataset('pixel_size', data=self.pixsize)
+        det_group.create_dataset('distance', data=self.det_dist)
+        det_group.create_dataset('det_nx', data=self.det_nx)
+        det_group.create_dataset('det_ny', data=self.det_ny)
+        det_group.create_dataset('pixel_size', data=self.pix_size)
 
 class Setup(object):
     """
@@ -60,13 +67,13 @@ class Setup(object):
     relpath - path to save results
     """
     def __init__(self, timenow, handler, level, relpath):
-        self.time, self.path = timenow, os.path.join(utils.parpath, relpath)
+        self.time, self.path = timenow, os.path.join(utils.PAR_PATH, relpath)
         handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.addHandler(handler)
         self.logger.level = level
         self.logger.info('Initializing')
-        self.logger.info('Output path is %s' % self.path)
+        self.logger.info('Output path is %s', self.path)
 
 class DiffABC(Setup):
     """
@@ -78,16 +85,18 @@ class DiffABC(Setup):
     lat_args - LatArgs class object
     det_args - DetArgs class object
     """
+    __metaclass__ = ABCMeta
     latorigin = np.zeros(3)
 
-    def __init__(self, beam, lattice, detector, timenow, handler, level, relpath):
+    def __init__(self, beam, lattice, detector=Detector(), timenow=datetime.datetime.now(), handler=utils.NullHandler(), level=logging.INFO, relpath=utils.RES_PATH):
         super(DiffABC, self).__init__(timenow, handler, level, relpath)
-        self.sigma = detector.pixsize**2 / detector.detdist**2
+        self.sigma = detector.pix_size**2 / detector.det_dist**2
         self.beam, self.lattice, self.detector = beam, lattice, detector
-        self.detorigin = np.array([0, 0, self.detector.detdist])
+        self.detorigin = np.array([0, 0, self.detector.det_dist])
 
     @property
-    def distance(self): return self.detorigin - self.latorigin
+    def distance(self):
+        return self.detorigin - self.latorigin
 
     @abstractmethod
     def kouts(self): pass
@@ -114,7 +123,7 @@ class DiffABC(Setup):
         """
         Move the center of detector to the point [x, y].
         """
-        self.detorigin[:2] = [x,y]
+        self.detorigin[:2] = [x, y]
 
     def coordinates(self):
         """
@@ -130,22 +139,16 @@ class DiffABC(Setup):
         self.logger.info("Setting up the convergent beam diffraction with following parameters:")
         for args in (self.lattice, self.detector):
             for (key, value) in args.arguments.items():
-                self.logger.info('%-9s=%+28s' % (key, value))
+                self.logger.info('%-9s=%+28s', key, value)
         return DiffCalc(self)
 
 class DiffSA(DiffABC):
-    def __init__(self, beam, lattice, detector=Detector(), timenow=datetime.datetime.now(), handler=utils.NullHandler(), level=logging.INFO, relpath=utils.res_relpath):
-        super(DiffSA, self).__init__(beam, lattice, detector, timenow, handler, level, relpath)
-
     def kouts(self):
         xs, ys = self.detector.det_coordinates()
         dx, dy, dz = xs + self.distance[0], ys + self.distance[1], self.distance[2]
         return np.stack((dx / dz, dy / dz, 1 - (dx**2 + dy**2) / dz**2 / 2), axis=1)
 
 class Diff(DiffABC):
-    def __init__(self, beam, lattice, detector=Detector(), timenow=datetime.datetime.now(), handler=utils.NullHandler(), level=logging.INFO, relpath=utils.res_relpath):
-        super(Diff, self).__init__(beam, lattice, detector, timenow, handler, level, relpath)
-
     def kouts(self):
         xs, ys = self.detector.det_coordinates()
         dx, dy, dz = xs + self.distance[0], ys + self.distance[1], self.distance[2]
@@ -154,9 +157,6 @@ class Diff(DiffABC):
         return np.stack((kxs, kys, np.sqrt(1 - kxs**2 - kys**2)), axis=1)
 
 class DiffYar(DiffABC):
-    def __init__(self, beam, lattice, detector=Detector(), timenow=datetime.datetime.now(), handler=utils.NullHandler(), level=logging.INFO, relpath=utils.res_relpath):
-        super(DiffYar, self).__init__(beam, lattice, detector, timenow, handler, level, relpath)
-
     def kouts(self):
         xs, ys = self.detector.det_coordinates()
         dx, dy, dz = xs + self.distance[0], ys + self.distance[1], self.distance[2]
@@ -180,18 +180,18 @@ class DiffCalc(object):
         self.asf_coeffs = setup.lattice.cell.asf(setup.beam.wavelength)
         self.kins = setup.beam.wavevectors(self.xs, self.ys, self.zs)
         self.us = setup.beam.wave(self.xs, self.ys, self.zs)
-
-    @property
-    def size(self): return self.xs.size * self.setup.detector.size
-
-    def _chunkify(self):
         thread_num = self.size // self.thread_size + 1
         self.k_thread_num = self.setup.detector.size // self.k_size + 1
         self.lat_thread_num = thread_num // self.k_thread_num + 1
-        self.setup.logger.info('Chunking the data, wavevectors data thread number: %d, lattice data thread number: %d' % (self.k_thread_num, self.lat_thread_num))
+        self.setup.logger.info('Chunking the data, wavevectors data thread number: %d, lattice data thread number: %d',
+                               self.k_thread_num,
+                               self.lat_thread_num)
+
+    @property
+    def size(self):
+        return self.xs.size * self.setup.detector.size
 
     def serial(self):
-        self._chunkify()
         self.setup.logger.info('Starting serial calculation')
         res = []
         for xs, ys, zs, kins, us in zip(np.array_split(self.xs, self.lat_thread_num),
@@ -205,11 +205,10 @@ class DiffCalc(object):
                 _chunkres.extend(worker(kouts))
             res.append(_chunkres)
         res = np.array(res).sum(axis=0).reshape(self.setup.detector.shape)
-        self.setup.logger.info('The calculation has ended, %d diffraction pattern values total' % res.size)
+        self.setup.logger.info('The calculation has ended, %d diffraction pattern values total', res.size)
         return DiffRes(self.setup, res, self.kouts.reshape((self.setup.detector.shape + (3,))))
 
     def pool(self):
-        self._chunkify()
         fut_list, res = [], []
         self.setup.logger.info('Starting concurrent calculation')
         with concurrent.futures.ProcessPoolExecutor() as executor:
@@ -225,7 +224,7 @@ class DiffCalc(object):
             chunkres = np.concatenate([fut.result() for fut in futs])
             res.append(chunkres)
         res = np.sum(res, axis=0).reshape(self.setup.detector.shape)
-        self.setup.logger.info('The calculation has ended, %d diffraction pattern values total' % res.size)
+        self.setup.logger.info('The calculation has ended, %d diffraction pattern values total', res.size)
         return DiffRes(self.setup, res, self.kouts.reshape((self.setup.detector.shape + (3,))))
 
 class DiffRes(object):
@@ -249,9 +248,7 @@ class DiffRes(object):
         fig, ax = plt.subplots(figsize=figsize)
         divider = make_axes_locatable(ax)
         cax = divider.append_axes('right', size='5%', pad=0.1)
-        im = ax.imshow(ints, cmap='viridis', vmin=ints.min(), vmax=ints.max(),
-                                extent = [],
-                                interpolation='nearest', origin='lower')
+        im = ax.imshow(ints, interpolation='nearest', origin='lower')
         fig.colorbar(im, cax=cax, orientation='vertical')
         plt.show()
         self.setup.logger.info('Plotting has ended')
@@ -262,16 +259,16 @@ class DiffRes(object):
         if ylim == None:
             ylim = (0, self.res.shape[1])
         self.setup.logger.info('Saving the results in eps image')
-        _filename = utils.make_filename(self.setup.path, 'diff_' + datetime.datetime.now().strftime('%d-%m-%Y_%H-%M-%S') + '.eps')
-        self.setup.logger.info('Filename: %s' % _filename)
+        _filename = 'diff_' + datetime.datetime.now().strftime('%d-%m-%Y_%H-%M-%S') + '.eps'
+        _file_path = utils.make_filename(self.setup.path, _filename)
+        self.setup.logger.info('Filename: %s', _filename)
         ints = np.abs(self.res)[slice(*ylim), slice(*xlim)]
         fig, ax = plt.subplots(figsize=figsize)
         divider = make_axes_locatable(ax)
         cax = divider.append_axes('right', size='5%', pad=0.1)
-        im = ax.imshow(ints, cmap='viridis', vmin=ints.min(), vmax=ints.max(),
-                                interpolation='nearest', origin='lower')
+        im = ax.imshow(ints, interpolation='nearest', origin='lower')
         fig.colorbar(im, cax=cax, orientation='vertical')
-        fig.savefig(_filename, format='eps')
+        fig.savefig(_file_path, format='eps')
         self.setup.logger.info('Image creation has ended')
 
     def logplot(self, figsize=(10, 10), xlim=None, ylim=None):
@@ -284,8 +281,10 @@ class DiffRes(object):
         fig, ax = plt.subplots(figsize=figsize)
         divider = make_axes_locatable(ax)
         cax = divider.append_axes('right', size='5%', pad=0.1)
-        im = ax.imshow(ints, cmap='viridis', norm=LogNorm(vmin=ints.min(), vmax=ints.max()),
-                                interpolation='nearest', origin='lower')
+        im = ax.imshow(ints,
+                       norm=LogNorm(vmin=ints.min(), vmax=ints.max()),
+                       interpolation='nearest',
+                       origin='lower')
         fig.colorbar(im, cax=cax, orientation='vertical')
         plt.show()
         self.setup.logger.info('Plotting has ended')
@@ -294,9 +293,10 @@ class DiffRes(object):
         self.setup.logger.info('Writing the results:')
         self.setup.logger.info('Folder: %s' % self.setup.path)
         utils.make_dirs(self.setup.path)
-        _filename = utils.make_filename(self.setup.path, 'diff_' + datetime.datetime.now().strftime('%d-%m-%Y_%H-%M-%S') + '.hdf5')
-        self.setup.logger.info('Filename: %s' % _filename)
-        _filediff = h5py.File(os.path.join(self.setup.path, _filename), 'w')
+        _filename = 'diff_' + datetime.datetime.now().strftime('%d-%m-%Y_%H-%M-%S') + '.hdf5'
+        _file_path = utils.make_filename(self.setup.path, _filename)
+        self.setup.logger.info('Filename: %s', _filename)
+        _filediff = h5py.File(os.path.join(self.setup.path, _file_path), 'w')
         _diff_setup = _filediff.create_group('experiment setup')
         _diff_setup.create_dataset('sample position', data=self.setup.latorigin)
         _diff_setup.create_dataset('detector position', data=self.setup.detorigin)
