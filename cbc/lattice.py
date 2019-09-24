@@ -59,23 +59,9 @@ class Cell(object):
 class ABCLattice(object):
     __metaclass__ = ABCMeta
 
-    @abstractproperty
-    def basis_a(self): pass
-
-    @abstractproperty
-    def basis_b(self): pass
-
-    @abstractproperty
-    def basis_c(self): pass
-
-    @abstractproperty
-    def lat_na(self): pass
-
-    @abstractproperty
-    def lat_nb(self): pass
-
-    @abstractproperty
-    def lat_nc(self): pass
+    def __init__(self, basis_a, basis_b, basis_c, lat_na, lat_nb, lat_nc):
+        self.basis_a, self.basis_b, self.basis_c = basis_a, basis_b, basis_c
+        self.lat_na, self.lat_nb, self.lat_nc = lat_na, lat_nb, lat_nc
 
     def _pts(self):
         na_rng = np.arange(-self.lat_na, self.lat_na + 1)
@@ -85,8 +71,9 @@ class ABCLattice(object):
         return np.multiply.outer(self.basis_a, na_vals) + np.multiply.outer(self.basis_b, nb_vals) + np.multiply.outer(self.basis_c, nc_vals)
 
 class Lattice(ABCLattice):
-    @abstractproperty
-    def cell(self): pass
+    def __init__(self, basis_a, basis_b, basis_c, lat_na, lat_nb, lat_nc, cell):
+        super(Lattice, self).__init__(basis_a, basis_b, basis_c, lat_na, lat_nb, lat_nc)
+        self.cell = cell
 
     @abstractproperty
     def arguments(self): pass
@@ -114,13 +101,14 @@ class CubicLattice(Lattice):
     lat_na, lat_nb, lat_nc - numbers of unit cells in a sample
     cell - Cell class instance
     """
-    lat_na, lat_nb, lat_nc = None, None, None
-    basis_a, basis_b, basis_c, cell = None, None, None, None
-
     def __init__(self, basis_a, basis_b, basis_c, lat_na=20, lat_nb=20, lat_nc=20, cell=Cell()):
-        self.cell = cell
-        self.basis_a, self.basis_b, self.basis_c = basis_a, basis_b, basis_c
-        self.lat_na, self.lat_nb, self.lat_nc = lat_na // 2, lat_nb // 2, lat_nc // 2
+        super(CubicLattice, self).__init__(basis_a=basis_a,
+                                           basis_b=basis_b,
+                                           basis_c=basis_c,
+                                           lat_na=lat_na // 2,
+                                           lat_nb=lat_nb // 2,
+                                           lat_nc=lat_nc // 2,
+                                           cell=cell)
 
     @property
     def arguments(self):
@@ -147,15 +135,15 @@ class BallLattice(Lattice):
     lat_r - radius of lattice
     cell - Cell class instance
     """
-    basis_a, basis_b, basis_c, cell = None, None, None, None
-    lat_na, lat_nb, lat_nc = None, None, None
-
     def __init__(self, basis_a, basis_b, basis_c, lat_r, cell=Cell()):
-        self.cell = cell
-        self.basis_a, self.basis_b, self.basis_c, self.lat_r = basis_a, basis_b, basis_c, lat_r
-        self.lat_na = self.lat_r // np.sqrt(self.basis_a.dot(self.basis_a))
-        self.lat_nb = self.lat_r // np.sqrt(self.basis_b.dot(self.basis_b))
-        self.lat_nc = self.lat_r // np.sqrt(self.basis_c.dot(self.basis_c))
+        super(BallLattice, self).__init__(basis_a=basis_a,
+                                          basis_b=basis_b,
+                                          basis_c=basis_c,
+                                          lat_na=lat_r // np.sqrt(basis_a.dot(basis_a)),
+                                          lat_nb=lat_r // np.sqrt(basis_b.dot(basis_b)),
+                                          lat_nc=lat_r // np.sqrt(basis_c.dot(basis_c)),
+                                          cell=cell)
+        self.lat_r = lat_r
 
     @property
     def arguments(self):
@@ -180,15 +168,14 @@ class RecLattice(ABCLattice):
     wavelength - light carrier  wavelength [mm]
     q_max - maximum lattice vector in dimensionless units
     """
-    basis_a, basis_b, basis_c = None, None, None
-    lat_na, lat_nb, lat_nc = None, None, None
-
     def __init__(self, basis_a, basis_b, basis_c, q_max, wavelength):
-        self.basis_a, self.basis_b, self.basis_c = basis_a * wavelength, basis_b * wavelength, basis_c * wavelength
+        super(RecLattice, self).__init__(basis_a=basis_a * wavelength,
+                                         basis_b=basis_b * wavelength,
+                                         basis_c=basis_c * wavelength,
+                                         lat_na=q_max // (np.sqrt(basis_a.dot(basis_a)) * wavelength),
+                                         lat_nb=q_max // (np.sqrt(basis_b.dot(basis_b)) * wavelength),
+                                         lat_nc=q_max // (np.sqrt(basis_c.dot(basis_c)) * wavelength))
         self.q_max = q_max
-        self.lat_na = self.q_max // np.sqrt(self.basis_a.dot(self.basis_a))
-        self.lat_nb = self.q_max // np.sqrt(self.basis_b.dot(self.basis_b))
-        self.lat_nc = self.q_max // np.sqrt(self.basis_c.dot(self.basis_c))
 
     def vectors(self):
         pts = self._pts()
