@@ -119,7 +119,8 @@ class SquarePropagator(ABCPropagator):
     def _source_lines(self):
         boundary_prd = (np.multiply.outer(self.q_x, self.bounds[0]) +
                         np.multiply.outer(self.q_y, self.bounds[1]))
-        c_1 = self.source_prd()[:, np.newaxis] - boundary_prd
+        source_x, source_y, source_z = self.source_pts()
+        c_1 = (source_x * self.q_x + source_y * self.q_y + source_z * self.q_z)[:, np.newaxis] - boundary_prd
         c_2 = np.stack((self.q_y, self.q_y, self.q_x, self.q_x), axis=1)
         c_3 = np.stack(([0, 1], [0, 1], [1, 0], [1, 0]), axis=1)
         a_coeff, b_coeff, c_coeff = (c_2**2 + self.q_z[:, np.newaxis]**2,
@@ -130,15 +131,15 @@ class SquarePropagator(ABCPropagator):
         a_masked, b_masked, delta_masked = a_coeff[delta_mask], b_coeff[delta_mask], delta[delta_mask]
         pts = np.concatenate((self.bounds + (c_3 * ((b_masked + np.sqrt(delta_masked)) / a_masked)[:, np.newaxis]),
                               self.bounds + (c_3 * ((b_masked - np.sqrt(delta_masked)) / a_masked)[:, np.newaxis])), axis=2)
-        pts_mask = np.where((np.abs(pts) <= self.num_ap).sum(axis=(1, 2)) == 10)
-        pts = pts[pts_mask]
-        pts_x = pts[:, 0][(np.abs(pts) <= self.num_ap).all(axis=1)].reshape(-1, 2)
-        pts_y = pts[:, 1][(np.abs(pts) <= self.num_ap).all(axis=1)].reshape(-1, 2)
-        return pts_x, pts_y, (delta_mask[0][pts_mask],)
-
-    def source_prd(self):
-        o_x, o_y, o_z = self.source_pts()
-        return o_x * self.q_x + o_y * self.q_y + o_z * self.q_z
+        ort_mask = np.abs((source_x[delta_mask][:, np.newaxis] - pts[:, 0]) *
+                          self.q_x[delta_mask][:, np.newaxis] +
+                          (source_y[delta_mask][:, np.newaxis] - pts[:, 1]) *
+                          self.q_y[delta_mask][:, np.newaxis] +
+                          (source_z[delta_mask][:, np.newaxis] - np.sqrt(1 - pts[:, 0]**2 - pts[:, 1]**2)) *
+                          self.q_z[delta_mask][:, np.newaxis]) < 1e-6
+        pts_x = pts[:, 0][(np.abs(pts) <= self.num_ap).all(axis=1) & ort_mask].reshape(-1, 2)
+        pts_y = pts[:, 1][(np.abs(pts) <= self.num_ap).all(axis=1) & ort_mask].reshape(-1, 2)
+        return pts_x, pts_y, (delta_mask[0][((np.abs(pts) <= self.num_ap).all(axis=1) & ort_mask).any(axis=1)],)
 
     def entry_pts(self):
         return self._pts_x[:, 0], self._pts_y[:, 0], np.sqrt(1 - self._pts_x[:, 0]**2 - self._pts_y[:, 0]**2)
