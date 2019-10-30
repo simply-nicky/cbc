@@ -75,7 +75,8 @@ class GausBeam(Beam):
         return np.stack((xs / rs, ys / rs, 1 - (xs**2 + ys**2) / 2.0 / rs**2), axis=-1)
 
     def dist(self, N):
-        k_xs, k_ys = np.random.multivariate_normal([0, 0], [[self.thdiv**2 / 2, 0], [0, self.thdiv**2 / 2]], N).T
+        k_xs, k_ys = np.random.multivariate_normal([0, 0], [[self.thdiv**2 / 2, 0],
+                                                            [0, self.thdiv**2 / 2]], N).T
         return np.stack((k_xs, k_ys, 1.0 - (k_xs**2 + k_ys**2) / 2.0), axis=1)
 
     def fphase(self, k_xs, k_ys, z):
@@ -96,8 +97,8 @@ class BesselBeam(Beam):
         return np.tile([0.0, 0.0, 1.0 - self.thdiv**2 / 2], xs.shape + (1,))
 
     def dist(self, N):
-        ths = self.thdiv * np.sqrt(np.random.random(N))
-        phis = 2 * pi * np.random.random(N)
+        ths = self.thdiv * np.sqrt(np.random.rand(N))
+        phis = 2 * pi * np.random.rand(N)
         return np.stack((ths * np.cos(phis), ths * np.sin(phis), 1 - ths**2 / 2), axis=-1)
 
 class LensBeam(ABCBeam):

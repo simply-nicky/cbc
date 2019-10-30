@@ -9,7 +9,7 @@ from math import sqrt, sin, cos, pi, atan2
 from itertools import accumulate
 from multiprocessing import cpu_count
 from skimage.transform import probabilistic_hough_line
-from skimage.draw import line_aa
+from skimage.draw import line_aa, circle
 from cv2 import createLineSegmentDetector
 from abc import ABCMeta, abstractmethod, abstractproperty
 
@@ -77,10 +77,10 @@ class ABCPropagator(object, metaclass=ABCMeta):
                 np.stack((self.q_y + ony, self.q_y + oxy), axis=1),
                 np.stack((self.q_z + onz, self.q_z + oxz), axis=1))
 
-    def detector_pts(self, detdist):
+    def detector_pts(self, det_dist):
         k_x, k_y, k_z = self.out_wavevectors()
-        det_x = detdist * np.tan(np.sqrt(2 - 2 * k_z)) * np.cos(np.arctan2(k_y, k_x))
-        det_y = detdist * np.tan(np.sqrt(2 - 2 * k_z)) * np.sin(np.arctan2(k_y, k_x))
+        det_x = det_dist * np.tan(np.sqrt(2 - 2 * k_z)) * np.cos(np.arctan2(k_y, k_x))
+        det_y = det_dist * np.tan(np.sqrt(2 - 2 * k_z)) * np.sin(np.arctan2(k_y, k_x))
         return det_x, det_y
 
 class CircPropagator(ABCPropagator):
@@ -298,14 +298,24 @@ class FrameStreaks(object):
 
     def index_pts(self):
         ts = self.dlines[:, 0, 1] * self.taus[:, 0] - self.dlines[:, 0, 0] * self.taus[:, 1]
-        return np.stack((-self.taus[:, 1] * ts + self.zero[0], self.taus[:, 0] * ts + self.zero[1]), axis=1)
+        return -self.taus[:, 1] * ts + self.zero[0], self.taus[:, 0] * ts + self.zero[1]
 
     def intensities(self, frame):
         ints = []
         for line in iter(self):
-            rr, cc, val = line_aa(line[0, 1], line[0, 0], line[1, 1], line[1, 0])
-            ints.append((frame[rr, cc] * val).sum())
+            rows, columns, val = line_aa(line[0, 1], line[0, 0], line[1, 1], line[1, 0])
+            ints.append((frame[rows, columns] * val).sum())
         return np.array(ints)
+
+    def snr(self, frame, background):
+        signal = self.intensities(frame)
+        noise = []
+        for line in iter(self):
+            radius = np.sqrt(np.sum((line[0] - line[1])**2)) / 2
+            center = line.mean(axis=0)
+            rows, columns = circle(center[0], center[1], radius, shape=frame.shape)
+            noise.append(background[rows, columns].sum())
+        return signal / np.array(noise)
 
 class ScanStreaks(object):
     def __init__(self, streakslist):
@@ -353,18 +363,35 @@ class ScanStreaks(object):
     def __iter__(self):
         for strks in self.strkslist: yield strks
 
-    def rec_vectors(self, axis, thetas, pixsize, detdist):
+    def rec_vectors(self, axis, thetas, pix_size, det_dist):
         qs_list = []
         for strks, theta in zip(iter(self), thetas):
-            k_x = np.arctan(pixsize * strks.radii / detdist) * np.cos(strks.angles)
-            k_y = np.arctan(pixsize * strks.radii / detdist) * np.sin(strks.angles)
+            k_x = np.arctan(pix_size * strks.radii / det_dist) * np.cos(strks.angles)
+            k_y = np.arctan(pix_size * strks.radii / det_dist) * np.sin(strks.angles)
             rotm = utils.rotation_matrix(axis, theta)
             q_x, q_y, q_z = utils.rotate(rotm, k_x, k_y, np.sqrt(1 - k_x**2 - k_y**2) - 1)
             qs_list.append(np.stack((q_x, q_y, q_z), axis=1))
         return ReciprocalPeaks(np.concatenate(qs_list))
 
-    def refined_rec_vectors(self, axis, thetas, pixsize, detdist, dk):
-        _qs = self.rec_vectors(axis, thetas, pixsize, detdist).qs
+    def index_vectors(self, axis, thetas, pix_size, det_dist):
+        qs_list = []
+        for strks, theta in zip(iter(self), thetas):
+            xs, ys = strks.index_pts()
+            radii = np.sqrt(xs**2 + ys**2)
+            angles = np.arctan2(ys, xs)
+            k_x = np.arctan(pix_size * radii / det_dist) * np.cos(angles)
+            k_y = np.arctan(pix_size * radii / det_dist) * np.sin(angles)
+            rotm = utils.rotation_matrix(axis, theta)
+            q_x, q_y, q_z = utils.rotate(rotm, k_x, k_y, np.sqrt(1 - k_x**2 - k_y**2) - 1)
+            qs_list.append(np.stack((q_x, q_y, q_z), axis=1))
+        return ReciprocalPeaks(np.concatenate(qs_list))
+
+    def refined_rec_vectors(self, axis, thetas, pix_size, det_dist, dk):
+        _qs = self.rec_vectors(axis, thetas, pix_size, det_dist).qs
+        return ReciprocalPeaks(ScanStreaks._refiner(_qs, self.shapes, dk))
+
+    def refined_index_vectors(self, axis, thetas, pix_size, det_dist, dk):
+        _qs = self.index_vectors(axis, thetas, pix_size, det_dist).qs
         return ReciprocalPeaks(ScanStreaks._refiner(_qs, self.shapes, dk))
 
     def save(self, data, outfile):
@@ -438,6 +465,9 @@ class ReciprocalPeaks(object):
 
     def grid(self, size):
         return ReciprocalPeaks._grid(self.qs, size)
+
+    def save_pts(self, out_file):
+        out_file.create_dataset('rec_vectors', data=self.qs)
 
 @nb.njit(nb.float64[:, :](nb.float64[:, :]))
 def NMS(image):

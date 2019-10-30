@@ -4,11 +4,13 @@ utils.py - Uitility constants and functions module
 from math import sqrt, cos, sin
 import os
 import errno
+from multiprocessing import cpu_count
 import numpy as np
 import numba as nb
 import h5py
 import cv2
 
+CPU_COUNT = cpu_count()
 RAW_PATH = "/asap3/petra3/gpfs/p06/2019/data/11006252/raw"
 PREFIXES = {'alignment': '0001_alignment',
             'opal': '0001_opal',
@@ -53,13 +55,16 @@ def energy(nxsfilepath):
 def get_attributes(command):
     nums = []
     for part in command.split(" "):
-        try: nums.append(float(part))
-        except ValueError: continue
+        try:
+            nums.append(float(part))
+        except ValueError:
+            continue
     return tuple(nums[:-1])
 
 def coordinates(command):
     nums = get_attributes(command)
-    return np.linspace(nums[0], nums[1], int(nums[2]) + 1), int(nums[2]) + 1
+    coord_dict = {'fast_crds': np.linspace(nums[0], nums[1], int(nums[2]) + 1)}
+    return coord_dict
 
 def coordinates2d(command):
     nums = get_attributes(command)

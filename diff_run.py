@@ -29,7 +29,7 @@ def main(a_rec=A_REC,
     # waist = wavelength / np.pi / th_div
     focus = 1.
     aperture = 2 * focus * np.tan(th_div)
-    delta_z = lat_r / th_div
+    delta_z = lat_r / th_div / 2
     a_vec, b_vec, c_vec = cbc.rec_basis(a_rec, b_rec, c_rec)
     logpath = cbc.utils.get_logpath()
     detector = cbc.Detector(det_dist=det_dist, det_nx=det_nx, det_ny=det_ny, pix_size=pix_size)
