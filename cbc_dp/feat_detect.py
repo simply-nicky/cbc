@@ -402,26 +402,26 @@ class FrameStreaks(object):
         ts = self.dlines[:, 0, 1] * self.taus[:, 0] - self.dlines[:, 0, 0] * self.taus[:, 1]
         return -self.taus[:, 1] * ts + self.zero[0], self.taus[:, 0] * ts + self.zero[1]
 
-    def intensities(self, frame):
+    def intensities(self, raw_data):
         """
         Return detected streaks intensities
 
-        frame - diffraction pattern
+        raw_data - raw diffraction pattern
         """
         ints = []
         for line in iter(self):
             rows, columns, val = line_aa(line[0, 1], line[0, 0], line[1, 1], line[1, 0])
-            ints.append((frame[rows, columns] * val).sum())
+            ints.append((raw_data[rows, columns] * val).sum())
         return np.array(ints)
 
-    def snr(self, frame, background):
+    def snr(self, raw_data, background):
         """
         Return detected streaks signal to noise ratio
 
-        frame - diffraction pattern
+        raw_data - raw diffraction pattern
         background - noise background
         """
-        signal = self.intensities(frame)
+        signal = self.intensities(raw_data)
         noise = []
         for line in iter(self):
             rows, columns, val = line_aa(line[0, 1], line[0, 0], line[1, 1], line[1, 0])
@@ -480,26 +480,44 @@ class ExperimentSettings(object):
         out_group.create_dataset('rot_axis', self.axis)
         out_group.create_dataset('wavelength', self.wavelength)
 
-class ScanStreaks(object):
+class ScanStreaks(FrameStreaks):
     """
     Detected diffraction streaks of a rotational scan class
 
     strks_list - detected lines FrameStreaks class object list
     """
     def __init__(self, strks_list):
-        self.strks_list = strks_list
-        self.shapes = np.array(list(accumulate([strks.size for strks in self.strks_list], add)))
+        self.shapes = np.array(list(accumulate([strks.size for strks in strks_list], add)))
+        lines = np.concatenate([strks.lines for strks in strks_list])
+        super(ScanStreaks, self).__init__(lines, strks_list[0].zero)
 
-    @property
-    def zero(self):
-        return self.__getitem__(0).zero
+    def intensities(self, raw_data):
+        """
+        Return detected streaks intensities
 
-    def __getitem__(self, index):
-        return self.strks_list[index]
+        data - raw diffraction patterns
+        """
+        start = 0
+        ints = []
+        for frame, stop in zip(raw_data, self.shapes):
+            frame_ints = FrameStreaks(self.lines[start:stop], self.zero).intensities(frame)
+            ints.append(frame_ints)
+            start = stop
+        return np.concatenate(ints)
 
-    def __iter__(self):
-        for strks in self.strks_list:
-            yield strks
+    def snr(self, raw_data, background):
+        """
+        Return detected streaks signal to noise ratio
+
+        raw_data - raw diffraction pattern
+        background - noise backgrounds
+        """
+        start = 0
+        snr = []
+        for frame, bgd, stop in zip(raw_data, background, self.shapes):
+            frame_snr = FrameStreaks(self.lines[start:stop], self.zero).snr(frame, bgd)
+            snr.append(frame_snr)
+        return np.concatenate(snr)
 
     def rec_vectors(self, exp_set, thetas):
         """
@@ -509,10 +527,13 @@ class ScanStreaks(object):
         thetas - angles of rotation
         """
         qs_list = []
-        for strks, theta in zip(iter(self), thetas):
+        start = 0
+        for stop, theta in zip(self.shapes, thetas):
             rot_m = exp_set.rotation_matrix(theta)
-            rec_vec = exp_set.rec_project(radii=strks.radii, angles=strks.angles)
+            rec_vec = exp_set.rec_project(radii=self.radii[start:stop],
+                                          angles=self.angles[start:stop])
             qs_list.append(rec_vec.dot(rot_m.T))
+            start = stop
         return RecVectors(rec_vec=np.concatenate(qs_list),
                           exp_set=exp_set)
 
@@ -525,10 +546,13 @@ class ScanStreaks(object):
         pixels - pixel distance between two adjacent streaks considered to be collapsed
         """
         qs_list = []
-        for strks, theta in zip(iter(self), thetas):
+        start = 0
+        for stop, theta in zip(self.shapes, thetas):
             rot_m = exp_set.rotation_matrix(theta)
-            rec_vec = exp_set.rec_project(radii=strks.radii, angles=strks.angles)
+            rec_vec = exp_set.rec_project(radii=self.radii[start:stop],
+                                          angles=self.angles[start:stop])
             qs_list.append(rec_vec.dot(rot_m.T))
+            start = stop
         return RefinedRecVectors(rec_vec=np.concatenate(qs_list),
                                  exp_set=exp_set,
                                  counts=self.shapes,
@@ -542,13 +566,15 @@ class ScanStreaks(object):
         thetas - angles of rotation
         """
         qs_list = []
-        for strks, theta in zip(iter(self), thetas):
-            det_x, det_y = strks.index_pts()
-            radii = np.sqrt(det_x**2 + det_y**2)
-            angles = np.arctan2(det_y, det_x)
+        start = 0
+        det_x, det_y = self.index_pts()
+        for stop, theta in zip(self.shapes, thetas):
+            radii = np.sqrt(det_x[start:stop]**2 + det_y[start:stop]**2)
+            angles = np.arctan2(det_y[start:stop], det_x[start:stop])
             rot_m = exp_set.rotation_matrix(theta)
             rec_vec = exp_set.rec_project(radii=radii, angles=angles)
             qs_list.append(rec_vec.dot(rot_m.T))
+            start = stop
         return RecVectors(rec_vec=np.concatenate(qs_list),
                           exp_set=exp_set)
 
@@ -561,17 +587,33 @@ class ScanStreaks(object):
         pixels - pixel distance between two adjacent streaks considered to be collapsed
         """
         qs_list = []
-        for strks, theta in zip(iter(self), thetas):
-            det_x, det_y = strks.index_pts()
-            radii = np.sqrt(det_x**2 + det_y**2)
-            angles = np.arctan2(det_y, det_x)
+        start = 0
+        det_x, det_y = self.index_pts()
+        for stop, theta in zip(self.shapes, thetas):
+            radii = np.sqrt(det_x[start:stop]**2 + det_y[start:stop]**2)
+            angles = np.arctan2(det_y[start:stop], det_x[start:stop])
             rot_m = exp_set.rotation_matrix(theta)
             rec_vec = exp_set.rec_project(radii=radii, angles=angles)
             qs_list.append(rec_vec.dot(rot_m.T))
+            start = stop
         return RefinedRecVectors(rec_vec=np.concatenate(qs_list),
                                  exp_set=exp_set,
                                  counts=self.shapes,
                                  pixels=pixels)
+
+    def save(self, raw_data, background, out_file):
+        """
+        Save detected diffraction streaks to an HDF5 file
+
+        raw_data - raw diffraction patterns
+        backgroun - background noises
+        out_file - h5py file object
+        """
+        out_group = out_file.create_group('streaks')
+        out_group.create_dataset('lines', data=self.lines)
+        out_group.create_dataset('zero', data=self.zero)
+        out_group.create_dataset('intensities', data=self.intensities(raw_data))
+        out_group.create_dataset('snr', data=self.snr(raw_data, background))
 
 class RecVectors(object):
     """
@@ -653,14 +695,6 @@ class RecVectors(object):
         self.exp_set.save(out_file)
         out_file.create_dataset('rec_vectors', data=self.rec_vec)
 
-    def save_txt(self, filename):
-        """
-        Save reciprocal points to a text file
-
-        filename - output text filename
-        """
-        pass
-
 class RefinedRecVectors(RecVectors):
     """
     Refined diffraction peaks in reciprocal space class
@@ -672,9 +706,9 @@ class RefinedRecVectors(RecVectors):
     """
     def __init__(self, rec_vec, exp_set, counts, pixels):
         super(RefinedRecVectors, self).__init__(rec_vec, exp_set)
-        self.rec_vec = ReciprocalPeaks._refiner(qs=self.rec_vec,
-                                        counts=counts,
-                                        dk=exp_set.pixtoq(pixels))
+        self.rec_vec = RefinedRecVectors._refiner(qs=self.rec_vec,
+                                                  counts=counts,
+                                                  dk=exp_set.pixtoq(pixels))
 
     @staticmethod
     @nb.njit(nb.float64[:, :](nb.float64[:, :], nb.int64[:], nb.float64))

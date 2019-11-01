@@ -253,14 +253,14 @@ class Scan1D(ABCScan, metaclass=ABCMeta):
         """
         Save raw and corrected data, detected streaks position to a hdf5 file
         """
-        outfile = self._create_outfile(tag='corrected')
-        self._save_parameters(outfile)
-        self._save_data(outfile)
-        cordata = self.corrected_data()
-        cordata.save(outfile)
-        streaks = LineSegmentDetector().det_scan(cordata.strks_data, zero, drtau, drn)
-        streaks.save(self.raw_data, outfile)
-        outfile.close()
+        out_file = self._create_outfile(tag='corrected')
+        self._save_parameters(out_file)
+        self._save_data(out_file)
+        cor_data = self.corrected_data()
+        cor_data.save(out_file)
+        streaks = LineSegmentDetector().det_scan(cor_data.strks_data, zero, drtau, drn)
+        streaks.save(raw_data=self.data, background=cor_data.background, out_file=out_file)
+        out_file.close()
 
 class Scan2D(Scan1D):
     """
