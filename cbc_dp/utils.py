@@ -5,7 +5,6 @@ from math import sqrt, cos, sin
 import os
 from multiprocessing import cpu_count
 import numpy as np
-import numba as nb
 import h5py
 from cv2 import cvtColor, COLOR_BGR2GRAY
 

@@ -513,11 +513,12 @@ class ScanStreaks(FrameStreaks):
         background - noise backgrounds
         """
         start = 0
-        snr = []
+        snr_vals = []
         for frame, bgd, stop in zip(raw_data, background, self.shapes):
             frame_snr = FrameStreaks(self.lines[start:stop], self.zero).snr(frame, bgd)
-            snr.append(frame_snr)
-        return np.concatenate(snr)
+            snr_vals.append(frame_snr)
+            start = stop
+        return np.concatenate(snr_vals)
 
     def rec_vectors(self, exp_set, thetas):
         """

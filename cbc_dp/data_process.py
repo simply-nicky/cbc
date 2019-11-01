@@ -104,7 +104,7 @@ class Measurement(metaclass=ABCMeta):
         self._save_data(outfile)
         outfile.close()
 
-def OpenScan(prefix, scan_num, good_frames=None):
+def open_scan(prefix, scan_num, good_frames=None):
     """
     Automatically detect scan type and return scan object
 
