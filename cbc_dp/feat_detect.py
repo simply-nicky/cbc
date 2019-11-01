@@ -7,13 +7,20 @@ import concurrent.futures
 from . import utils
 from math import sqrt, sin, cos, pi, atan2
 from itertools import accumulate
+from operator import add
 from multiprocessing import cpu_count
 from skimage.transform import probabilistic_hough_line
-from skimage.draw import line_aa, circle
+from skimage.draw import line_aa
 from cv2 import createLineSegmentDetector
 from abc import ABCMeta, abstractmethod, abstractproperty
 
 class ABCPropagator(object, metaclass=ABCMeta):
+    """
+    Abstract convergent beam diffraction pattern generator class
+
+    rec_lat - reciprocal lattice object
+    num_ap - convergent beam numerical aperture
+    """
     def __init__(self, rec_lat, num_ap):
         if rec_lat.q_max > 2:
             raise ValueError('q_max must be less than 2')
@@ -29,7 +36,8 @@ class ABCPropagator(object, metaclass=ABCMeta):
         return np.arccos(-self.g_z / self.g_abs)
 
     @abstractproperty
-    def condition(self): pass
+    def condition(self):
+        pass
 
     @property
     def q_x(self):
@@ -56,9 +64,15 @@ class ABCPropagator(object, metaclass=ABCMeta):
         return np.arctan2(self.q_y, self.q_x)
 
     def laue_vectors(self):
+        """
+        Return reciprocal lattice points that take part in diffracton
+        """
         return self.q_x, self.q_y, self.q_z, self.q_abs
     
     def source_pts(self):
+        """
+        Return source points that define incoming wavevectors for given reciprocal lattice
+        """
         o_x = -np.sin(self.theta - np.arccos(self.q_abs / 2)) * np.cos(self.phi)
         o_y = -np.sin(self.theta - np.arccos(self.q_abs / 2)) * np.sin(self.phi)
         o_z = np.cos(self.theta - np.arccos(self.q_abs / 2))
@@ -71,6 +85,9 @@ class ABCPropagator(object, metaclass=ABCMeta):
     def exit_pts(self): pass
 
     def out_wavevectors(self):
+        """
+        Return output wave vectors
+        """
         onx, ony, onz = self.entry_pts()
         oxx, oxy, oxz = self.exit_pts()
         return (np.stack((self.q_x + onx, self.q_x + oxx), axis=1),
@@ -78,29 +95,52 @@ class ABCPropagator(object, metaclass=ABCMeta):
                 np.stack((self.q_z + onz, self.q_z + oxz), axis=1))
 
     def detector_pts(self, det_dist):
+        """
+        Return detector diffraction orders points for a detector at given distance
+
+        det_dist - detector distance
+        """
         k_x, k_y, k_z = self.out_wavevectors()
         det_x = det_dist * np.tan(np.sqrt(2 - 2 * k_z)) * np.cos(np.arctan2(k_y, k_x))
         det_y = det_dist * np.tan(np.sqrt(2 - 2 * k_z)) * np.sin(np.arctan2(k_y, k_x))
         return det_x, det_y
 
 class CircPropagator(ABCPropagator):
+    """
+    Circular aperture convergent beam diffraction pattern generator class
+
+    rec_lat - reciprocal lattice object
+    num_ap - convergent beam numerical aperture
+    """
     @property
     def condition(self):
         return np.abs(np.sin(self.betta - np.arccos(self.g_abs / 2))) < self.num_ap
 
     def entry_pts(self):
+        """
+        Return first point array of source lines
+        """
         dphi = np.arccos((self.q_abs**2 + 2 * self.q_z * sqrt(1 - self.num_ap**2)) / (2 * np.sqrt(self.q_x**2 + self.q_y**2) * self.num_ap))
         return (-self.num_ap * np.cos(self.phi + dphi),
                 -self.num_ap * np.sin(self.phi + dphi),
                 np.repeat(sqrt(1 - self.num_ap**2), self.q_x.shape))
 
     def exit_pts(self):
+        """
+        Return second point array of source lines
+        """
         dphi = np.arccos((self.q_abs**2 + 2 * self.q_z * sqrt(1 - self.num_ap**2)) / (2 * np.sqrt(self.q_x**2 + self.q_y**2) * self.num_ap))
         return (-self.num_ap * np.cos(self.phi - dphi),
                 -self.num_ap * np.sin(self.phi - dphi),
                 np.repeat(sqrt(1 - self.num_ap**2), self.q_x.shape))
 
 class SquarePropagator(ABCPropagator):
+    """
+    Rectangular aperture convergent beam diffraction pattern generator class
+
+    rec_lat - reciprocal lattice object
+    num_ap - convergent beam numerical aperture
+    """
     condition = None
 
     def __init__(self, rec_lat, num_ap):
@@ -142,23 +182,46 @@ class SquarePropagator(ABCPropagator):
         return pts_x, pts_y, (delta_mask[0][((np.abs(pts) <= self.num_ap).all(axis=1) & ort_mask).any(axis=1)],)
 
     def entry_pts(self):
-        return self._pts_x[:, 0], self._pts_y[:, 0], np.sqrt(1 - self._pts_x[:, 0]**2 - self._pts_y[:, 0]**2)
+        """
+        Return first point array of source lines
+        """
+        return (self._pts_x[:, 0],
+                self._pts_y[:, 0],
+                np.sqrt(1 - self._pts_x[:, 0]**2 - self._pts_y[:, 0]**2))
 
     def exit_pts(self):
-        return self._pts_x[:, 1], self._pts_y[:, 1], np.sqrt(1 - self._pts_x[:, 1]**2 - self._pts_y[:, 1]**2)
+        """
+        Return second point array of source lines
+        """
+        return (self._pts_x[:, 1],
+                self._pts_y[:, 1],
+                np.sqrt(1 - self._pts_x[:, 1]**2 - self._pts_y[:, 1]**2))
 
 class LineDetector(object, metaclass=ABCMeta):
+    """
+    Abstract line detector class
+    """
     @staticmethod
     @abstractmethod
-    def _refiner(lines, angles, rs, taus, drtau, drn): pass
+    def _refiner(lines, angles, rs, taus, drtau, drn):
+        pass
 
     @abstractmethod
-    def _detector(self, frame): pass
+    def _detector(self, frame):
+        pass
 
     def det_frame_raw(self, frame):
         return np.array([[[x0, y0], [x1, y1]] for (x0, y0), (x1, y1) in self._detector(frame)])
 
     def det_frame(self, frame, zero, drtau, drn):
+        """
+        Return FrameStreaks class object of detected lines
+
+        frame - diffraction pattern
+        zero - zero output wavevector point
+        drtau - tangent detection error
+        drn - radial detection error
+        """
         lines = FrameStreaks(self.det_frame_raw(frame), zero)
         return FrameStreaks(type(self)._refiner(lines.lines,
                                                 lines.angles,
@@ -167,13 +230,32 @@ class LineDetector(object, metaclass=ABCMeta):
                                                 drtau,
                                                 drn), zero)
 
-    def det_scan_raw(self, data):
-        return [self.det_frame_raw(frame) for frame in data]
+    def det_scan_raw(self, scan):
+        """
+        Return Hough Line Transofrm raw detected lines for given scan
+        """
+        return [self.det_frame_raw(frame) for frame in scan]
 
     def det_scan(self, data, zero, drtau, drn):
+        """
+        Return ScanStreaks class obect of detected lines
+
+        scan - rotational scan
+        zero - zero output wavevector point
+        drtau - tangent detection error
+        drn - radial detection error
+        """
         return ScanStreaks([self.det_frame(frame, zero, drtau, drn) for frame in data])
 
 class HoughLineDetector(LineDetector):
+    """
+    Hough line transform line detector class
+
+    threshold - line detection threshold
+    line_length - maximal line length
+    line_gap - maximal line gap to consider two lines as one
+    dth - angle parameter spacing
+    """
     def __init__(self, threshold, line_length, line_gap, dth):
         self.trhd, self.ll, self.lg = threshold, line_length, line_gap
         self.thetas = np.linspace(-np.pi / 2, np.pi / 2, int(np.pi / dth), endpoint=True)
@@ -218,11 +300,21 @@ class HoughLineDetector(LineDetector):
                                         theta=self.thetas)
 
 class LineSegmentDetector(LineDetector):
+    """
+    Line Segment Detector line detection class
+
+    scale - scale of the input image
+    sigma_scale - the sigma of gaussian filter
+    lag_eps - detection threshold
+
+    To read about the underlying theare see the article:
+    http://www.ipol.im/pub/art/2012/gjmr-lsd/?utm_source=doi
+    """
     def __init__(self, scale=0.8, sigma_scale=0.6, log_eps=0):
         self.detector = createLineSegmentDetector(_scale=scale,
                                                   _sigma_scale=sigma_scale,
                                                   _log_eps=log_eps)
-    
+
     @staticmethod
     @nb.njit(nb.float64[:, :, :](nb.float64[:, :, :],
                                  nb.float64[:],
@@ -263,6 +355,12 @@ class LineSegmentDetector(LineDetector):
         return self.detector.detect(img)[0][:, 0].reshape((-1, 2, 2)).astype(np.float64)
 
 class FrameStreaks(object):
+    """
+    Detected diffraction streaks on one frame class
+
+    lines - detected lines
+    zero - zero output wavevector point
+    """
     def __init__(self, lines, zero):
         self.lines, self.zero = lines, zero
         self.dlines = lines - zero
@@ -294,13 +392,22 @@ class FrameStreaks(object):
         return taus / np.sqrt(taus[:, 0]**2 + taus[:, 1]**2)[:, np.newaxis]
 
     def __iter__(self):
-        for line in self.lines: yield line.astype(np.int64)
+        for line in self.lines:
+            yield line.astype(np.int64)
 
     def index_pts(self):
+        """
+        Return indexing points
+        """
         ts = self.dlines[:, 0, 1] * self.taus[:, 0] - self.dlines[:, 0, 0] * self.taus[:, 1]
         return -self.taus[:, 1] * ts + self.zero[0], self.taus[:, 0] * ts + self.zero[1]
 
     def intensities(self, frame):
+        """
+        Return detected streaks intensities
+
+        frame - diffraction pattern
+        """
         ints = []
         for line in iter(self):
             rows, columns, val = line_aa(line[0, 1], line[0, 0], line[1, 1], line[1, 0])
@@ -308,108 +415,197 @@ class FrameStreaks(object):
         return np.array(ints)
 
     def snr(self, frame, background):
+        """
+        Return detected streaks signal to noise ratio
+
+        frame - diffraction pattern
+        background - noise background
+        """
         signal = self.intensities(frame)
         noise = []
         for line in iter(self):
-            radius = np.sqrt(np.sum((line[0] - line[1])**2)) / 2
-            center = line.mean(axis=0)
-            rows, columns = circle(center[0], center[1], radius, shape=frame.shape)
-            noise.append(background[rows, columns].sum())
+            rows, columns, val = line_aa(line[0, 1], line[0, 0], line[1, 1], line[1, 0])
+            noise.append(np.abs(background[rows, columns] * val).sum())
         return signal / np.array(noise)
 
-class ScanStreaks(object):
-    def __init__(self, streakslist):
-        self.strkslist = streakslist
+class ExperimentSettings(object):
+    """
+    Experimment parameters class
 
-    @property
-    def shapes(self):
-        return np.array(list(accumulate([strks.size for strks in self.strkslist], lambda x, y: x + y)))
+    axis - axis of rotation
+    pix_size - detector pixel size
+    det_dist - distance between the detector and the sample
+    """
+    def __init__(self, axis, pix_size, det_dist, wavelength):
+        self.axis, self.pix_size, self.det_dist = axis, pix_size, det_dist
+        self.wavelength = wavelength
+
+    def rotation_matrix(self, theta):
+        """
+        Return roational matrix for a given angle of rotation
+        """
+        return utils.rotation_matrix(self.axis, theta)
+
+    def pixtoq(self, pixels):
+        """
+        Convert detector distance in pixels to distance in reciprocal space
+        """
+        return pixels * self.pix_size / self.det_dist
+
+    def convert_rec(self, rec_vec):
+        """
+        Convert dimensionless reciprocal vectors to [m^-1]
+        """
+        return rec_vec / self.wavelength
+
+    def rec_project(self, radii, angles):
+        """
+        Project detected diffraction streaks to reciprocal space vectors in [a.u.]
+
+        radii - streak radii relative to zero point
+        angles - streak angles relative to zero point
+        """
+        thetas = np.arctan(self.pix_size * radii / self.det_dist)
+        q_x = thetas * np.cos(angles)
+        q_y = thetas * np.sin(angles)
+        return np.stack((q_x, q_y, np.sqrt(1 - q_x**2 - q_y**2) - 1), axis=1)
+
+    def save(self, out_file):
+        """
+        Save experiment settings to an HDF5 file
+        """
+        out_group = out_file.create_group("experiment_settings")
+        out_group.create_dataset('pix_size', self.pix_size)
+        out_group.create_dataset('det_dist', self.det_dist)
+        out_group.create_dataset('rot_axis', self.axis)
+        out_group.create_dataset('wavelength', self.wavelength)
+
+class ScanStreaks(object):
+    """
+    Detected diffraction streaks of a rotational scan class
+
+    strks_list - detected lines FrameStreaks class object list
+    """
+    def __init__(self, strks_list):
+        self.strks_list = strks_list
+        self.shapes = np.array(list(accumulate([strks.size for strks in self.strks_list], add)))
 
     @property
     def zero(self):
         return self.__getitem__(0).zero
 
-    @staticmethod
-    @nb.njit(nb.float64[:, :](nb.float64[:, :], nb.int64[:], nb.float64))
-    def _refiner(qs, shapes, dk):
-        b = len(shapes)
-        out = np.empty(qs.shape, dtype=np.float64)
-        idxs = []; jj = 0; count = 0
-        for i in range(shapes[b - 2]):
-            if i == shapes[jj]: jj += 1
-            if i in idxs: continue
-            qslist = []
-            for j in range(shapes[jj], shapes[jj + 1]):
-                if sqrt((qs[i, 0] - qs[j, 0])**2 + (qs[i, 1] - qs[j, 1])**2 + (qs[i, 2] - qs[j, 2])**2) < dk:
-                    qslist.append(qs[i]); idxs.append(i)
-                    break
-            else:
-                out[count] = qs[i]; count += 1
-                continue
-            for k in range(jj, b - 1):
-                skip = True; q = qslist[-1]
-                for l in range(shapes[k], shapes[k + 1]):
-                    if sqrt((q[0] - qs[l, 0])**2 + (q[1] - qs[l, 1])**2 + (q[2] - qs[l, 2])**2) < dk:
-                        skip = False; qslist.append(qs[l]); idxs.append(l)
-                if skip: break
-            qsum = np.copy(qslist[0])
-            for q in qslist[1:]:
-                qsum += q
-            out[count] = qsum / len(qslist); count += 1
-        return out[:count]
-
-    def __getitem__(self, index): return self.strkslist[index]
+    def __getitem__(self, index):
+        return self.strks_list[index]
 
     def __iter__(self):
-        for strks in self.strkslist: yield strks
+        for strks in self.strks_list:
+            yield strks
 
-    def rec_vectors(self, axis, thetas, pix_size, det_dist):
+    def rec_vectors(self, exp_set, thetas, pixels):
+        """
+        Return reciprocal vectors of detected diffraction streaks in rotational scan.
+
+        exp_set - ExperimentSettings class object
+        thetas - angles of rotation
+        counts - detected streaks counts for every frame
+        pixels - pixel distance between two adjacent streaks considered to be collapsed
+        """
         qs_list = []
         for strks, theta in zip(iter(self), thetas):
-            k_x = np.arctan(pix_size * strks.radii / det_dist) * np.cos(strks.angles)
-            k_y = np.arctan(pix_size * strks.radii / det_dist) * np.sin(strks.angles)
-            rotm = utils.rotation_matrix(axis, theta)
-            q_x, q_y, q_z = utils.rotate(rotm, k_x, k_y, np.sqrt(1 - k_x**2 - k_y**2) - 1)
-            qs_list.append(np.stack((q_x, q_y, q_z), axis=1))
-        return ReciprocalPeaks(np.concatenate(qs_list))
+            rot_m = exp_set.rotation_matrix(theta)
+            rec_vec = exp_set.rec_project(radii=strks.radii, angles=strks.angles)
+            qs_list.append(rec_vec.dot(rot_m.T))
+        return ReciprocalPeaks(rec_vec=np.concatenate(qs_list),
+                               exp_set=exp_set,
+                               counts=self.shapes,
+                               pixels=pixels)
 
-    def index_vectors(self, axis, thetas, pix_size, det_dist):
+    def index_vectors(self, exp_set, thetas, pixels):
+        """
+        Return reciprocal vectors of indexing points in rotational scan.
+
+        exp_set - ExperimentSettings class object
+        thetas - angles of rotation
+        counts - detected streaks counts for every frame
+        pixels - pixel distance between two adjacent streaks considered to be collapsed
+        """
         qs_list = []
         for strks, theta in zip(iter(self), thetas):
-            xs, ys = strks.index_pts()
-            radii = np.sqrt(xs**2 + ys**2)
-            angles = np.arctan2(ys, xs)
-            k_x = np.arctan(pix_size * radii / det_dist) * np.cos(angles)
-            k_y = np.arctan(pix_size * radii / det_dist) * np.sin(angles)
-            rotm = utils.rotation_matrix(axis, theta)
-            q_x, q_y, q_z = utils.rotate(rotm, k_x, k_y, np.sqrt(1 - k_x**2 - k_y**2) - 1)
-            qs_list.append(np.stack((q_x, q_y, q_z), axis=1))
-        return ReciprocalPeaks(np.concatenate(qs_list))
-
-    def refined_rec_vectors(self, axis, thetas, pix_size, det_dist, dk):
-        _qs = self.rec_vectors(axis, thetas, pix_size, det_dist).qs
-        return ReciprocalPeaks(ScanStreaks._refiner(_qs, self.shapes, dk))
-
-    def refined_index_vectors(self, axis, thetas, pix_size, det_dist, dk):
-        _qs = self.index_vectors(axis, thetas, pix_size, det_dist).qs
-        return ReciprocalPeaks(ScanStreaks._refiner(_qs, self.shapes, dk))
-
-    def save(self, data, outfile):
-        lines_group = outfile.create_group('bragg_lines')
-        ints_group = outfile.create_group('bragg_intensities')
-        for idx, (streaks, frame) in enumerate(zip(iter(self), data)):
-            lines_group.create_dataset(str(idx), data=streaks.lines)
-            ints_group.create_dataset(str(idx), data=streaks.intensities(frame))
+            det_x, det_y = strks.index_pts()
+            radii = np.sqrt(det_x**2 + det_y**2)
+            angles = np.arctan2(det_y, det_x)
+            rot_m = exp_set.rotation_matrix(theta)
+            rec_vec = exp_set.rec_project(radii=radii, angles=angles)
+            qs_list.append(rec_vec.dot(rot_m.T))
+        return ReciprocalPeaks(rec_vec=np.concatenate(qs_list),
+                               exp_set=exp_set,
+                               counts=self.shapes,
+                               pixels=pixels)
 
 class ReciprocalPeaks(object):
-    def __init__(self, qs):
-        self.qs = qs
+    """
+    Diffraction peaks in reciprocal space class
+
+    rec_vec - reciprocal vectors
+    exp_set - ExperimentSettings class object
+    counts - detected streaks counts for every frame
+    pixels - pixel distance between two adjacent streaks considered to be collapsed
+    """
+    def __init__(self, rec_vec, exp_set, counts, pixels):
+        self.rec_vec = ReciprocalPeaks._refiner(qs=rec_vec,
+                                                counts=counts,
+                                                dk=exp_set.pixtoq(pixels))
+        self.exp_set = exp_set
+
+    @property
+    def range(self):
+        return self.rec_vec.max(axis=0) - self.rec_vec.min(axis=0)
 
     @staticmethod
-    @nb.njit(nb.uint64[:, :, :](nb.float64[:,:], nb.float64, nb.int64), parallel=True)
-    def _corgrid_func(qs, q_max, size):
+    @nb.njit(nb.float64[:, :](nb.float64[:, :], nb.int64[:], nb.float64))
+    def _refiner(qs, counts, dk):
+        b = len(counts)
+        out = np.empty(qs.shape, dtype=np.float64)
+        idxs = []
+        jj = 0
+        count = 0
+        for i in range(counts[b - 2]):
+            if i == counts[jj]:
+                jj += 1
+            if i in idxs:
+                continue
+            qs_list = []
+            for j in range(counts[jj], counts[jj + 1]):
+                if sqrt((qs[i, 0] - qs[j, 0])**2 + (qs[i, 1] - qs[j, 1])**2 + (qs[i, 2] - qs[j, 2])**2) < dk:
+                    qs_list.append(qs[i])
+                    idxs.append(i)
+                    break
+            else:
+                out[count] = qs[i]
+                count += 1
+                continue
+            for k in range(jj, b - 1):
+                skip = True
+                q = qs_list[-1]
+                for l in range(counts[k], counts[k + 1]):
+                    if sqrt((q[0] - qs[l, 0])**2 + (q[1] - qs[l, 1])**2 + (q[2] - qs[l, 2])**2) < dk:
+                        skip = False
+                        qs_list.append(qs[l])
+                        idxs.append(l)
+                if skip:
+                    break
+            qsum = np.copy(qs_list[0])
+            for q in qs_list[1:]:
+                qsum += q
+            out[count] = qsum / len(qs_list)
+            count += 1
+        return out[:count]
+
+    @staticmethod
+    @nb.njit(nb.uint64[:, :, :](nb.float64[:, :], nb.float64, nb.int64), parallel=True)
+    def _cor_grid(qs, q_max, size):
         a = qs.shape[0]
-        corgrid = np.zeros((size, size, size), dtype=np.uint64)
+        cor_grid = np.zeros((size, size, size), dtype=np.uint64)
         ks = np.linspace(-q_max, q_max, size)
         for i in nb.prange(a):
             for j in range(i + 1, a):
@@ -418,15 +614,11 @@ class ReciprocalPeaks(object):
                     ii = np.searchsorted(ks, dk[0])
                     jj = np.searchsorted(ks, dk[1])
                     kk = np.searchsorted(ks, dk[2])
-                    corgrid[ii, jj, kk] += 1
-        return corgrid
-
-    @property
-    def range(self):
-        return self.qs.max(axis=0) - self.qs.min(axis=0)    
+                    cor_grid[ii, jj, kk] += 1
+        return cor_grid
 
     @staticmethod
-    @nb.njit(nb.float64[:, :](nb.float64[:,:], nb.float64), parallel=True)
+    @nb.njit(nb.float64[:, :](nb.float64[:, :], nb.float64), parallel=True)
     def _cor_func(qs, q_max):
         a = qs.shape[0]
         cor = np.empty((int(a * (a - 1) / 2), 3), dtype=np.float64)
@@ -458,19 +650,36 @@ class ReciprocalPeaks(object):
         return grid
 
     def correlation_grid(self, q_max, size):
-        return ReciprocalPeaks._corgrid_func(self.qs, q_max, size)
+        return ReciprocalPeaks._cor_grid(self.rec_vec, q_max, size)
 
     def correlation(self, q_max):
-        return ReciprocalPeaks._cor_func(self.qs, q_max)
+        return ReciprocalPeaks._cor_func(self.rec_vec, q_max)
 
     def grid(self, size):
-        return ReciprocalPeaks._grid(self.qs, size)
+        return ReciprocalPeaks._grid(self.rec_vec, size)
 
-    def save_pts(self, out_file):
-        out_file.create_dataset('rec_vectors', data=self.qs)
+    def save(self, out_file):
+        """
+        Save reciprocal points to an HDF5 file
+
+        out_file - h5py file object
+        """
+        self.exp_set.save(out_file)
+        out_file.create_dataset('rec_vectors', data=self.rec_vec)
+
+    def save_txt(self, filename):
+        """
+        Save reciprocal points to a text file
+
+        filename - output text filename
+        """
+        pass
 
 @nb.njit(nb.float64[:, :](nb.float64[:, :]))
 def NMS(image):
+    """
+    Apply Non-maximal supression algorithm to an image
+    """
     a, b = image.shape
     res = np.zeros((a, b), dtype=np.float64)
     for i in range(1, a - 1):

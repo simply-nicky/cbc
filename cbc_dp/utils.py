@@ -3,7 +3,6 @@ utils.py - Uitility constants and functions module
 """
 from math import sqrt, cos, sin
 import os
-import errno
 from multiprocessing import cpu_count
 import numpy as np
 import numba as nb
@@ -68,23 +67,4 @@ def rotation_matrix(axis, theta):
                      [2 * (_b * _d + _a * _c),
                       2 * (_c * _d - _a * _b),
                       _a * _a + _d * _d - _b * _b - _c * _c]])
-
-@nb.njit(nb.types.UniTuple(nb.float64[:], 3)(nb.float64[:, :],
-                                             nb.float64[:],
-                                             nb.float64[:],
-                                             nb.float64[:]), fastmath=True)
-def rotate(m, xs, ys, zs):
-    """
-    Rotate coordinates xs, ys, zs by rotational matrix m
-
-    m - rotational matrix
-    xs, ys, zs - coordinate arrays
-    """
-    new_xs = np.empty(xs.shape, dtype=np.float64)
-    new_ys = np.empty(ys.shape, dtype=np.float64)
-    new_zs = np.empty(zs.shape, dtype=np.float64)
-    for i in range(xs.size):
-        new_xs[i] = m[0, 0] * xs[i] + m[0, 1] * ys[i] + m[0, 2] * zs[i]
-        new_ys[i] = m[1, 0] * xs[i] + m[1, 1] * ys[i] + m[1, 2] * zs[i]
-        new_zs[i] = m[2, 0] * xs[i] + m[2, 1] * ys[i] + m[2, 2] * zs[i]
-    return new_xs, new_ys, new_zs
+    

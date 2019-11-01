@@ -46,6 +46,13 @@ class Viewer2D(QtGui.QMainWindow):
             app.exec_()
 
 class Grid(GLGraphicsItem):
+    """
+    Coordinates grid class for pyqtgraph package
+
+    size - grid size
+    color - grid color
+    antialias - flag to turn on antialiasing
+    """
     def __init__(self, size=None, color=None, antialias=True, glOptions='translucent'):
         GLGraphicsItem.__init__(self)
         self.setGLOptions(glOptions)
@@ -61,12 +68,17 @@ class Grid(GLGraphicsItem):
     def set_color(self, color):
         """
         Set the color of the grid. Arguments are the same as those accepted by
-        :func:`glColor <pyqtgraph.glColor>`.
+        pyqtgraph.glColor method
         """
         self.color = pg.glColor(color)
         self.update()
 
     def set_size(self, x=None, y=None, size=None):
+        """
+        Set grid size
+
+        x, y - grid size
+        """
         if size is not None:
             x = size.x()
             y = size.y()
@@ -74,6 +86,9 @@ class Grid(GLGraphicsItem):
         self.update()
 
     def size(self):
+        """
+        Return grid size
+        """
         return self.__size[:]
 
     def set_spacing(self, x=None, y=None, spacing=None):
@@ -87,6 +102,12 @@ class Grid(GLGraphicsItem):
         self.update()
 
     def set_grid(self, x=None, y=None, size=None, ratio=20):
+        """
+        Set grid size and spacing
+
+        x,y - grid size
+        ratio - overall grid to spacing ratio
+        """
         if size is not None:
             x = size.x()
             y = size.y()
@@ -94,9 +115,15 @@ class Grid(GLGraphicsItem):
         self.set_spacing(x / ratio, x / ratio)
 
     def spacing(self):
+        """
+        Return grid spacing
+        """
         return self.__spacing[:]
-        
+
     def paint(self):
+        """
+        Draw grid object
+        """
         self.setupGLState()
         if self.antialias:
             glEnable(GL_LINE_SMOOTH)
@@ -118,6 +145,14 @@ class Grid(GLGraphicsItem):
         glEnd()
 
 class Viewer3D(GLViewWidget):
+    """
+    Abstract 3D viewer
+
+    title - plot title
+    origin - axes origin
+    roi - viewer region of interest
+    size - viewer window size
+    """
     def __init__(self, title='Plot3D', origin=(0.0, 0.0, 0.0), roi=(1.0, 1.0, 1.0), size=(800, 600), parent=None):
         GLViewWidget.__init__(self, parent)
         self.resize(size[0], size[1])
@@ -127,6 +162,9 @@ class Viewer3D(GLViewWidget):
         self.make_grid()
         
     def make_grid(self):
+        """
+        Draw axes grid
+        """
         self.gx = Grid(color=(255, 255, 255, 50))
         self.gx.set_grid(self.roi[0], self.roi[2])
         self.gx.rotate(90, 1, 0, 0)
@@ -143,6 +181,9 @@ class Viewer3D(GLViewWidget):
         self.addItem(self.gz)
 
     def set_grid(self, origin, roi):
+        """
+        Set axes grid origin and region of interest
+        """
         self.gx.translate(origin[0] - self.origin[0], origin[1] - self.origin[1], origin[2] - self.origin[2])
         self.gx.set_grid(roi[0], roi[2])
         self.gy.translate(origin[0] - self.origin[0], origin[1] - self.origin[1], origin[2] - self.origin[2])
@@ -151,12 +192,18 @@ class Viewer3D(GLViewWidget):
         self.gz.set_grid(roi[0], roi[1])
 
     def set_grid_color(self, color):
+        """
+        Set axes grid color
+        """
         self.gx.set_color(color)
         self.gy.set_color(color)
         self.gz.set_color(color)
         self.update()
 
     def set_camera(self):
+        """
+        Set viewer camera position
+        """
         self.opts['center'] = QtGui.QVector3D(self.origin[0] + self.roi[0] / 2,
                                               self.origin[1] + self.roi[1] / 2,
                                               self.origin[2] + self.roi[2] / 2)
@@ -164,6 +211,14 @@ class Viewer3D(GLViewWidget):
         self.update()
 
 class ScatterViewer(Viewer3D):
+    """
+    3D scatter data viewer class
+
+    title - plot title
+    origin - axes origin
+    roi - viewer region of interest
+    size - viewer window size    
+    """
     def __init__(self, title='Scatter Plot', origin=(0.0, 0.0, 0.0), roi=(1.0, 1.0, 1.0), size=(800, 600), parent=None):
         Viewer3D.__init__(self, title, origin, roi, size, parent)
         self.s_p = gl.GLScatterPlotItem()
@@ -175,7 +230,7 @@ class ScatterViewer(Viewer3D):
         Update the data displayed by this item. All arguments are optional.
         For example, it is allowed to update spot positions while leaving
         colors unchanged, etc.
-        
+
         ====================  ==================================================
         **Arguments:**
         pos                   (N,3) array of floats specifying point locations.
@@ -195,6 +250,14 @@ class ScatterViewer(Viewer3D):
         self.set_camera()
 
 class VolumeViewer(Viewer3D):
+    """
+    3D volumetric data viewer class
+
+    title - plot title
+    origin - axes origin
+    roi - viewer region of interest
+    size - viewer window size    
+    """
     def __init__(self, title='Volume Plot', origin=(0.0, 0.0, 0.0), roi=(1.0, 1.0, 1.0), size=(800, 600), parent=None):
         Viewer3D.__init__(self, title, origin, roi, size, parent)
         self.v_i = gl.GLVolumeItem(data=None)
@@ -217,6 +280,13 @@ class VolumeViewer(Viewer3D):
         self.set_camera()
 
 def vol_data(data, col=np.array([255, 255, 255]), alpha=1.0):
+    """
+    Generate volumetric data from 3d numpy array
+
+    data - numpy array
+    col - volumetric data color
+    alpha - data transparency (0.0 - 1.0)
+    """
     voldata = np.empty(data.shape + (4,), dtype=np.ubyte)
     adata = np.log(data - data.min() + 1)
     voldata[..., 0:3] = col
