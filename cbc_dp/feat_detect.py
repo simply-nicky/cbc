@@ -501,13 +501,27 @@ class ScanStreaks(object):
         for strks in self.strks_list:
             yield strks
 
-    def rec_vectors(self, exp_set, thetas, pixels):
+    def rec_vectors(self, exp_set, thetas):
         """
         Return reciprocal vectors of detected diffraction streaks in rotational scan.
 
         exp_set - ExperimentSettings class object
         thetas - angles of rotation
-        counts - detected streaks counts for every frame
+        """
+        qs_list = []
+        for strks, theta in zip(iter(self), thetas):
+            rot_m = exp_set.rotation_matrix(theta)
+            rec_vec = exp_set.rec_project(radii=strks.radii, angles=strks.angles)
+            qs_list.append(rec_vec.dot(rot_m.T))
+        return RecVectors(rec_vec=np.concatenate(qs_list),
+                          exp_set=exp_set)
+
+    def ref_rec_vectors(self, exp_set, thetas, pixels):
+        """
+        Return refined reciprocal vectors of detected diffraction streaks in rotational scan.
+
+        exp_set - ExperimentSettings class object
+        thetas - angles of rotation
         pixels - pixel distance between two adjacent streaks considered to be collapsed
         """
         qs_list = []
@@ -515,18 +529,35 @@ class ScanStreaks(object):
             rot_m = exp_set.rotation_matrix(theta)
             rec_vec = exp_set.rec_project(radii=strks.radii, angles=strks.angles)
             qs_list.append(rec_vec.dot(rot_m.T))
-        return ReciprocalPeaks(rec_vec=np.concatenate(qs_list),
-                               exp_set=exp_set,
-                               counts=self.shapes,
-                               pixels=pixels)
+        return RefinedRecVectors(rec_vec=np.concatenate(qs_list),
+                                 exp_set=exp_set,
+                                 counts=self.shapes,
+                                 pixels=pixels)
 
-    def index_vectors(self, exp_set, thetas, pixels):
+    def index_vectors(self, exp_set, thetas):
         """
         Return reciprocal vectors of indexing points in rotational scan.
 
         exp_set - ExperimentSettings class object
         thetas - angles of rotation
-        counts - detected streaks counts for every frame
+        """
+        qs_list = []
+        for strks, theta in zip(iter(self), thetas):
+            det_x, det_y = strks.index_pts()
+            radii = np.sqrt(det_x**2 + det_y**2)
+            angles = np.arctan2(det_y, det_x)
+            rot_m = exp_set.rotation_matrix(theta)
+            rec_vec = exp_set.rec_project(radii=radii, angles=angles)
+            qs_list.append(rec_vec.dot(rot_m.T))
+        return RecVectors(rec_vec=np.concatenate(qs_list),
+                          exp_set=exp_set)
+
+    def ref_index_vectors(self, exp_set, thetas, pixels):
+        """
+        Return refined reciprocal vectors of indexing points in rotational scan.
+
+        exp_set - ExperimentSettings class object
+        thetas - angles of rotation
         pixels - pixel distance between two adjacent streaks considered to be collapsed
         """
         qs_list = []
@@ -537,69 +568,24 @@ class ScanStreaks(object):
             rot_m = exp_set.rotation_matrix(theta)
             rec_vec = exp_set.rec_project(radii=radii, angles=angles)
             qs_list.append(rec_vec.dot(rot_m.T))
-        return ReciprocalPeaks(rec_vec=np.concatenate(qs_list),
-                               exp_set=exp_set,
-                               counts=self.shapes,
-                               pixels=pixels)
+        return RefinedRecVectors(rec_vec=np.concatenate(qs_list),
+                                 exp_set=exp_set,
+                                 counts=self.shapes,
+                                 pixels=pixels)
 
-class ReciprocalPeaks(object):
+class RecVectors(object):
     """
     Diffraction peaks in reciprocal space class
 
     rec_vec - reciprocal vectors
     exp_set - ExperimentSettings class object
-    counts - detected streaks counts for every frame
-    pixels - pixel distance between two adjacent streaks considered to be collapsed
     """
-    def __init__(self, rec_vec, exp_set, counts, pixels):
-        self.rec_vec = ReciprocalPeaks._refiner(qs=rec_vec,
-                                                counts=counts,
-                                                dk=exp_set.pixtoq(pixels))
-        self.exp_set = exp_set
+    def __init__(self, rec_vec, exp_set):
+        self.rec_vec, self.exp_set = rec_vec, exp_set
 
     @property
     def range(self):
         return self.rec_vec.max(axis=0) - self.rec_vec.min(axis=0)
-
-    @staticmethod
-    @nb.njit(nb.float64[:, :](nb.float64[:, :], nb.int64[:], nb.float64))
-    def _refiner(qs, counts, dk):
-        b = len(counts)
-        out = np.empty(qs.shape, dtype=np.float64)
-        idxs = []
-        jj = 0
-        count = 0
-        for i in range(counts[b - 2]):
-            if i == counts[jj]:
-                jj += 1
-            if i in idxs:
-                continue
-            qs_list = []
-            for j in range(counts[jj], counts[jj + 1]):
-                if sqrt((qs[i, 0] - qs[j, 0])**2 + (qs[i, 1] - qs[j, 1])**2 + (qs[i, 2] - qs[j, 2])**2) < dk:
-                    qs_list.append(qs[i])
-                    idxs.append(i)
-                    break
-            else:
-                out[count] = qs[i]
-                count += 1
-                continue
-            for k in range(jj, b - 1):
-                skip = True
-                q = qs_list[-1]
-                for l in range(counts[k], counts[k + 1]):
-                    if sqrt((q[0] - qs[l, 0])**2 + (q[1] - qs[l, 1])**2 + (q[2] - qs[l, 2])**2) < dk:
-                        skip = False
-                        qs_list.append(qs[l])
-                        idxs.append(l)
-                if skip:
-                    break
-            qsum = np.copy(qs_list[0])
-            for q in qs_list[1:]:
-                qsum += q
-            out[count] = qsum / len(qs_list)
-            count += 1
-        return out[:count]
 
     @staticmethod
     @nb.njit(nb.uint64[:, :, :](nb.float64[:, :], nb.float64, nb.int64), parallel=True)
@@ -650,13 +636,13 @@ class ReciprocalPeaks(object):
         return grid
 
     def correlation_grid(self, q_max, size):
-        return ReciprocalPeaks._cor_grid(self.rec_vec, q_max, size)
+        return RecVectors._cor_grid(self.rec_vec, q_max, size)
 
     def correlation(self, q_max):
-        return ReciprocalPeaks._cor_func(self.rec_vec, q_max)
+        return RecVectors._cor_func(self.rec_vec, q_max)
 
     def grid(self, size):
-        return ReciprocalPeaks._grid(self.rec_vec, size)
+        return RecVectors._grid(self.rec_vec, size)
 
     def save(self, out_file):
         """
@@ -674,6 +660,61 @@ class ReciprocalPeaks(object):
         filename - output text filename
         """
         pass
+
+class RefinedRecVectors(RecVectors):
+    """
+    Refined diffraction peaks in reciprocal space class
+
+    rec_vec - reciprocal vectors
+    exp_set - ExperimentSettings class object
+    counts - detected streaks counts for every frame
+    pixels - pixel distance between two adjacent streaks considered to be collapsed
+    """
+    def __init__(self, rec_vec, exp_set, counts, pixels):
+        super(RefinedRecVectors, self).__init__(rec_vec, exp_set)
+        self.rec_vec = ReciprocalPeaks._refiner(qs=self.rec_vec,
+                                        counts=counts,
+                                        dk=exp_set.pixtoq(pixels))
+
+    @staticmethod
+    @nb.njit(nb.float64[:, :](nb.float64[:, :], nb.int64[:], nb.float64))
+    def _refiner(qs, counts, dk):
+        b = len(counts)
+        out = np.empty(qs.shape, dtype=np.float64)
+        idxs = []
+        jj = 0
+        count = 0
+        for i in range(counts[b - 2]):
+            if i == counts[jj]:
+                jj += 1
+            if i in idxs:
+                continue
+            qs_list = []
+            for j in range(counts[jj], counts[jj + 1]):
+                if sqrt((qs[i, 0] - qs[j, 0])**2 + (qs[i, 1] - qs[j, 1])**2 + (qs[i, 2] - qs[j, 2])**2) < dk:
+                    qs_list.append(qs[i])
+                    idxs.append(i)
+                    break
+            else:
+                out[count] = qs[i]
+                count += 1
+                continue
+            for k in range(jj, b - 1):
+                skip = True
+                q = qs_list[-1]
+                for l in range(counts[k], counts[k + 1]):
+                    if sqrt((q[0] - qs[l, 0])**2 + (q[1] - qs[l, 1])**2 + (q[2] - qs[l, 2])**2) < dk:
+                        skip = False
+                        qs_list.append(qs[l])
+                        idxs.append(l)
+                if skip:
+                    break
+            qsum = np.copy(qs_list[0])
+            for q in qs_list[1:]:
+                qsum += q
+            out[count] = qsum / len(qs_list)
+            count += 1
+        return out[:count]
 
 @nb.njit(nb.float64[:, :](nb.float64[:, :]))
 def NMS(image):
