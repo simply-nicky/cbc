@@ -1,18 +1,16 @@
 """
 feat_detect.py - feature detection on convergent diffraction pattern module
 """
-import numpy as np
-import numba as nb
-import concurrent.futures
-from . import utils
-from math import sqrt, sin, cos, pi, atan2
+from math import sqrt, pi, atan2
 from itertools import accumulate
 from operator import add
-from multiprocessing import cpu_count
+from abc import ABCMeta, abstractmethod, abstractproperty
+import numpy as np
+import numba as nb
 from skimage.transform import probabilistic_hough_line
 from skimage.draw import line_aa
 from cv2 import createLineSegmentDetector
-from abc import ABCMeta, abstractmethod, abstractproperty
+from . import utils
 
 class ABCPropagator(object, metaclass=ABCMeta):
     """
@@ -68,7 +66,7 @@ class ABCPropagator(object, metaclass=ABCMeta):
         Return reciprocal lattice points that take part in diffracton
         """
         return self.q_x, self.q_y, self.q_z, self.q_abs
-    
+
     def source_pts(self):
         """
         Return source points that define incoming wavevectors for given reciprocal lattice
@@ -203,7 +201,7 @@ class LineDetector(object, metaclass=ABCMeta):
     """
     @staticmethod
     @abstractmethod
-    def _refiner(lines, angles, rs, taus, drtau, drn):
+    def _refiner(lines, angles, radii, taus, drtau, drn):
         pass
 
     @abstractmethod
@@ -222,13 +220,14 @@ class LineDetector(object, metaclass=ABCMeta):
         drtau - tangent detection error
         drn - radial detection error
         """
-        lines = FrameStreaks(self.det_frame_raw(frame), zero)
-        return FrameStreaks(type(self)._refiner(lines.lines,
-                                                lines.angles,
-                                                lines.radii,
-                                                lines.taus,
-                                                drtau,
-                                                drn), zero)
+        frame_strks = FrameStreaks(self.det_frame_raw(frame), zero)
+        pts = frame_strks.dlines.mean(axis=1)
+        angles = np.arctan2(pts[:, 1], pts[:, 0])
+        radii = np.sqrt(np.sum(pts**2, axis=1))
+        ref_lines = type(self)._refiner(lines=frame_strks.lines, angles=angles,
+                                        radii=radii, taus=frame_strks.taus,
+                                        drtau=drtau, drn=drn)
+        return FrameStreaks(ref_lines, zero)
 
     def det_scan_raw(self, scan):
         """
@@ -257,7 +256,7 @@ class HoughLineDetector(LineDetector):
     dth - angle parameter spacing
     """
     def __init__(self, threshold, line_length, line_gap, dth):
-        self.trhd, self.ll, self.lg = threshold, line_length, line_gap
+        self.threshold, self.line_length, self.line_gap = threshold, line_length, line_gap
         self.thetas = np.linspace(-np.pi / 2, np.pi / 2, int(np.pi / dth), endpoint=True)
 
     @staticmethod
@@ -267,36 +266,43 @@ class HoughLineDetector(LineDetector):
                                nb.float64[:, :],
                                nb.float64,
                                nb.float64))
-    def _refiner(lines, angles, rs, taus, drtau, drn):
-        newlines = np.empty(lines.shape, dtype=np.int64)
+    def _refiner(lines, angles, radii, taus, drtau, drn):
+        new_lines = np.empty(lines.shape, dtype=np.int64)
         idxs = []
         count = 0
         for idx in range(lines.shape[0]):
             if idx not in idxs:
-                newline = np.empty((2, 2), dtype=np.float64)
+                new_line = np.empty((2, 2), dtype=np.int64)
                 proj0 = lines[idx, 0, 0] * taus[idx, 0] + lines[idx, 0, 1] * taus[idx, 1]
                 proj1 = lines[idx, 1, 0] * taus[idx, 0] + lines[idx, 1, 1] * taus[idx, 1]
-                if proj0 < proj1: newline[0] = lines[idx, 0]; newline[1] = lines[idx, 1]
-                else: newline[0] = lines[idx, 1]; newline[1] = lines[idx, 0]
+                if proj0 < proj1:
+                    new_line = lines[idx]
+                else:
+                    new_line = lines[idx, ::-1]
                 for idx2 in range(lines.shape[0]):
-                    if idx == idx2: continue
-                    elif abs((angles[idx] - angles[idx2]) * rs[idx]) < drtau and abs(rs[idx] - rs[idx2]) < drn:
+                    if idx == idx2:
+                        continue
+                    elif abs((angles[idx] - angles[idx2]) * radii[idx]) < drtau and abs(radii[idx] - radii[idx2]) < drn:
                         idxs.append(idx2)
                         proj20 = lines[idx2, 0, 0] * taus[idx, 0] + lines[idx2, 0, 1] * taus[idx, 1]
                         proj21 = lines[idx2, 1, 0] * taus[idx, 0] + lines[idx2, 1, 1] * taus[idx, 1]
-                        if proj20 < proj0: newline[0] = lines[idx2, 0]
-                        elif proj20 > proj1: newline[1] = lines[idx2, 0]
-                        if proj21 < proj0: newline[0] = lines[idx2, 1]
-                        elif proj21 > proj1: newline[1] = lines[idx2, 1]           
-                newlines[count] = newline
+                        if proj20 < proj0:
+                            new_line[0] = lines[idx2, 0]
+                        elif proj20 > proj1:
+                            new_line[1] = lines[idx2, 0]
+                        if proj21 < proj0:
+                            new_line[0] = lines[idx2, 1]
+                        elif proj21 > proj1:
+                            new_line[1] = lines[idx2, 1]
+                new_lines[count] = new_line
                 count += 1
-        return newlines[:count]
+        return new_lines[:count]
 
     def _detector(self, frame):
         return probabilistic_hough_line(frame,
-                                        threshold=self.trhd,
-                                        line_length=self.ll,
-                                        line_gap=self.lg,
+                                        threshold=self.threshold,
+                                        line_length=self.line_length,
+                                        line_gap=self.line_gap,
                                         theta=self.thetas)
 
 class LineSegmentDetector(LineDetector):
@@ -307,7 +313,7 @@ class LineSegmentDetector(LineDetector):
     sigma_scale - the sigma of gaussian filter
     lag_eps - detection threshold
 
-    To read about the underlying theare see the article:
+    To read about the underlying theory see the article:
     http://www.ipol.im/pub/art/2012/gjmr-lsd/?utm_source=doi
     """
     def __init__(self, scale=0.8, sigma_scale=0.6, log_eps=0):
@@ -322,32 +328,35 @@ class LineSegmentDetector(LineDetector):
                                  nb.float64[:, :],
                                  nb.float64,
                                  nb.float64))
-    def _refiner(lines, angles, rs, taus, drtau, drn):
-        lsdlines = np.empty(lines.shape, dtype=np.float64)
+    def _refiner(lines, angles, radii, taus, drtau, drn):
+        lsd_lines = np.empty(lines.shape, dtype=np.float64)
         idxs = []
         count = 0
         for idx in range(lines.shape[0]):
             if idx not in idxs:
-                newline = np.empty((2, 2), dtype=np.float64)
+                new_line = np.empty((2, 2), dtype=np.float64)
                 proj0 = lines[idx, 0, 0] * taus[idx, 0] + lines[idx, 0, 1] * taus[idx, 1]
                 proj1 = lines[idx, 1, 0] * taus[idx, 0] + lines[idx, 1, 1] * taus[idx, 1]
-                if proj0 < proj1: newline[0] = lines[idx, 0]; newline[1] = lines[idx, 1]
-                else: newline[0] = lines[idx, 1]; newline[1] = lines[idx, 0]
+                if proj0 < proj1:
+                    new_line = lines[idx]
+                else:
+                    new_line[0] = lines[idx, ::-1]
                 for idx2 in range(lines.shape[0]):
-                    if idx == idx2: continue
-                    elif abs((angles[idx] - angles[idx2]) * rs[idx]) < drtau and abs(rs[idx] - rs[idx2]) < drn:
+                    if idx == idx2:
+                        continue
+                    elif abs((angles[idx] - angles[idx2]) * radii[idx]) < drtau and abs(radii[idx] - radii[idx2]) < drn:
                         idxs.append(idx2)
                         proj20 = lines[idx2, 0, 0] * taus[idx, 0] + lines[idx2, 0, 1] * taus[idx, 1]
                         proj21 = lines[idx2, 1, 0] * taus[idx, 0] + lines[idx2, 1, 1] * taus[idx, 1]
                         if proj20 < proj21:
-                            newline[0] = (lines[idx2, 0] + newline[0]) / 2
-                            newline[1] = (lines[idx2, 1] + newline[1]) / 2
+                            new_line[0] = (lines[idx2, 0] + new_line[0]) / 2
+                            new_line[1] = (lines[idx2, 1] + new_line[1]) / 2
                         else:
-                            newline[0] = (lines[idx2, 1] + newline[0]) / 2
-                            newline[1] = (lines[idx2, 0] + newline[1]) / 2
-                lsdlines[count] = newline
+                            new_line[0] = (lines[idx2, 1] + new_line[0]) / 2
+                            new_line[1] = (lines[idx2, 0] + new_line[1]) / 2
+                lsd_lines[count] = new_line
                 count += 1
-        return lsdlines[:count]
+        return lsd_lines[:count]
 
     def _detector(self, frame):
         cap = np.mean(frame[frame != 0]) + np.std(frame[frame != 0])
@@ -364,27 +373,26 @@ class FrameStreaks(object):
     def __init__(self, lines, zero):
         self.lines, self.zero = lines, zero
         self.dlines = lines - zero
-        self.pts = self.dlines.mean(axis=1)
 
     @property
     def size(self):
         return self.lines.shape[0]
 
     @property
-    def xs(self):
-        return self.pts[:, 0]
+    def x_coord(self):
+        return self.dlines[..., 0]
 
     @property
-    def ys(self):
-        return self.pts[:, 1]
+    def y_coord(self):
+        return self.dlines[..., 1]
 
     @property
     def radii(self):
-        return np.sqrt(self.xs**2 + self.ys**2)
+        return np.sqrt(self.x_coord**2 + self.y_coord**2)
 
     @property
     def angles(self):
-        return np.arctan2(self.ys, self.xs)
+        return np.arctan2(self.y_coord, self.x_coord)
 
     @property
     def taus(self):
@@ -399,8 +407,8 @@ class FrameStreaks(object):
         """
         Return indexing points
         """
-        ts = self.dlines[:, 0, 1] * self.taus[:, 0] - self.dlines[:, 0, 0] * self.taus[:, 1]
-        return -self.taus[:, 1] * ts + self.zero[0], self.taus[:, 0] * ts + self.zero[1]
+        products = self.dlines[:, 0, 1] * self.taus[:, 0] - self.dlines[:, 0, 0] * self.taus[:, 1]
+        return -self.taus[:, 1] * products + self.zero[0], self.taus[:, 0] * products + self.zero[1]
 
     def intensities(self, raw_data):
         """
@@ -427,6 +435,29 @@ class FrameStreaks(object):
             rows, columns, val = line_aa(line[0, 1], line[0, 0], line[1, 1], line[1, 0])
             noise.append(np.abs(background[rows, columns] * val).sum())
         return signal / np.array(noise)
+
+    def rec_vectors(self, exp_set, theta):
+        """
+        Return reciprocal vectors of detected diffraction streaks.
+
+        exp_set - ExperimentSettings class object
+        theta - angle of rotation
+        """
+        rot_m = exp_set.rotation_matrix(theta)
+        rec_vec = exp_set.rec_project(det_pts=self.lines.mean(axis=1), zero=self.zero)
+        return rec_vec.dot(rot_m.T)
+
+    def index_vectors(self, exp_set, theta):
+        """
+        Return reciprocal points of indexing points.
+
+        exp_set - ExperimentSettings class object
+        theta - angle of rotation
+        """
+        index_pts = self.index_pts()
+        rot_m = exp_set.rotation_matrix(theta)
+        rec_vec = exp_set.rec_project(det_pts=index_pts, zero=self.zero)
+        return rec_vec.dot(rot_m.T)
 
 class ExperimentSettings(object):
     """
@@ -458,17 +489,19 @@ class ExperimentSettings(object):
         """
         return rec_vec / self.wavelength
 
-    def rec_project(self, radii, angles):
+    def rec_project(self, det_pts, zero):
         """
         Project detected diffraction streaks to reciprocal space vectors in [a.u.]
 
-        radii - streak radii relative to zero point
-        angles - streak angles relative to zero point
+        det_pts - detector points: [fs, ss]
+        zero - zero output wavevector
         """
-        thetas = np.arctan(self.pix_size * radii / self.det_dist)
+        pts = det_pts - zero
+        angles = np.arctan2(pts[:, 1], pts[:, 0])
+        thetas = np.arctan(self.pix_size * np.sqrt(pts[:, 0]**2 + pts[:, 1]**2) / self.det_dist)
         q_x = thetas * np.cos(angles)
         q_y = thetas * np.sin(angles)
-        return np.stack((q_x, q_y, np.sqrt(1 - q_x**2 - q_y**2) - 1), axis=1)
+        return np.stack((q_x, q_y, np.sqrt(1 - q_x**2 - q_y**2) - 1), axis=-1)
 
     def save(self, out_file):
         """
@@ -487,9 +520,23 @@ class ScanStreaks(FrameStreaks):
     strks_list - detected lines FrameStreaks class object list
     """
     def __init__(self, strks_list):
-        self.shapes = np.array(list(accumulate([strks.size for strks in strks_list], add)))
+        shapes = [0] + list(accumulate([strks.size for strks in strks_list], add))
+        self.shapes = np.array(shapes)
         lines = np.concatenate([strks.lines for strks in strks_list])
         super(ScanStreaks, self).__init__(lines, strks_list[0].zero)
+
+    def __getitem__(self, index):
+        starts = self.shapes[:-1][index]
+        stops = self.shapes[1:][index]
+        if isinstance(index, int):
+            return FrameStreaks(self.lines[starts:stops], self.zero)
+        else:
+            return ScanStreaks([FrameStreaks(self.lines[start:stop], self.zero)
+                                for start, stop in zip(starts, stops)])
+
+    def __iter__(self):
+        for idx in range(self.shapes.size - 1):
+            yield self.__getitem__(idx)
 
     def intensities(self, raw_data):
         """
@@ -497,12 +544,10 @@ class ScanStreaks(FrameStreaks):
 
         data - raw diffraction patterns
         """
-        start = 0
         ints = []
-        for frame, stop in zip(raw_data, self.shapes):
-            frame_ints = FrameStreaks(self.lines[start:stop], self.zero).intensities(frame)
+        for frame_strks, frame in zip(iter(self), raw_data):
+            frame_ints = frame_strks.intensities(frame)
             ints.append(frame_ints)
-            start = stop
         return np.concatenate(ints)
 
     def snr(self, raw_data, background):
@@ -512,33 +557,27 @@ class ScanStreaks(FrameStreaks):
         raw_data - raw diffraction pattern
         background - noise backgrounds
         """
-        start = 0
         snr_vals = []
-        for frame, bgd, stop in zip(raw_data, background, self.shapes):
-            frame_snr = FrameStreaks(self.lines[start:stop], self.zero).snr(frame, bgd)
+        for frame_strks, frame, bgd in zip(iter(self), raw_data, background):
+            frame_snr = frame_strks.snr(frame, bgd)
             snr_vals.append(frame_snr)
-            start = stop
         return np.concatenate(snr_vals)
 
-    def rec_vectors(self, exp_set, thetas):
+    def rec_vectors(self, exp_set, theta):
         """
         Return reciprocal vectors of detected diffraction streaks in rotational scan.
 
         exp_set - ExperimentSettings class object
-        thetas - angles of rotation
+        theta - angles of rotation
         """
         qs_list = []
-        start = 0
-        for stop, theta in zip(self.shapes, thetas):
-            rot_m = exp_set.rotation_matrix(theta)
-            rec_vec = exp_set.rec_project(radii=self.radii[start:stop],
-                                          angles=self.angles[start:stop])
-            qs_list.append(rec_vec.dot(rot_m.T))
-            start = stop
+        for frame_strks, theta_val in zip(iter(self), theta):
+            rec_vec = frame_strks.rec_vectors(theta_val)
+            qs_list.append(rec_vec)
         return RecVectors(rec_vec=np.concatenate(qs_list),
                           exp_set=exp_set)
 
-    def ref_rec_vectors(self, exp_set, thetas, pixels):
+    def ref_rec_vectors(self, exp_set, theta, pixels):
         """
         Return refined reciprocal vectors of detected diffraction streaks in rotational scan.
 
@@ -547,19 +586,15 @@ class ScanStreaks(FrameStreaks):
         pixels - pixel distance between two adjacent streaks considered to be collapsed
         """
         qs_list = []
-        start = 0
-        for stop, theta in zip(self.shapes, thetas):
-            rot_m = exp_set.rotation_matrix(theta)
-            rec_vec = exp_set.rec_project(radii=self.radii[start:stop],
-                                          angles=self.angles[start:stop])
-            qs_list.append(rec_vec.dot(rot_m.T))
-            start = stop
+        for frame_strks, theta_val in zip(iter(self), theta):
+            rec_vec = frame_strks.rec_vectors(theta_val)
+            qs_list.append(rec_vec)
         return RefinedRecVectors(rec_vec=np.concatenate(qs_list),
                                  exp_set=exp_set,
                                  counts=self.shapes,
                                  pixels=pixels)
 
-    def index_vectors(self, exp_set, thetas):
+    def index_vectors(self, exp_set, theta):
         """
         Return reciprocal vectors of indexing points in rotational scan.
 
@@ -567,19 +602,13 @@ class ScanStreaks(FrameStreaks):
         thetas - angles of rotation
         """
         qs_list = []
-        start = 0
-        det_x, det_y = self.index_pts()
-        for stop, theta in zip(self.shapes, thetas):
-            radii = np.sqrt(det_x[start:stop]**2 + det_y[start:stop]**2)
-            angles = np.arctan2(det_y[start:stop], det_x[start:stop])
-            rot_m = exp_set.rotation_matrix(theta)
-            rec_vec = exp_set.rec_project(radii=radii, angles=angles)
-            qs_list.append(rec_vec.dot(rot_m.T))
-            start = stop
+        for frame_strks, theta_val in zip(iter(self), theta):
+            rec_vec = frame_strks.index_vectors(theta_val)
+            qs_list.append(rec_vec)
         return RecVectors(rec_vec=np.concatenate(qs_list),
                           exp_set=exp_set)
 
-    def ref_index_vectors(self, exp_set, thetas, pixels):
+    def ref_index_vectors(self, exp_set, theta, pixels):
         """
         Return refined reciprocal vectors of indexing points in rotational scan.
 
@@ -588,15 +617,9 @@ class ScanStreaks(FrameStreaks):
         pixels - pixel distance between two adjacent streaks considered to be collapsed
         """
         qs_list = []
-        start = 0
-        det_x, det_y = self.index_pts()
-        for stop, theta in zip(self.shapes, thetas):
-            radii = np.sqrt(det_x[start:stop]**2 + det_y[start:stop]**2)
-            angles = np.arctan2(det_y[start:stop], det_x[start:stop])
-            rot_m = exp_set.rotation_matrix(theta)
-            rec_vec = exp_set.rec_project(radii=radii, angles=angles)
-            qs_list.append(rec_vec.dot(rot_m.T))
-            start = stop
+        for frame_strks, theta_val in zip(iter(self), theta):
+            rec_vec = frame_strks.index_vectors(theta_val)
+            qs_list.append(rec_vec)
         return RefinedRecVectors(rec_vec=np.concatenate(qs_list),
                                  exp_set=exp_set,
                                  counts=self.shapes,
@@ -611,6 +634,7 @@ class ScanStreaks(FrameStreaks):
         out_file - h5py file object
         """
         out_group = out_file.create_group('streaks')
+        out_group.create_dataset('counts', data=self.shapes)
         out_group.create_dataset('lines', data=self.lines)
         out_group.create_dataset('zero', data=self.zero)
         out_group.create_dataset('intensities', data=self.intensities(raw_data))
@@ -668,9 +692,12 @@ class RecVectors(object):
         xs = np.linspace(qs[:, 0].min(), qs[:, 0].max(), size)
         ys = np.linspace(qs[:, 1].min(), qs[:, 1].max(), size)
         zs = np.linspace(qs[:, 2].min(), qs[:, 2].max(), size)
-        xs[0] -= (xs[-1] - xs[0]) / 10; xs[-1] += (xs[-1] - xs[0]) / 10
-        ys[0] -= (ys[-1] - ys[0]) / 10; ys[-1] += (ys[-1] - ys[0]) / 10
-        zs[0] -= (zs[-1] - zs[0]) / 10; zs[-1] += (zs[-1] - zs[0]) / 10
+        xs[0] -= (xs[-1] - xs[0]) / 10
+        xs[-1] += (xs[-1] - xs[0]) / 10
+        ys[0] -= (ys[-1] - ys[0]) / 10
+        ys[-1] += (ys[-1] - ys[0]) / 10
+        zs[0] -= (zs[-1] - zs[0]) / 10
+        zs[-1] += (zs[-1] - zs[0]) / 10
         for i in nb.prange(a):
             ii = np.searchsorted(xs, qs[i, 0])
             jj = np.searchsorted(ys, qs[i, 1])
