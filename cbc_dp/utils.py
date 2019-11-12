@@ -1,10 +1,11 @@
 """
 utils.py - Uitility constants and functions module
 """
-from math import sqrt, cos, sin
+from math import sqrt, cos, sin, atan2
 import os
 from multiprocessing import cpu_count
 import numpy as np
+import numba as nb
 import h5py
 from cv2 import cvtColor, COLOR_BGR2GRAY
 
@@ -66,4 +67,54 @@ def rotation_matrix(axis, theta):
                      [2 * (_b * _d + _a * _c),
                       2 * (_c * _d - _a * _b),
                       _a * _a + _d * _d - _b * _b - _c * _c]])
-    
+
+@nb.njit(nb.float64[:, :](nb.float64[:, :]))
+def nonmax_supression(image):
+    """
+    Apply Non-maximal supression algorithm to an image
+    """
+    a, b = image.shape
+    res = np.zeros((a, b), dtype=np.float64)
+    for i in range(1, a - 1):
+        for j in range(1, b - 1):
+            phase = atan2(image[i + 1, j] - image[i - 1, j], image[i, j+1] - image[i, j - 1])
+            if (phase >= 0.875 * np.pi or phase < -0.875 * np.pi) or (phase >= -0.125 * np.pi and phase < 0.125 * np.pi):
+                if image[i, j] >= image[i, j + 1] and image[i, j] >= image[i, j - 1]:
+                    res[i, j] = image[i, j]
+            if (phase >= 0.625 * np.pi and phase < 0.875 * np.pi) or (phase >= -0.375 * np.pi and phase < -0.125 * np.pi):
+                if image[i, j] >= image[i - 1, j + 1] and image[i, j] >= image[i + 1, j - 1]:
+                    res[i, j] = image[i, j]
+            if (phase >= 0.375 * np.pi and phase < 0.625 * np.pi) or (phase >= -0.625 * np.pi and phase < -0.375 * np.pi):
+                if image[i, j] >= image[i - 1, j] and image[i, j] >= image[i + 1, j]:
+                    res[i, j] = image[i, j]
+            if (phase >= 0.125 * np.pi and phase < 0.375 * np.pi) or (phase >= -0.875 * np.pi and phase < -0.625 * np.pi):
+                if image[i, j] >= image[i - 1, j - 1] and image[i, j] >= image[i + 1, j + 1]:
+                    res[i, j] = image[i, j]
+    return res
+
+@nb.njit(nb.int64[:, :, :](nb.float64[:, :], nb.int64))
+def make_grid(points, values, size):
+    """
+    Make grid array with shape (size, size, size) based on points array and values to fill
+
+    points - points array of shape (N, 3)
+    values - values array of shape (N,) to fill into grid
+    size - grid size
+    """
+    points_num = points.shape[0]
+    grid = np.zeros((size, size, size), dtype=np.int64)
+    x_coord = np.linspace(points[:, 0].min(), points[:, 0].max(), size)
+    y_coord = np.linspace(points[:, 1].min(), points[:, 1].max(), size)
+    z_coord = np.linspace(points[:, 2].min(), points[:, 2].max(), size)
+    x_coord[0] -= (x_coord[-1] - x_coord[0]) / 10
+    x_coord[-1] += (x_coord[-1] - x_coord[0]) / 10
+    y_coord[0] -= (y_coord[-1] - y_coord[0]) / 10
+    y_coord[-1] += (y_coord[-1] - y_coord[0]) / 10
+    z_coord[0] -= (z_coord[-1] - z_coord[0]) / 10
+    z_coord[-1] += (z_coord[-1] - z_coord[0]) / 10
+    for i in range(points_num):
+        ii = np.searchsorted(x_coord, points[i, 0])
+        jj = np.searchsorted(y_coord, points[i, 1])
+        kk = np.searchsorted(z_coord, points[i, 2])
+        grid[ii, jj, kk] = values[i]
+    return grid

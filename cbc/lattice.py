@@ -130,7 +130,7 @@ class CubicLattice(Lattice):
 class BallLattice(Lattice):
     """
     Ball shaped lattice class.
-    
+
     basis_a, basis_b, basis_c - unit cell vectors [mm]
     lat_r - radius of lattice
     cell - Cell class instance
@@ -178,9 +178,18 @@ class RecLattice(ABCLattice):
         self.q_max = q_max
 
     def vectors(self):
+        """
+        Return flattened reciprocal lattice vectors and its norm value
+        """
         pts = self._pts()
         mask = (np.sqrt(pts[0]**2 + pts[1]**2 + pts[2]**2) < self.q_max) & (np.sqrt(pts[0]**2 + pts[1]**2 + pts[2]**2) != 0)
         return (pts[0][mask].ravel(),
                 pts[1][mask].ravel(),
                 pts[2][mask].ravel(),
                 np.sqrt(pts[0]**2 + pts[1]**2 + pts[2]**2)[mask].ravel())
+
+    def grid(self):
+        """
+        Return lattice vectors in a grid
+        """
+        pass
