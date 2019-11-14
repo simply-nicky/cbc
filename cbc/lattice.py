@@ -19,6 +19,15 @@ def rec_basis(a_vec, b_vec, c_vec):
     c_rec = np.cross(a_vec, b_vec) / (np.cross(a_vec, b_vec).dot(c_vec))
     return a_rec, b_rec, c_rec
 
+def rec_or(axes):
+    """
+    Return orientation matrix based on unit cell primitive vectors matrix
+
+    axes - unit cell primitive vectors matrix
+    """
+    a_rec, b_rec, c_rec = rec_basis(axes[0], axes[1], axes[2])
+    return np.stack((a_rec, b_rec, c_rec))
+
 class Cell(object):
     """
     Unit cell class.
@@ -159,37 +168,3 @@ class BallLattice(Lattice):
 
     def _write_size(self, outfile):
         outfile.create_dataset('radius', data=self.lat_r)
-
-class RecLattice(ABCLattice):
-    """
-    Reciprocal lattice class
-
-    basis_a, basis_b, basis_c - basis vectors of the reciprocal lattice [mm^-1]
-    wavelength - light carrier  wavelength [mm]
-    q_max - maximum lattice vector in dimensionless units
-    """
-    def __init__(self, basis_a, basis_b, basis_c, q_max, wavelength):
-        super(RecLattice, self).__init__(basis_a=basis_a * wavelength,
-                                         basis_b=basis_b * wavelength,
-                                         basis_c=basis_c * wavelength,
-                                         lat_na=q_max // (np.sqrt(basis_a.dot(basis_a)) * wavelength),
-                                         lat_nb=q_max // (np.sqrt(basis_b.dot(basis_b)) * wavelength),
-                                         lat_nc=q_max // (np.sqrt(basis_c.dot(basis_c)) * wavelength))
-        self.q_max = q_max
-
-    def vectors(self):
-        """
-        Return flattened reciprocal lattice vectors and its norm value
-        """
-        pts = self._pts()
-        mask = (np.sqrt(pts[0]**2 + pts[1]**2 + pts[2]**2) < self.q_max) & (np.sqrt(pts[0]**2 + pts[1]**2 + pts[2]**2) != 0)
-        return (pts[0][mask].ravel(),
-                pts[1][mask].ravel(),
-                pts[2][mask].ravel(),
-                np.sqrt(pts[0]**2 + pts[1]**2 + pts[2]**2)[mask].ravel())
-
-    def grid(self):
-        """
-        Return lattice vectors in a grid
-        """
-        pass

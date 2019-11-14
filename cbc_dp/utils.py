@@ -92,7 +92,7 @@ def nonmax_supression(image):
                     res[i, j] = image[i, j]
     return res
 
-@nb.njit(nb.int64[:, :, :](nb.float64[:, :], nb.int64))
+@nb.njit(nb.int64[:, :, :](nb.float64[:, :], nb.float64[:], nb.int64))
 def make_grid(points, values, size):
     """
     Make grid array with shape (size, size, size) based on points array and values to fill

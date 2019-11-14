@@ -14,6 +14,67 @@ from cv2 import createLineSegmentDetector
 from . import utils
 from .grouper import TiltGroups
 
+class ExperimentSettings():
+    """
+    Experimment parameters class
+
+    axis - axis of rotation
+    pix_size - detector pixel size
+    det_dist - detector position in respect to the sample [mm]
+    """
+    def __init__(self, axis, pix_size, det_pos, wavelength):
+        self.axis, self.pix_size, self.det_pos = axis, pix_size, det_pos
+        self.wavelength = wavelength
+
+    def rotation_matrix(self, theta):
+        """
+        Return roational matrix for a given angle of rotation
+        """
+        return utils.rotation_matrix(self.axis, theta)
+
+    def pixtoq(self, pixels):
+        """
+        Convert detector distance in pixels to distance in reciprocal space
+        """
+        return pixels * self.pix_size / self.det_pos[2]
+
+    def laue_raw(self, det_pixels):
+        """
+        Project detected diffraction streaks to reciprocal space vectors in [a.u.]
+
+        det_pixels - detector points: [fs, ss]
+        zero - zero output wavevector
+        """
+        pts = det_pixels * self.pix_size - self.det_pos[:2]
+        angles = np.arctan2(pts[..., 1], pts[..., 0])
+        thetas = np.arctan(np.sqrt(pts[..., 0]**2 + pts[..., 1]**2) / self.det_pos[2])
+        return np.stack((np.sin(thetas) * np.cos(angles),
+                         np.sin(thetas) * np.sin(angles),
+                         np.cos(thetas)), axis=-1)
+
+    def laue(self, det_pts):
+        """
+        Project detected diffraction streaks to reciprocal space vectors in [a.u.]
+
+        det_pts - detector points [mm]
+        zero - zero output wavevector
+        """
+        angles = np.arctan2(det_pts[..., 1], det_pts[..., 0])
+        thetas = np.arctan(np.sqrt(det_pts[..., 0]**2 + det_pts[..., 1]**2) / self.det_pos[2])
+        return np.stack((np.sin(thetas) * np.cos(angles),
+                         np.sin(thetas) * np.sin(angles),
+                         np.cos(thetas)), axis=-1)
+
+    def save(self, out_file):
+        """
+        Save experiment settings to an HDF5 file
+        """
+        out_group = out_file.create_group("experiment_settings")
+        out_group.create_dataset('pix_size', self.pix_size)
+        out_group.create_dataset('det_dist', self.det_pos)
+        out_group.create_dataset('rot_axis', self.axis)
+        out_group.create_dataset('wavelength', self.wavelength)
+
 class LineDetector(metaclass=ABCMeta):
     """
     Abstract line detector class
@@ -30,23 +91,23 @@ class LineDetector(metaclass=ABCMeta):
     def det_frame_raw(self, frame):
         return np.array([[[x0, y0], [x1, y1]] for (x0, y0), (x1, y1) in self._detector(frame)])
 
-    def det_frame(self, frame, zero, drtau, drn):
+    def det_frame(self, frame, exp_set, drtau, drn):
         """
         Return FrameStreaks class object of detected lines
 
         frame - diffraction pattern
-        zero - zero output wavevector point
+        exp_set - ExperimentalSettings class object
         drtau - tangent detection error
         drn - radial detection error
         """
-        frame_strks = FrameStreaks(self.det_frame_raw(frame), zero)
-        pts = frame_strks.dlines.mean(axis=1)
+        frame_strks = FrameStreaks(self.det_frame_raw(frame), exp_set)
+        pts = frame_strks.lines.mean(axis=1)
         angles = np.arctan2(pts[:, 1], pts[:, 0])
         radii = np.sqrt(np.sum(pts**2, axis=1))
         ref_lines = type(self)._refiner(lines=frame_strks.lines, angles=angles,
                                         radii=radii, taus=frame_strks.taus,
                                         drtau=drtau, drn=drn)
-        return FrameStreaks(ref_lines, zero)
+        return FrameStreaks(ref_lines, exp_set)
 
     def det_scan_raw(self, scan):
         """
@@ -182,60 +243,6 @@ class LineSegmentDetector(LineDetector):
         img = utils.arraytoimg(np.clip(frame, 0, cap))
         return self.detector.detect(img)[0][:, 0].reshape((-1, 2, 2)).astype(np.float64)
 
-class ExperimentSettings():
-    """
-    Experimment parameters class
-
-    axis - axis of rotation
-    pix_size - detector pixel size
-    det_dist - distance between the detector and the sample
-    """
-    def __init__(self, axis, pix_size, det_dist, wavelength):
-        self.axis, self.pix_size, self.det_dist = axis, pix_size, det_dist
-        self.wavelength = wavelength
-
-    def rotation_matrix(self, theta):
-        """
-        Return roational matrix for a given angle of rotation
-        """
-        return utils.rotation_matrix(self.axis, theta)
-
-    def pixtoq(self, pixels):
-        """
-        Convert detector distance in pixels to distance in reciprocal space
-        """
-        return pixels * self.pix_size / self.det_dist
-
-    def convert_rec(self, rec_vec):
-        """
-        Convert dimensionless reciprocal vectors to [m^-1]
-        """
-        return rec_vec / self.wavelength
-
-    def rec_project(self, det_pts, zero):
-        """
-        Project detected diffraction streaks to reciprocal space vectors in [a.u.]
-
-        det_pts - detector points: [fs, ss]
-        zero - zero output wavevector
-        """
-        pts = det_pts - zero
-        angles = np.arctan2(pts[..., 1], pts[..., 0])
-        thetas = np.arctan(self.pix_size * np.sqrt(pts[..., 0]**2 + pts[..., 1]**2) / self.det_dist)
-        q_x = np.sin(thetas) * np.cos(angles)
-        q_y = np.sin(thetas) * np.sin(angles)
-        return np.stack((q_x, q_y, np.sqrt(1 - q_x**2 - q_y**2)), axis=-1)
-
-    def save(self, out_file):
-        """
-        Save experiment settings to an HDF5 file
-        """
-        out_group = out_file.create_group("experiment_settings")
-        out_group.create_dataset('pix_size', self.pix_size)
-        out_group.create_dataset('det_dist', self.det_dist)
-        out_group.create_dataset('rot_axis', self.axis)
-        out_group.create_dataset('wavelength', self.wavelength)
-
 class FrameStreaks():
     """
     Detected diffraction streaks on one frame class
@@ -243,9 +250,9 @@ class FrameStreaks():
     lines - detected lines
     zero - zero output wavevector point
     """
-    def __init__(self, lines, zero):
-        self.lines, self.zero = lines, zero
-        self.dlines = lines - zero
+    def __init__(self, lines, exp_set):
+        self.raw_lines, self.exp_set = lines, exp_set
+        self.lines = self.raw_lines * self.exp_set.pix_size - self.exp_set.det_pos[:2]
 
     @property
     def kin(self):
@@ -256,36 +263,20 @@ class FrameStreaks():
         return self.lines.shape[0]
 
     @property
-    def x_coord(self):
-        return self.dlines[..., 0]
-
-    @property
-    def y_coord(self):
-        return self.dlines[..., 1]
-
-    @property
-    def radii(self):
-        return np.sqrt(self.x_coord**2 + self.y_coord**2)
-
-    @property
-    def angles(self):
-        return np.arctan2(self.y_coord, self.x_coord)
-
-    @property
     def taus(self):
         taus = (self.lines[:, 1] - self.lines[:, 0])
         return taus / np.sqrt(taus[:, 0]**2 + taus[:, 1]**2)[:, np.newaxis]
 
     def __iter__(self):
         for line in self.lines:
-            yield line.astype(np.int64)
+            yield line
 
     def index_pts(self):
         """
         Return indexing points
         """
-        products = self.dlines[:, 0, 1] * self.taus[:, 0] - self.dlines[:, 0, 0] * self.taus[:, 1]
-        return -self.taus[:, 1] * products + self.zero[0], self.taus[:, 0] * products + self.zero[1]
+        products = self.lines[:, 0, 1] * self.taus[:, 0] - self.lines[:, 0, 0] * self.taus[:, 1]
+        return np.stack((-self.taus[:, 1] * products, self.taus[:, 0] * products), axis=1)
 
     def intensities(self, raw_data):
         """
@@ -294,7 +285,7 @@ class FrameStreaks():
         raw_data - raw diffraction pattern
         """
         ints = []
-        for line in iter(self):
+        for line in self.raw_lines:
             rows, columns, val = line_aa(line[0, 1], line[0, 0], line[1, 1], line[1, 0])
             ints.append((raw_data[rows, columns] * val).sum())
         return np.array(ints)
@@ -308,35 +299,36 @@ class FrameStreaks():
         """
         signal = self.intensities(raw_data)
         noise = []
-        for line in iter(self):
+        for line in self.raw_lines:
             rows, columns, val = line_aa(line[0, 1], line[0, 0], line[1, 1], line[1, 0])
             noise.append(np.abs(background[rows, columns] * val).sum())
         return signal / np.array(noise)
 
-    def kout(self, exp_set, theta):
+    def kout(self, theta):
         """
         Return reciprocal vectors of detected diffraction streaks.
 
         exp_set - ExperimentSettings class object
         theta - angle of rotation
         """
-        rot_m = exp_set.rotation_matrix(theta)
-        kout = exp_set.rec_project(det_pts=self.lines.mean(axis=1), zero=self.zero)
-        return RecVectors(kout=kout.dot(rot_m.T), kin=self.kin.dot(rot_m.T))
+        rot_m = self.exp_set.rotation_matrix(theta)
+        kout = self.exp_set.laue(self.lines.mean(axis=1))
+        return RecVectors(kout=kout.dot(rot_m.T),
+                          kin=self.kin.dot(rot_m.T))
 
-    def kout_streaks(self, exp_set, theta):
+    def kout_streaks(self, theta):
         """
         Return reciprocal vectors of detected diffraction streaks.
 
         exp_set - ExperimentSettings class object
         theta - angle of rotation
         """
-        rot_m = exp_set.rotation_matrix(theta)
-        kout = exp_set.rec_project(det_pts=self.lines, zero=self.zero)
+        rot_m = self.exp_set.rotation_matrix(theta)
+        kout = self.exp_set.laue(self.lines)
         kin = kout - kout.mean(axis=1)[:, None] + self.kin[:, None]
         return RecVectors(kout=kout.dot(rot_m.T), kin=kin.dot(rot_m.T))
 
-    def kout_index(self, exp_set, theta):
+    def kout_index(self, theta):
         """
         Return reciprocal points of indexing points.
 
@@ -344,8 +336,8 @@ class FrameStreaks():
         theta - angle of rotation
         """
         index_pts = self.index_pts()
-        rot_m = exp_set.rotation_matrix(theta)
-        kout = exp_set.rec_project(det_pts=index_pts, zero=self.zero)
+        rot_m = self.exp_set.rotation_matrix(theta)
+        kout = self.exp_set.laue(index_pts)
         return RecVectors(kout=kout.dot(rot_m.T), kin=self.kin.dot(rot_m.T))
 
 class ScanStreaks(FrameStreaks):
@@ -358,15 +350,15 @@ class ScanStreaks(FrameStreaks):
         shapes = [0] + list(accumulate([strks.size for strks in strks_list], add))
         self.shapes = np.array(shapes)
         lines = np.concatenate([strks.lines for strks in strks_list])
-        super(ScanStreaks, self).__init__(lines, strks_list[0].zero)
+        super(ScanStreaks, self).__init__(lines, strks_list[0].exp_set)
 
     def __getitem__(self, index):
         starts = self.shapes[:-1][index]
         stops = self.shapes[1:][index]
         if isinstance(index, int):
-            return FrameStreaks(self.lines[starts:stops], self.zero)
+            return FrameStreaks(self.lines[starts:stops], self.exp_set)
         else:
-            return ScanStreaks([FrameStreaks(self.lines[start:stop], self.zero)
+            return ScanStreaks([FrameStreaks(self.lines[start:stop], self.exp_set)
                                 for start, stop in zip(starts, stops)])
 
     def __iter__(self):
@@ -398,7 +390,7 @@ class ScanStreaks(FrameStreaks):
             snr_vals.append(frame_snr)
         return np.concatenate(snr_vals)
 
-    def kout(self, exp_set, theta):
+    def kout(self, theta):
         """
         Return reciprocal vectors of detected diffraction streaks in rotational scan.
 
@@ -407,7 +399,7 @@ class ScanStreaks(FrameStreaks):
         """
         kout_list, kin_list = [], []
         for frame_strks, theta_val in zip(iter(self), theta):
-            rec_vec = frame_strks.kout(exp_set=exp_set, theta=theta_val)
+            rec_vec = frame_strks.kout(theta=theta_val)
             kout_list.append(rec_vec.kout)
             kin_list.append(rec_vec.kin)
         return RecVectors(kout=np.concatenate(kout_list),
@@ -423,7 +415,7 @@ class ScanStreaks(FrameStreaks):
         """
         kout_list, kin_list = [], []
         for frame_strks, theta_val in zip(iter(self), theta):
-            rec_vec = frame_strks.kout(exp_set=exp_set, theta=theta_val)
+            rec_vec = frame_strks.kout(theta=theta_val)
             kout_list.append(rec_vec.kout)
             kin_list.append(rec_vec.kin)
         groups = TiltGroups(kout=kout_list,
@@ -433,7 +425,7 @@ class ScanStreaks(FrameStreaks):
         return RecVectors(kout=np.concatenate(kout_list),
                           kin=np.concatenate(ref_kin))
 
-    def kout_streaks(self, exp_set, theta):
+    def kout_streaks(self, theta):
         """
         Return reciprocal streaks of detected diffraction streaks in rotational scan.
 
@@ -442,13 +434,13 @@ class ScanStreaks(FrameStreaks):
         """
         kout_list, kin_list = [], []
         for frame_strks, theta_val in zip(iter(self), theta):
-            rec_vec = frame_strks.kout_streaks(exp_set=exp_set, theta=theta_val)
+            rec_vec = frame_strks.kout_streaks(theta=theta_val)
             kout_list.append(rec_vec.kout)
             kin_list.append(rec_vec.kin)
         return RecVectors(kout=np.concatenate(kout_list),
                           kin=np.concatenate(kin_list))
 
-    def kout_index(self, exp_set, theta):
+    def kout_index(self, theta):
         """
         Return reciprocal vectors of indexing points in rotational scan.
 
@@ -457,7 +449,7 @@ class ScanStreaks(FrameStreaks):
         """
         kout_list, kin_list = [], []
         for frame_strks, theta_val in zip(iter(self), theta):
-            rec_vec = frame_strks.kout_index(exp_set=exp_set, theta=theta_val)
+            rec_vec = frame_strks.kout_index(theta=theta_val)
             kout_list.append(rec_vec.kout)
             kin_list.append(rec_vec.kin)
         return RecVectors(kout=np.concatenate(kout_list),
@@ -474,9 +466,9 @@ class ScanStreaks(FrameStreaks):
         out_group = out_file.create_group('streaks')
         out_group.create_dataset('counts', data=self.shapes)
         out_group.create_dataset('lines', data=self.lines)
-        out_group.create_dataset('zero', data=self.zero)
         out_group.create_dataset('intensities', data=self.intensities(raw_data))
         out_group.create_dataset('snr', data=self.snr(raw_data, background))
+        self.exp_set.save(out_file)
 
 class RecVectors():
     """
@@ -487,7 +479,6 @@ class RecVectors():
     """
     def __init__(self, kout, kin):
         self.kout, self.kin, self.scat_vec = kout, kin, kout - kin
-        self.center = np.zeros(3)
 
     @property
     def size(self):
@@ -503,7 +494,9 @@ class RecVectors():
 
         size - grid size
         """
-        return utils.make_grid(self.scat_vec, size)
+        return utils.make_grid(points=self.scat_vec,
+                               values=np.ones(self.size, dtype=np.float64),
+                               size=size)
 
     def fft(self, size):
         """
@@ -513,15 +506,6 @@ class RecVectors():
         """
         grid = self.grid(size)
         return np.abs(np.fft.fftshift(np.fft.fftn(grid))**2)
-
-    def bin(self, a_rec, b_rec, c_rec):
-        """
-        Bin reciprocal vectors in HKL indices
-        """
-        h_idx = (self.scat_vec - self.center).dot(a_rec) / a_rec.dot(a_rec)
-        k_idx = (self.scat_vec - self.center).dot(b_rec) / b_rec.dot(b_rec)
-        l_idx = (self.scat_vec - self.center).dot(c_rec) / c_rec.dot(c_rec)
-        return np.stack((h_idx, k_idx, l_idx))
 
     def index(self, size=100, gauss_sigma=4, threshold=3):
         """
@@ -542,12 +526,3 @@ class RecVectors():
         axes_mask = np.array([center.dot(center) for center in peak_centers]).argsort()[:7]
         axes = (peak_centers * self.range**-1)[axes_mask]
         return axes
-
-    # def save(self, out_file):
-    #     """
-    #     Save reciprocal points to an HDF5 file
-
-    #     out_file - h5py file object
-    #     """
-    #     self.exp_set.save(out_file)
-    #     out_file.create_dataset('rec_vectors', data=self.scat_vec)

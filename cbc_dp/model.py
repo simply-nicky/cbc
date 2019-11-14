@@ -5,6 +5,53 @@ from math import sqrt
 from abc import ABCMeta, abstractmethod, abstractproperty
 import numpy as np
 
+class RecLattice():
+    """
+    Reciprocal lattice class
+
+    or_mat - orientation matrix (dimensionless)
+    center - reciprocal lattice center
+    """
+    def __init__(self, or_mat, center=np.zeros(3)):
+        self.or_mat, self.center = or_mat, center
+        self.or_norm = np.sqrt((self.or_mat * self.or_mat).sum(axis=1))
+        self.or_inv = np.linalg.inv(self.or_mat)
+
+    def hkl_idx(self, scat_vec):
+        """
+        Return hkl indices for an array of scattering vectors
+
+        scat_vec - scattering vectors array of shape (N, 3)
+        """
+        hkl = (scat_vec  - self.center).dot(self.or_inv)
+        return np.around(hkl)
+
+    def scat_vec(self, scat_vec):
+        """
+        Return model scattering vectors based on an experimental scattering vectors array
+
+        scat_vec - scattering vectors array of shape (N, 3)
+        """
+        hkl_idx = self.hkl_idx(scat_vec)
+        return hkl_idx.dot(self.or_mat) + self.center
+
+    def sph_vectors(self, q_max):
+        """
+        Return flattened reciprocal lattice vectors inside a sphere
+
+        q_max - reciprocal sphere radius
+        """
+        lat_size = np.rint(q_max / self.or_norm)
+        h_idxs = np.arange(-lat_size[0], lat_size[0] + 1)
+        k_idxs = np.arange(-lat_size[1], lat_size[1] + 1)
+        l_idxs = np.arange(-lat_size[2], lat_size[2] + 1)
+        h_grid, k_grid, l_grid = np.meshgrid(h_idxs, k_idxs, l_idxs)
+        hkl_idx = np.stack((h_grid.ravel(), k_grid.ravel(), l_grid.ravel()), axis=1)
+        rec_vec = hkl_idx.dot(self.or_mat)
+        rec_abs = np.sqrt((rec_vec * rec_vec).sum(axis=1))
+        idxs = np.where((rec_abs != 0) & (rec_abs < q_max))
+        return rec_vec[idxs], hkl_idx[idxs]
+
 class ABCModel(metaclass=ABCMeta):
     """
     Abstract convergent beam diffraction pattern generator class
@@ -12,19 +59,20 @@ class ABCModel(metaclass=ABCMeta):
     rec_lat - reciprocal lattice object
     num_ap - convergent beam numerical aperture
     """
-    def __init__(self, rec_lat, num_ap):
-        if rec_lat.q_max > 2:
+    def __init__(self, rec_lat, num_ap, q_max):
+        if q_max > 2:
             raise ValueError('q_max must be less than 2')
-        self.rec_lat, self.num_ap = rec_lat, num_ap
-        self.g_x, self.g_y, self.g_z, self.g_abs = rec_lat.vectors()
+        self.rec_lat, self.num_ap, self.center = rec_lat, num_ap, rec_lat.center
+        self.rec_vec, self.raw_hkl = rec_lat.sph_vectors(q_max)
+        self.rec_abs = np.sqrt((self.rec_vec * self.rec_vec).sum(axis=1))
 
     @property
     def alpha(self):
-        return np.arctan2(self.g_y, self.g_x)
+        return np.arctan2(self.rec_vec[:, 1], self.rec_vec[:, 0])
 
     @property
     def betta(self):
-        return np.arccos(-self.g_z / self.g_abs)
+        return np.arccos(-self.rec_vec[:, 2] / self.rec_abs)
 
     @abstractproperty
     def condition(self):
@@ -32,19 +80,19 @@ class ABCModel(metaclass=ABCMeta):
 
     @property
     def q_x(self):
-        return self.g_x[self.condition]
+        return self.rec_vec[:, 0][self.condition]
 
     @property
     def q_y(self):
-        return self.g_y[self.condition]
+        return self.rec_vec[:, 1][self.condition]
 
     @property
     def q_z(self):
-        return self.g_z[self.condition]
+        return self.rec_vec[:, 2][self.condition]
 
     @property
     def q_abs(self):
-        return self.g_abs[self.condition]
+        return self.rec_abs[self.condition]
 
     @property
     def theta(self):
@@ -53,6 +101,10 @@ class ABCModel(metaclass=ABCMeta):
     @property
     def phi(self):
         return np.arctan2(self.q_y, self.q_x)
+
+    @property
+    def hkl_idx(self):
+        return self.raw_hkl[self.condition]
 
     def laue_vectors(self):
         """
@@ -81,9 +133,9 @@ class ABCModel(metaclass=ABCMeta):
         """
         onx, ony, onz = self.entry_pts()
         oxx, oxy, oxz = self.exit_pts()
-        return (np.stack((self.q_x + onx, self.q_x + oxx), axis=1),
-                np.stack((self.q_y + ony, self.q_y + oxy), axis=1),
-                np.stack((self.q_z + onz, self.q_z + oxz), axis=1))
+        return (np.stack((self.q_x + onx, self.q_x + oxx), axis=1) + self.center[0],
+                np.stack((self.q_y + ony, self.q_y + oxy), axis=1) + self.center[1],
+                np.stack((self.q_z + onz, self.q_z + oxz), axis=1) + self.center[2])
 
     def detector_pts(self, det_dist):
         """
@@ -105,7 +157,7 @@ class CircModel(ABCModel):
     """
     @property
     def condition(self):
-        return np.abs(np.sin(self.betta - np.arccos(self.g_abs / 2))) < self.num_ap
+        return np.abs(np.sin(self.betta - np.arccos(self.rec_abs / 2))) < self.num_ap
 
     def entry_pts(self):
         """
@@ -134,9 +186,9 @@ class SquareModel(ABCModel):
     """
     condition = None
 
-    def __init__(self, rec_lat, num_ap):
-        super(SquareModel, self).__init__(rec_lat, num_ap)
-        self.condition = np.abs(np.sin(self.betta - np.arccos(self.g_abs / 2))) < sqrt(2) * self.num_ap
+    def __init__(self, rec_lat, num_ap, q_max):
+        super(SquareModel, self).__init__(rec_lat, num_ap, q_max)
+        self.condition = np.abs(np.sin(self.betta - np.arccos(self.rec_abs / 2))) < sqrt(2) * self.num_ap
         self._pts_x, self._pts_y, _mask = self._source_lines()
         self.condition = (np.where(self.condition)[0][_mask],)
 
@@ -188,6 +240,75 @@ class SquareModel(ABCModel):
                 self._pts_y[:, 1],
                 np.sqrt(1 - self._pts_x[:, 1]**2 - self._pts_y[:, 1]**2))
 
-class GradientDescend():
-    def __init__(self, model, start_point, data):
-        self.model, self.point, self.data = model, start_point, data
+class GradientDescent():
+    """
+    Gradient Descent algorithm class
+
+    or_mat - reciprocal lattice orientation matrix
+    center - reciprocal lattice center
+    target_func - target function to minimize
+    step_size - step size relative to point norm
+    """
+    def __init__(self, or_mat, center, target_func, step_size=1e-2):
+        self.point = np.concatenate((or_mat, center[None, :]))
+        self.trg_func, self.step_size = target_func, step_size
+        or_step = np.tile(np.sqrt((or_mat * or_mat).sum(axis=1))[:, None] * step_size, (1, 3))
+        center_step = or_step[:, 0].mean() * np.ones((1, 3))
+        self.point_step = np.concatenate((or_step, center_step))
+        self.axes = np.zeros((self.point.size,) + self.point.shape)
+        idxs = np.unravel_index(np.arange(0, self.axes.size, self.point.size + 1), self.axes.shape)
+        self.axes[idxs] = 1
+
+    def derivative(self, axis):
+        """
+        Return target function partial derivative along the axis
+
+        axis - axis of differentiation
+        """
+        point_step = self.point_step * axis
+        form_val = self.trg_func(self.point + point_step)
+        lat_val = self.trg_func(self.point - point_step)
+        return (form_val - lat_val) / 2 / point_step.sum()
+
+    def value(self):
+        """
+        Return target function value
+        """
+        return self.trg_func(self.point)
+
+    def gradient(self):
+        """
+        Return target function gradient
+        """
+        return np.array([self.derivative(axis) for axis in self.axes]).reshape(self.point.shape)
+
+    def next_point(self):
+        """
+        Return next iterative point
+        """
+        grad = self.gradient()
+        next_point = self.point - np.sum((grad / self.point_step)**2)**-0.5 * grad
+        return GradientDescent(or_mat=next_point[:3],
+                               center=next_point[3],
+                               target_func=self.trg_func,
+                               step_size=self.step_size)
+
+class TargetFunction():
+    """
+    Target function class
+
+    data - experimental data
+    """
+    def __init__(self, data):
+        self.data = data
+
+    def __call__(self, point):
+        """
+        Return target function value at the given point
+        """
+        rec_lat = RecLattice(or_mat=point[:3], center=point[3])
+        qs_model = rec_lat.scat_vec(self.data.scat_vec)
+        norm = qs_model - self.data.kout
+        delta_n = np.abs(1 - np.sqrt((norm * norm).sum(axis=1)))
+        return np.median(delta_n)
+    
