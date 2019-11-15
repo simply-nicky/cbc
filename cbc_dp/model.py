@@ -137,16 +137,16 @@ class ABCModel(metaclass=ABCMeta):
                 np.stack((self.q_y + ony, self.q_y + oxy), axis=1) + self.center[1],
                 np.stack((self.q_z + onz, self.q_z + oxz), axis=1) + self.center[2])
 
-    def detector_pts(self, det_dist):
+    def det_pts(self, exp_set):
         """
         Return detector diffraction orders points for a detector at given distance
 
-        det_dist - detector distance
+        exp_set - ExperrimentSettings class object
         """
         k_x, k_y, k_z = self.out_wavevectors()
-        det_x = det_dist * np.tan(np.sqrt(2 - 2 * k_z)) * np.cos(np.arctan2(k_y, k_x))
-        det_y = det_dist * np.tan(np.sqrt(2 - 2 * k_z)) * np.sin(np.arctan2(k_y, k_x))
-        return det_x, det_y
+        det_x = exp_set.det_pos[2] * np.tan(np.sqrt(2 - 2 * k_z)) * np.cos(np.arctan2(k_y, k_x))
+        det_y = exp_set.det_pos[2] * np.tan(np.sqrt(2 - 2 * k_z)) * np.sin(np.arctan2(k_y, k_x))
+        return (np.stack((det_x, det_y), axis=-1) + exp_set.det_pos[:2]) / exp_set.pix_size
 
 class CircModel(ABCModel):
     """
@@ -306,9 +306,13 @@ class TargetFunction():
         """
         Return target function value at the given point
         """
+        return np.median(self.values(point))
+
+    def values(self, point):
+        """
+        Return target function array of values at the given point
+        """
         rec_lat = RecLattice(or_mat=point[:3], center=point[3])
         qs_model = rec_lat.scat_vec(self.data.scat_vec)
         norm = qs_model - self.data.kout
-        delta_n = np.abs(1 - np.sqrt((norm * norm).sum(axis=1)))
-        return np.median(delta_n)
-    
+        return np.abs(1 - np.sqrt((norm * norm).sum(axis=1)))
