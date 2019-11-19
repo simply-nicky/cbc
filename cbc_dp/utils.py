@@ -118,3 +118,15 @@ def make_grid(points, values, size):
         kk = np.searchsorted(z_coord, points[i, 2])
         grid[ii, jj, kk] = values[i]
     return grid
+
+def find_reduced(vectors, basis):
+    """
+    Find reduced vector to basis set
+
+    vectors - array of vectors of shape (N, 3)
+    basis - basis set of shape (M, 3)
+    """
+    prod = vectors.dot(basis.T)
+    mask = 2 * np.abs(prod) < (basis * basis).sum(axis=1)
+    return np.where(mask.all(axis=1))
+    

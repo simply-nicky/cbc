@@ -19,7 +19,7 @@ def rec_basis(a_vec, b_vec, c_vec):
     c_rec = np.cross(a_vec, b_vec) / (np.cross(a_vec, b_vec).dot(c_vec))
     return a_rec, b_rec, c_rec
 
-def rec_or(axes):
+def rec_or_mat(axes):
     """
     Return orientation matrix based on unit cell primitive vectors matrix
 
@@ -42,9 +42,18 @@ class Cell(object):
 
     @classmethod
     def importpdb(cls, filename):
+        """
+        Import pdb unit cell structure file
+        """
         return cls(*utils.pdb.importpdb(filename))
 
     def asf(self, wavelength):
+        """
+        Return atomic scattering factors from the article of D. Waasmaier & A. Kirfel
+        http://scripts.iucr.org/cgi-bin/paper?S0108767394013292
+
+        wavelength - x-rays wavelength
+        """
         energy = constants.c * constants.h / constants.e / wavelength * 1e3     #photon energy in eV
         _asf_list = []
         for elem, b_val in zip(self.elems, self.b_vals):
@@ -56,8 +65,13 @@ class Cell(object):
             _asf_list.append(_asf_coeffs)
         return np.array(_asf_list)
 
-    def write(self, outfile):
-        cell_group = outfile.create_group(self.__class__.__name__)
+    def write(self, out_file):
+        """
+        Write cell structure information to an HDF5 file
+
+        out_file - an h5py File class object
+        """
+        cell_group = out_file.create_group(self.__class__.__name__)
         cell_group.create_dataset('elems', data=np.array(self.elems, 'S2'), dtype=h5py.special_dtype(vlen=str))
         cell_group.create_dataset('B-factor', data=self.b_vals)
         coord_group = cell_group.create_group('cell_coord')
@@ -66,6 +80,12 @@ class Cell(object):
         coord_group.create_dataset('z-coordinate', data=self.atom_zs)
 
 class ABCLattice(object):
+    """
+    Abstract Lattice class
+
+    basis_a, basis_b, basis_c - basis unit cell vectors
+    lat_na, lat_nb, lat_nc - number of unit cells in three dimensions
+    """
     __metaclass__ = ABCMeta
 
     def __init__(self, basis_a, basis_b, basis_c, lat_na, lat_nb, lat_nc):
@@ -80,6 +100,13 @@ class ABCLattice(object):
         return np.multiply.outer(self.basis_a, na_vals) + np.multiply.outer(self.basis_b, nb_vals) + np.multiply.outer(self.basis_c, nc_vals)
 
 class Lattice(ABCLattice):
+    """
+    Lattice class with compount unit cell structure
+
+    basis_a, basis_b, basis_c - basis unit cell vectors
+    lat_na, lat_nb, lat_nc - number of unit cells in three dimensions
+    cell - Cell class object
+    """
     def __init__(self, basis_a, basis_b, basis_c, lat_na, lat_nb, lat_nc, cell):
         super(Lattice, self).__init__(basis_a, basis_b, basis_c, lat_na, lat_nb, lat_nc)
         self.cell = cell
@@ -97,6 +124,11 @@ class Lattice(ABCLattice):
         vec_group.create_dataset('c', data=self.basis_c)
 
     def write(self, outfile):
+        """
+        Write lattice information to an HDF5 file
+
+        out_file - an h5py File class object
+        """
         lat_group = outfile.create_group(self.__class__.__name__)
         self.cell.write(outfile)
         self._write_vectors(lat_group)
@@ -125,6 +157,9 @@ class CubicLattice(Lattice):
                 'lattice_size': (self.lat_na, self.lat_nb, self.lat_nc)}
 
     def coordinates(self):
+        """
+        Return lattice atoms coordinates
+        """
         pts = self._pts()
         return (np.add.outer(pts[0].ravel(), self.cell.atom_xs),
                 np.add.outer(pts[1].ravel(), self.cell.atom_ys),
@@ -160,6 +195,9 @@ class BallLattice(Lattice):
                 'lattice_radius': self.lat_r}
 
     def coordinates(self):
+        """
+        Return lattice atoms coordinates
+        """
         pts = self._pts()
         mask = (np.sqrt(pts[0]**2 + pts[1]**2 + pts[2]**2) < self.lat_r)
         return (np.add.outer(pts[0][mask].ravel(), self.cell.atom_xs),

@@ -354,9 +354,9 @@ class ScanStreaks(FrameStreaks):
     def __getitem__(self, index):
         starts = self.shapes[:-1][index]
         stops = self.shapes[1:][index]
-        if isinstance(index, int):
+        try:
             return FrameStreaks(self.raw_lines[starts:stops], self.exp_set)
-        else:
+        except (IndexError, TypeError):
             return ScanStreaks([FrameStreaks(self.raw_lines[start:stop], self.exp_set)
                                 for start, stop in zip(starts, stops)])
 
@@ -506,9 +506,9 @@ class RecVectors():
         grid = self.grid(size)
         return np.abs(np.fft.fftshift(np.fft.fftn(grid))**2)
 
-    def index(self, size=100, gauss_sigma=4, threshold=3):
+    def fft_peaks(self, size=100, gauss_sigma=1.5, threshold=5):
         """
-        Find indexing solution
+        Return fourier transform peak positions sorted by norm value
 
         size - fourier transform grid size
         gauss_sigma - gaussian filter sigma value
@@ -518,10 +518,25 @@ class RecVectors():
         fft_blur = gaussian_filter(fft_grid.astype(np.float64), gauss_sigma)
         peak_mask = fft_blur > fft_blur.mean() + threshold * fft_blur.std()
         peak_labels, peak_num = label(peak_mask)
-        peak_centers = np.array(maximum_position(fft_blur,
-                                                 labels=peak_labels,
-                                                 index=np.arange(1, peak_num + 1)))
-        peak_centers = peak_centers - size / 2 * np.ones(3)
-        axes_mask = np.array([center.dot(center) for center in peak_centers]).argsort()[:7]
-        axes = (peak_centers * self.range**-1)[axes_mask]
-        return axes
+        peaks = np.array(maximum_position(fft_blur,
+                                          labels=peak_labels,
+                                          index=np.arange(1, peak_num + 1)))
+        peaks = peaks - size / 2 * np.ones(3)
+        sort_mask = (peaks * peaks).sum(axis=1).argsort()
+        return peaks[sort_mask[1:]]
+
+    def index(self, size=100, gauss_sigma=1.5, threshold=5):
+        """
+        Return indexing solution
+
+        size - fourier transform grid size
+        gauss_sigma - gaussian filter sigma value
+        threshold - peak detetion threshold
+        """
+        peaks = self.fft_peaks(size, gauss_sigma, threshold)
+        axes = peaks[None, 0]
+        idxs = utils.find_reduced(peaks, axes)[0]
+        axes = np.concatenate((axes, peaks[None, idxs[0]]))
+        idxs = utils.find_reduced(peaks, axes)[0]
+        return np.concatenate((axes, peaks[None, idxs[0]])) * self.range**-1
+    
