@@ -136,8 +136,7 @@ class Grouper():
         idx - frame index
         """
         idxs = [group.get_idxs(idx)
-                for group in self.ongoing_groups
-                if group.get_idxs(idx).any()]
+                for group in self.ongoing_groups]
         return np.concatenate(idxs)
 
     def find_pairs(self, vec_list, idx):
@@ -194,19 +193,24 @@ class TiltGroups():
     def scat_vec(self):
         return [kout -  kin for kout, kin in zip(self.kout, self.kin)]
 
-    def frame_streaks(self, idx):
+    def frame_groups(self, frame_idx):
         """
         Return rotational groups streaks of the given frame
+        """
+        groups = [group for group in self.groups if group.get_idxs(frame_idx).any()]
+        return groups
+
+    def frame_streaks(self, frame_idx):
+        """
+        Return refined rotational groups streaks of the given frame
 
         idx - frame index
         """
-        idxs = []
-        streaks = []
-        for group in self.groups:
-            group_idxs = group.get_idxs(idx)
-            if group_idxs.any():
-                idxs.append(group_idxs)
-                streaks.append(np.tile(group.index_streak()[None, :], (group_idxs.size, 1)))
+        idxs, streaks = [], []
+        for group in self.frame_groups(frame_idx):
+            group_idxs = group.get_idxs(frame_idx)
+            idxs.append(group_idxs)
+            streaks.append(np.tile(group.index_streak()[None, :], (group_idxs.size, 1)))
         return np.concatenate(idxs), np.concatenate(streaks)
 
     def ref_kin(self):
@@ -215,8 +219,12 @@ class TiltGroups():
         """
         kin_list = []
         for idx, (kout, kin) in enumerate(zip(self.kout, self.kin)):
-            idxs, streaks = self.frame_streaks(idx)
-            frame_kin = np.copy(kin)
-            frame_kin[idxs] = kout[idxs] - streaks
-            kin_list.append(frame_kin)
+            frame_groups = self.frame_groups(idx)
+            if frame_groups:
+                idxs, streaks = self.frame_streaks(idx)
+                frame_kin = np.copy(kin)
+                frame_kin[idxs] = kout[idxs] - streaks
+                kin_list.append(frame_kin)
+            else:
+                kin_list.append(kin)
         return kin_list

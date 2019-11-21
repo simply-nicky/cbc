@@ -12,8 +12,8 @@ class RecLattice():
     or_mat - orientation matrix (dimensionless)
     center - reciprocal lattice center
     """
-    def __init__(self, or_mat, center=np.zeros(3)):
-        self.or_mat, self.center = or_mat, center
+    def __init__(self, or_mat):
+        self.or_mat = or_mat
         self.or_norm = np.sqrt((self.or_mat * self.or_mat).sum(axis=1))
         self.or_inv = np.linalg.inv(self.or_mat)
 
@@ -23,7 +23,7 @@ class RecLattice():
 
         scat_vec - scattering vectors array of shape (N, 3)
         """
-        hkl = (scat_vec  - self.center).dot(self.or_inv)
+        hkl = scat_vec.dot(self.or_inv)
         return np.around(hkl)
 
     def scat_vec(self, scat_vec):
@@ -33,7 +33,32 @@ class RecLattice():
         scat_vec - scattering vectors array of shape (N, 3)
         """
         hkl_idx = self.hkl_idx(scat_vec)
-        return hkl_idx.dot(self.or_mat) + self.center
+        return hkl_idx.dot(self.or_mat)
+
+    def kin(self, scat_vec):
+        """
+        Return model outcoming wavevectors based on an experimental scattering vectors array
+
+        scat_vec - scattering vectors array of shape (N, 3)
+        """
+        qs_model = self.scat_vec(scat_vec)
+        qabs_model = np.sqrt((qs_model * qs_model).sum(axis=1))
+        thetas = np.arccos(-qs_model[:, 2] / qabs_model)
+        phis = np.arctan2(qs_model[:, 1], qs_model[:, 0])
+        kin_x = -np.sin(thetas - np.arccos(qabs_model / 2)) * np.cos(phis)
+        kin_y = -np.sin(thetas - np.arccos(qabs_model / 2)) * np.sin(phis)
+        kin_z = np.cos(thetas - np.arccos(qabs_model / 2))
+        return np.stack((kin_x, kin_y, kin_z), axis=1)
+
+    def kout(self, scat_vec):
+        """
+        Return model outcoming wavevectors based on an experimental scattering vectors array
+
+        scat_vec - scattering vectors array of shape (N, 3)
+        """
+        qs_model = self.scat_vec(scat_vec)
+        kins = self.kin(scat_vec)
+        return qs_model + kins
 
     def sph_vectors(self, q_max):
         """
@@ -62,7 +87,7 @@ class ABCModel(metaclass=ABCMeta):
     def __init__(self, rec_lat, num_ap, q_max):
         if q_max > 2:
             raise ValueError('q_max must be less than 2')
-        self.rec_lat, self.num_ap, self.center = rec_lat, num_ap, rec_lat.center
+        self.rec_lat, self.num_ap = rec_lat, num_ap
         self.rec_vec, self.raw_hkl = rec_lat.sph_vectors(q_max)
         self.rec_abs = np.sqrt((self.rec_vec * self.rec_vec).sum(axis=1))
 
@@ -133,9 +158,9 @@ class ABCModel(metaclass=ABCMeta):
         """
         onx, ony, onz = self.entry_pts()
         oxx, oxy, oxz = self.exit_pts()
-        return (np.stack((self.q_x + onx, self.q_x + oxx), axis=1) + self.center[0],
-                np.stack((self.q_y + ony, self.q_y + oxy), axis=1) + self.center[1],
-                np.stack((self.q_z + onz, self.q_z + oxz), axis=1) + self.center[2])
+        return (np.stack((self.q_x + onx, self.q_x + oxx), axis=1),
+                np.stack((self.q_y + ony, self.q_y + oxy), axis=1),
+                np.stack((self.q_z + onz, self.q_z + oxz), axis=1))
 
     def det_pts(self, exp_set):
         """
@@ -249,70 +274,123 @@ class GradientDescent():
     target_func - target function to minimize
     step_size - step size relative to point norm
     """
-    def __init__(self, or_mat, center, target_func, step_size=1e-2):
-        self.point = np.concatenate((or_mat, center[None, :]))
+    def __init__(self, target_func, step_size=1e-6):
         self.trg_func, self.step_size = target_func, step_size
-        or_step = np.tile(np.sqrt((or_mat * or_mat).sum(axis=1))[:, None] * step_size, (1, 3))
-        center_step = or_step[:, 0].mean() * np.ones((1, 3))
-        self.point_step = np.concatenate((or_step, center_step))
-        self.axes = np.zeros((self.point.size,) + self.point.shape)
-        idxs = np.unravel_index(np.arange(0, self.axes.size, self.point.size + 1), self.axes.shape)
-        self.axes[idxs] = 1
 
-    def derivative(self, axis):
-        """
-        Return target function partial derivative along the axis
-
-        axis - axis of differentiation
-        """
-        point_step = self.point_step * axis
-        form_val = self.trg_func(self.point + point_step)
-        lat_val = self.trg_func(self.point - point_step)
-        return (form_val - lat_val) / 2 / point_step.sum()
-
-    def value(self):
-        """
-        Return target function value
-        """
-        return self.trg_func(self.point)
-
-    def gradient(self):
-        """
-        Return target function gradient
-        """
-        return np.array([self.derivative(axis) for axis in self.axes]).reshape(self.point.shape)
-
-    def next_point(self):
+    def next_point(self, point):
         """
         Return next iterative point
         """
-        grad = self.gradient()
-        next_point = self.point - np.sum((grad / self.point_step)**2)**-0.5 * grad
-        return GradientDescent(or_mat=next_point[:3],
-                               center=next_point[3],
-                               target_func=self.trg_func,
-                               step_size=self.step_size)
+        next_point = point - self.step_size * self.trg_func.gradient(point)
+        return next_point
 
-class TargetFunction():
+    def run(self, start_point, max_iter=1000):
+        """
+        Return gradient descent result after a number of iterations
+
+        start_point - starting point
+        max_iter - number of iterations
+        """
+        points = [start_point]
+        values = [self.trg_func.values(start_point)]
+        while len(points) < max_iter:
+            next_pt = self.next_point(points[-1])
+            points.append(next_pt)
+            values.append(self.trg_func.values(next_pt))
+        return points, values
+
+class TargetFunction(metaclass=ABCMeta):
     """
-    Target function class
+    Abstract Target Function class
 
     data - experimental data
+    step_size - step size in numerical derivation
     """
-    def __init__(self, data):
-        self.data = data
+    def __init__(self, data, step_size):
+        self.data, self.step_size = data, step_size
+        self._init_axes()
+
+    def _init_axes(self):
+        self.axes = np.zeros((self.step_size.size,) + self.step_size.shape)
+        idxs = np.unravel_index(np.arange(0, self.axes.size, self.step_size.size + 1), self.axes.shape)
+        self.axes[idxs] = 1
+
+    def num_deriv(self, point, axis):
+        """
+        Calculate numerically target function partial derivative along the axis
+
+        axis - axis of differentiation
+        """
+        step = self.step_size * axis
+        d_func = self(point + step) - self(point - step)
+        d_arg = 2 * step.sum()
+        return d_func / d_arg
+
+    def gradient(self, point):
+        """
+        Return target function gradient at a given point
+        """
+        grad = np.array([self.num_deriv(point, axis) for axis in self.axes])
+        return grad.reshape(point.shape)
 
     def __call__(self, point):
         """
         Return target function value at the given point
         """
-        return np.median(self.values(point))
+        return np.mean(self.values(point))
+
+    @abstractmethod
+    def values(self, point):
+        pass
+
+class ScatVecTF(TargetFunction):
+    """
+    Target function class based on scattering vector error
+
+    data - experimental data
+    step_size - step size in numerical derivation
+    """
+    def __init__(self, data, step_size=1e-10 * np.ones((3, 3))):
+        super(ScatVecTF, self).__init__(self, data, step_size)
+
+    def deriv(self, point, axis):
+        """
+        Calculate analytically target function partial derivative along the axis
+
+        axis - axis of differentiation
+        """
+        rec_lat = RecLattice(point)
+        hkl_idx = rec_lat.hkl_idx(self.data.scat_vec)
+        qs_model = rec_lat.scat_vec(self.data.scat_vec)
+        norm = qs_model - self.data.kout
+        d_norm = -np.sign(1 - np.sqrt((norm * norm).sum(axis=1))) * (norm * norm).sum(axis=1)**-0.5
+        d_vec = norm.dot(axis).sum(axis=1) * hkl_idx.dot(axis.T).sum(axis=1)
+        return np.mean(d_norm * d_vec)
 
     def values(self, point):
         """
         Return target function array of values at the given point
         """
-        rec_lat = RecLattice(or_mat=point[:3], center=point[3])
+        rec_lat = RecLattice(or_mat=point)
         qs_model = rec_lat.scat_vec(self.data.scat_vec)
         norm = qs_model - self.data.kout
         return np.abs(1 - np.sqrt((norm * norm).sum(axis=1)))
+
+class KoutTF(TargetFunction):
+    """
+    Target function class based on modelled outcoming wavevector error
+
+    data - experimental data
+    """
+    def __init__(self, data, step_size=1e-10 * np.ones((3, 3))):
+        super(KoutTF, self).__init__(data, step_size)
+
+    def values(self, point):
+        """
+        Return target function array of values at the given point
+        """
+        rec_lat = RecLattice(or_mat=point)
+        kout_model = rec_lat.kout(self.data.scat_vec)
+        d_kout = kout_model - self.data.kout
+        return np.sqrt((d_kout * d_kout).sum(axis=1))
+    
