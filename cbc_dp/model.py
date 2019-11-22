@@ -351,7 +351,7 @@ class ScatVecTF(TargetFunction):
     step_size - step size in numerical derivation
     """
     def __init__(self, data, step_size=1e-10 * np.ones((3, 3))):
-        super(ScatVecTF, self).__init__(self, data, step_size)
+        super(ScatVecTF, self).__init__(data, step_size)
 
     def deriv(self, point, axis):
         """
