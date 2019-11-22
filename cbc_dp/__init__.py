@@ -8,4 +8,4 @@ from .feat_detect import HoughLineDetector, LineSegmentDetector, ExperimentSetti
 from .feat_detect import FrameStreaks, ScanStreaks, RecVectors
 from .model import CircModel, SquareModel, RecLattice, GradientDescent, ScatVecTF, KoutTF
 from .grouper import Grouper, TiltGroups
-from . import utils, Qt
+from . import utils, Qt, lsd
