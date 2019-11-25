@@ -343,15 +343,22 @@ class TargetFunction(metaclass=ABCMeta):
     def values(self, point):
         pass
 
-class ScatVecTF(TargetFunction):
+class IndexTF(TargetFunction):
+    def or_mat(self, point):
+        """
+        Return an orientation matrix based on the point
+        """
+        return point.reshape((3, 3))    
+
+class OrMatTF(IndexTF):
     """
     Target function class based on scattering vector error
 
     data - experimental data
     step_size - step size in numerical derivation
     """
-    def __init__(self, data, step_size=1e-10 * np.ones((3, 3))):
-        super(ScatVecTF, self).__init__(data, step_size)
+    def __init__(self, data, step_size=1e-10 * np.ones(9)):
+        super(OrMatTF, self).__init__(self, data, step_size)
 
     def deriv(self, point, axis):
         """
@@ -359,7 +366,7 @@ class ScatVecTF(TargetFunction):
 
         axis - axis of differentiation
         """
-        rec_lat = RecLattice(point)
+        rec_lat = RecLattice(self.or_mat(point))
         hkl_idx = rec_lat.hkl_idx(self.data.scat_vec)
         qs_model = rec_lat.scat_vec(self.data.scat_vec)
         norm = qs_model - self.data.kout
@@ -371,26 +378,47 @@ class ScatVecTF(TargetFunction):
         """
         Return target function array of values at the given point
         """
-        rec_lat = RecLattice(or_mat=point)
+        rec_lat = RecLattice(self.or_mat(point))
         qs_model = rec_lat.scat_vec(self.data.scat_vec)
         norm = qs_model - self.data.kout
         return np.abs(1 - np.sqrt((norm * norm).sum(axis=1)))
 
-class KoutTF(TargetFunction):
-    """
-    Target function class based on modelled outcoming wavevector error
+class OrthMatTF(OrMatTF):
+    def __init__(self, data, step_size=1e-10 * np.ones(5)):
+        super(OrthMatTF, self).__init__(self, data, step_size)
 
-    data - experimental data
-    """
-    def __init__(self, data, step_size=1e-10 * np.ones((3, 3))):
-        super(KoutTF, self).__init__(data, step_size)
+    def vec(self, theta, phi):
+        """
+        Return unit vector based on spherical angles
+        """
+        return np.array([np.cos(theta) * np.cos(phi),
+                         np.cos(theta) * np.sin(phi),
+                         np.sin(theta)])
 
-    def values(self, point):
+    def or_mat(self, point):
         """
-        Return target function array of values at the given point
+        Return orthogonal orientation matrix based on the point
         """
-        rec_lat = RecLattice(or_mat=point)
-        kout_model = rec_lat.kout(self.data.scat_vec)
-        d_kout = kout_model - self.data.kout
-        return np.sqrt((d_kout * d_kout).sum(axis=1))
+        a_vec = point[2] * self.vec(point[0], point[1])
+        b_vec = point[3] * self.vec(point[0] - np.pi / 2, point[1])
+        c_vec = point[4] * self.vec(point[0], point[1] + np.pi / 2)
+        return super(OrthMatTF, self).or_mat(np.concatenate((a_vec, b_vec, c_vec)))
+
+# class KoutTF(IndexTF):
+#     """
+#     Target function class based on modelled outcoming wavevector error
+
+#     data - experimental data
+#     """
+#     def __init__(self, data, step_size=1e-10 * np.ones(9)):
+#         super(KoutTF, self).__init__(data, step_size)
+
+#     def values(self, point):
+#         """
+#         Return target function array of values at the given point
+#         """
+#         rec_lat = RecLattice(or_mat=point)
+#         kout_model = rec_lat.kout(self.data.scat_vec)
+#         d_kout = kout_model - self.data.kout
+#         return np.sqrt((d_kout * d_kout).sum(axis=1))
     
