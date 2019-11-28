@@ -450,42 +450,6 @@ class QIndexStreaksTF(QIndexTF):
         norm = qs_model[:, :, None] - self.data.kout[:, None]
         return ((1 - np.sqrt((norm * norm).sum(axis=-1)))**2).sum(axis=-1)
 
-class QIndexModTF(QIndexTF):
-    def __init__(self, data, num_ap, step_size=1e-10 * np.ones(12)):
-        super(QIndexModTF, self).__init__(data, step_size)
-        self.num_ap = num_ap
-
-    def grid_values(self, point):
-        """
-        Return target function value array for all possible hkl indices
-        """
-        rec_lat = RecLattice(self.rec_basis(point))
-        qs_model = rec_lat.scat_vec(self.data.scat_vec)
-        norm = qs_model - self.data.kout[:, None]
-        norm_val = (1 - np.sqrt((norm * norm).sum(axis=-1)))**2
-        delta_q = qs_model - self.data.scat_vec[:, None]
-        delta_val = np.sum((delta_q - utils.proj(delta_q, norm))**2, axis=-1)
-        delta_val *= self.num_ap**-1
-        return np.where(delta_val > 1, delta_val, 0), norm_val / np.std(norm_val)
-
-    def values(self, point):
-        """
-        Return target function value array for a given point
-        """
-        delta_val, norm_val = self.grid_values(point)
-        ind = (np.arange(norm_val.shape[0]), np.argmin(norm_val, axis=1))
-        return (delta_val + norm_val)[ind]
-
-    def hkl_idxs(self, point):
-        """
-        Return the most optimal hkl indices based on target function values
-        """
-        rec_lat = RecLattice(self.rec_basis(point))
-        hkl_grid = rec_lat.hkl_grid(self.data.scat_vec)
-        _, norm_val = self.grid_values(point)
-        ind = (np.arange(hkl_grid.shape[0]), np.argmin(norm_val, axis=1))
-        return hkl_grid[ind]
-
 class OrthQIndexTF(QIndexTF):
     """
     Indexing solution target function class based on scattering vectors error
