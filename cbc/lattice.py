@@ -8,24 +8,15 @@ import numpy as np
 import h5py
 from . import utils
 
-def rec_basis(a_vec, b_vec, c_vec):
-    """
-    Return reciprocal basis vectors
-
-    a_vec, b_vec, c_vec - basis vectors
-    """
-    a_rec = np.cross(b_vec, c_vec) / (np.cross(b_vec, c_vec).dot(a_vec))
-    b_rec = np.cross(c_vec, a_vec) / (np.cross(c_vec, a_vec).dot(b_vec))
-    c_rec = np.cross(a_vec, b_vec) / (np.cross(a_vec, b_vec).dot(c_vec))
-    return a_rec, b_rec, c_rec
-
-def rec_or_mat(axes):
+def rec_basis(basis):
     """
     Return orientation matrix based on unit cell primitive vectors matrix
 
-    axes - unit cell primitive vectors matrix
+    basis - unit cell primitive vectors matrix
     """
-    a_rec, b_rec, c_rec = rec_basis(axes[0], axes[1], axes[2])
+    a_rec = np.cross(basis[1], basis[2]) / (np.cross(basis[1], basis[2]).dot(basis[0]))
+    b_rec = np.cross(basis[2], basis[0]) / (np.cross(basis[2], basis[0]).dot(basis[1]))
+    c_rec = np.cross(basis[0], basis[1]) / (np.cross(basis[0], basis[1]).dot(basis[2]))
     return np.stack((a_rec, b_rec, c_rec))
 
 class Cell(object):

@@ -68,6 +68,53 @@ def rotation_matrix(axis, theta):
                       2 * (_c * _d - _a * _b),
                       _a * _a + _d * _d - _b * _b - _c * _c]])
 
+
+def proj(vec, axis):
+    """
+    Return the vector projection onto an axis
+    """
+    return ((vec * axis).sum(axis=-1) / (axis**2).sum(axis=-1))[..., None] * axis
+
+def gramm_schmidt(or_mat):
+    """
+    Return orthogonalized orientation matrix using Gramm Schmidt orthogonalization
+    """
+    b_vec = or_mat[1] - proj(or_mat[1], or_mat[0])
+    c_vec = or_mat[2] - proj(or_mat[2], b_vec) - proj(or_mat[2], or_mat[0])
+    return np.stack((or_mat[0], b_vec, c_vec))
+
+def euler_angles(or_mat):
+    """
+    Return euler angles with Bunge convention from the orientation matrix
+    """
+    Phi = np.arccos(or_mat[2, 2])
+    if np.isclose(Phi, 0):
+        phi1 = np.arctan2(-or_mat[1, 0], or_mat[0, 0])
+        phi2 = 0
+    elif np.isclose(Phi, np.pi):
+        phi1 = np.arctan2(or_mat[1, 0], or_mat[0, 0])
+        phi2 = 0
+    else:
+        phi1 = np.arctan2(or_mat[2, 0], -or_mat[2, 1])
+        phi2 = np.arctan2(or_mat[0, 2], or_mat[1, 2])
+    return np.array([phi1, Phi, phi2])
+
+def euler_matrix(phi1, Phi, phi2):
+    """
+    Return euler rotation matrix based on euler angles with bunge convention
+
+    See https://www.researchgate.net/publication/324088567_Computing_Euler_angles_with_Bunge_convention_from_rotation_matrix
+    """
+    return np.array([[cos(phi1) * cos(phi2) - sin(phi1) * sin(phi2) * cos(Phi),
+                      sin(phi1) * cos(phi2) + cos(phi1) * sin(phi2) * cos(Phi),
+                      sin(phi2) * sin(Phi)],
+                     [-cos(phi1) * sin(phi2) - sin(phi1) * cos(phi2) * cos(Phi),
+                      -sin(phi1) * sin(phi2) + cos(phi1) * cos(phi2) * cos(Phi),
+                      cos(phi2) * sin(Phi)],
+                     [sin(phi1) * sin(Phi),
+                      -cos(phi1) * sin(Phi),
+                      cos(Phi)]])
+
 @nb.njit(nb.float64[:, :](nb.float64[:, :]))
 def nonmax_supression(image):
     """

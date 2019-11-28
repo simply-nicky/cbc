@@ -324,8 +324,8 @@ class FrameStreaks():
         """
         rot_m = self.exp_set.rotation_matrix(theta)
         kout = self.exp_set.laue(self.lines)
-        kin = kout - kout.mean(axis=1)[:, None] + self.kin[:, None]
-        return RecVectors(kout=kout.dot(rot_m.T), kin=kin.dot(rot_m.T))
+        return RecVectors(kout=kout.dot(rot_m.T),
+                          kin=np.tile(self.kin[:, None], (1, 2, 1)))
 
     def kout_index(self, theta):
         """
