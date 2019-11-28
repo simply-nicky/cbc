@@ -526,22 +526,4 @@ class ExpSetTF(TargetFunction):
         rec_basis = self.rec_basis.dot(self.rot_matrix(point).T)
         q_tf = QIndexTF(self.rec_vec(point))
         return q_tf.values(qindex_point(rec_basis))
-
-# class KoutTF(IndexTF):
-#     """
-#     Target function class based on modelled outcoming wavevector error
-
-#     data - experimental data
-#     """
-#     def __init__(self, data, step_size=1e-10 * np.ones(9)):
-#         super(KoutTF, self).__init__(data, step_size)
-
-#     def values(self, point):
-#         """
-#         Return target function array of values at the given point
-#         """
-#         rec_lat = RecLattice(or_mat=point)
-#         kout_model = rec_lat.kout(self.data.scat_vec)
-#         d_kout = kout_model - self.data.kout
-#         return np.sqrt((d_kout * d_kout).sum(axis=1))
     
