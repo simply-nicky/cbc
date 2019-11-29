@@ -375,28 +375,12 @@ class IndexTF(TargetFunction, metaclass=ABCMeta):
     Point is a flattened array of basis vectors lengths and orientation matrix angles
     """
     mat_shape = (3, 3)
-    pix_size = 75 * 1e-3
-
-    def kin(self, kout):
-        return np.tile(np.array([0, 0, 1]), kout.shape[:-1] + (1,))
 
     def rec_basis(self, point):
         """
         Return rectangular lattice basis vectors based on the point
         """
-        return np.cos(point[3:12]).reshape(self.mat_shape) * point[:3][:, None]
-
-    def rec_vec(self, point):
-        """
-        Return outcoming wavevectors array of the examined frame
-        """
-        pts = self.data * self.pix_size - point[12:14]
-        angles = np.arctan2(pts[..., 1], pts[..., 0])
-        thetas = np.arctan(np.sqrt(pts[..., 0]**2 + pts[..., 1]**2) / point[14])
-        kout = np.stack((np.sin(thetas) * np.cos(angles),
-                         np.sin(thetas) * np.sin(angles),
-                         np.cos(thetas)), axis=-1)
-        return RecVectors(kout=kout, kin=self.kin(kout))
+        return np.cos(point[3:]).reshape(self.mat_shape) * point[:3][:, None]
 
     @abstractmethod
     def values(self, point):
@@ -429,17 +413,16 @@ class QIndexTF(IndexTF):
 
     Point is a flattened array of basis vectors lengths and orientation matrix
     """
-    def __init__(self, data, step_size=1e-10 * np.ones(15)):
+    def __init__(self, data, step_size=1e-10 * np.ones(12)):
         super(QIndexTF, self).__init__(data, step_size)
 
     def grid_values(self, point):
         """
         Return target function value array for all possible hkl indices
         """
-        rec_vec = self.rec_vec(point)
         rec_lat = RecLattice(self.rec_basis(point))
-        qs_model = rec_lat.scat_vec(rec_vec.scat_vec)
-        norm = qs_model - rec_vec.kout[:, None]
+        qs_model = rec_lat.scat_vec(self.data.scat_vec)
+        norm = qs_model - self.data.kout[:, None]
         return (1 - np.sqrt((norm * norm).sum(axis=-1)))**2
 
     def values(self, point):
@@ -452,9 +435,8 @@ class QIndexTF(IndexTF):
         """
         Return the most optimal hkl indices based on target function values
         """
-        rec_vec = self.rec_vec(point)
         rec_lat = RecLattice(self.rec_basis(point))
-        hkl_grid = rec_lat.hkl_grid(rec_vec.scat_vec)
+        hkl_grid = rec_lat.hkl_grid(self.data.scat_vec)
         ind = (np.arange(hkl_grid.shape[0]), np.argmin(self.grid_values(point), axis=-1))
         return hkl_grid[ind]
 
@@ -463,10 +445,9 @@ class QIndexStreaksTF(QIndexTF):
         """
         Return target function value array for all possible hkl indices
         """
-        rec_vec = self.rec_vec(point)
         rec_lat = RecLattice(self.rec_basis(point))
-        qs_model = rec_lat.scat_vec(rec_vec.scat_vec)
-        norm = qs_model[:, :, None] - rec_vec.kout[:, None]
+        qs_model = rec_lat.scat_vec(self.data.scat_vec)
+        norm = qs_model[:, :, None] - self.data.kout[:, None]
         return ((1 - np.sqrt((norm * norm).sum(axis=-1)))**2).sum(axis=-1)
 
 class OrthQIndexTF(QIndexTF):
