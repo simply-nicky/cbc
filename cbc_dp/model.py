@@ -2,7 +2,7 @@
 model.py - convergent beam diffraction forward model
 """
 from math import sqrt
-from abc import ABCMeta, abstractmethod, abstractproperty
+from abc import ABCMeta, abstractmethod
 import numpy as np
 from . import utils
 from .feat_detect import RecVectors
@@ -106,83 +106,67 @@ class ABCModel(metaclass=ABCMeta):
     rec_lat - reciprocal lattice object
     num_ap - convergent beam numerical aperture
     """
+    condition = None
+
     def __init__(self, rec_lat, num_ap, q_max):
         if q_max > 2:
             raise ValueError('q_max must be less than 2')
         self.rec_lat, self.num_ap = rec_lat, num_ap
         self.rec_vec, self.raw_hkl = rec_lat.sph_vectors(q_max)
-        self.rec_abs = np.sqrt((self.rec_vec * self.rec_vec).sum(axis=1))
+        self.rec_abs = np.sqrt((self.rec_vec**2).sum(axis=-1))
 
     @property
-    def alpha(self):
-        return np.arctan2(self.rec_vec[:, 1], self.rec_vec[:, 0])
+    def rec_th(self):
+        return np.arccos(-self.rec_vec[..., 2] / self.rec_abs)
 
     @property
-    def betta(self):
-        return np.arccos(-self.rec_vec[:, 2] / self.rec_abs)
-
-    @abstractproperty
-    def condition(self):
-        pass
+    def rec_phi(self):
+        return np.arctan2(self.rec_vec[..., 1], self.rec_vec[..., 0])
 
     @property
-    def q_x(self):
-        return self.rec_vec[:, 0][self.condition]
+    def scat_vec(self):
+        return self.rec_vec[self.condition]
 
     @property
-    def q_y(self):
-        return self.rec_vec[:, 1][self.condition]
-
-    @property
-    def q_z(self):
-        return self.rec_vec[:, 2][self.condition]
-
-    @property
-    def q_abs(self):
+    def scat_abs(self):
         return self.rec_abs[self.condition]
 
     @property
-    def theta(self):
-        return np.arccos(-self.q_z / self.q_abs)
+    def scat_th(self):
+        return np.arccos(-self.scat_vec[..., 2] / self.scat_abs)
 
     @property
-    def phi(self):
-        return np.arctan2(self.q_y, self.q_x)
+    def scat_phi(self):
+        return np.arctan2(self.scat_vec[..., 1], self.scat_vec[..., 0])
 
     @property
     def hkl_idx(self):
         return self.raw_hkl[self.condition]
 
+    @property
+    def source(self):
+        """
+        Return source points that define incoming wavevectors for given reciprocal lattice
+        """
+        return np.stack((-np.sin(self.scat_th - np.arccos(self.scat_abs / 2)) * np.cos(self.scat_phi),
+                         -np.sin(self.scat_th - np.arccos(self.scat_abs / 2)) * np.sin(self.scat_phi),
+                         np.cos(self.scat_th - np.arccos(self.scat_abs / 2))), axis=-1)
+
     def laue_vectors(self):
         """
         Return reciprocal lattice points that take part in diffracton
         """
-        return self.q_x, self.q_y, self.q_z, self.q_abs
-
-    def source_pts(self):
-        """
-        Return source points that define incoming wavevectors for given reciprocal lattice
-        """
-        o_x = -np.sin(self.theta - np.arccos(self.q_abs / 2)) * np.cos(self.phi)
-        o_y = -np.sin(self.theta - np.arccos(self.q_abs / 2)) * np.sin(self.phi)
-        o_z = np.cos(self.theta - np.arccos(self.q_abs / 2))
-        return o_x, o_y, o_z
+        return self.scat_vec, self.scat_abs
 
     @abstractmethod
-    def entry_pts(self): pass
-
-    @abstractmethod
-    def exit_pts(self): pass
+    def source_lines(self):
+        pass
 
     def out_wavevectors(self):
         """
         Return output wave vectors
         """
-        onx, ony, onz = self.entry_pts()
-        oxx, oxy, oxz = self.exit_pts()
-        return (np.stack((self.q_x + onx, self.q_x + oxx), axis=1),
-                np.stack((self.q_y + ony, self.q_y + oxy), axis=1),
-                np.stack((self.q_z + onz, self.q_z + oxz), axis=1))
+        return self.source_lines() + self.scat_vec[:, None]
 
     def det_pts(self, exp_set):
         """
@@ -190,9 +174,9 @@ class ABCModel(metaclass=ABCMeta):
 
         exp_set - ExperrimentSettings class object
         """
-        k_x, k_y, k_z = self.out_wavevectors()
-        det_x = exp_set.det_pos[2] * np.tan(np.arccos(k_z)) * np.cos(np.arctan2(k_y, k_x))
-        det_y = exp_set.det_pos[2] * np.tan(np.arccos(k_z)) * np.sin(np.arctan2(k_y, k_x))
+        k_out = self.out_wavevectors()
+        det_x = exp_set.det_pos[2] * np.tan(np.arccos(k_out[..., 2])) * np.cos(np.arctan2(k_out[..., 1], k_out[..., 0]))
+        det_y = exp_set.det_pos[2] * np.tan(np.arccos(k_out[..., 2])) * np.sin(np.arctan2(k_out[..., 1], k_out[..., 0]))
         return (np.stack((det_x, det_y), axis=-1) + exp_set.det_pos[:2]) / exp_set.pix_size
 
 class CircModel(ABCModel):
@@ -202,90 +186,76 @@ class CircModel(ABCModel):
     rec_lat - reciprocal lattice object
     num_ap - convergent beam numerical aperture
     """
-    @property
-    def condition(self):
-        return np.abs(np.sin(self.betta - np.arccos(self.rec_abs / 2))) < self.num_ap
+    def __init__(self, rec_lat, num_ap, q_max):
+        super(CircModel, self).__init__(rec_lat, num_ap, q_max)
+        self.condition = np.abs(np.sin(self.rec_th - np.arccos(self.rec_abs / 2))) < self.num_ap
 
-    def entry_pts(self):
+    def source_lines(self):
         """
-        Return first point array of source lines
+        Return source lines of a circular aperture lens
         """
-        dphi = np.arccos((self.q_abs**2 + 2 * self.q_z * sqrt(1 - self.num_ap**2)) / (2 * np.sqrt(self.q_x**2 + self.q_y**2) * self.num_ap))
-        return (-self.num_ap * np.cos(self.phi + dphi),
-                -self.num_ap * np.sin(self.phi + dphi),
-                np.repeat(sqrt(1 - self.num_ap**2), self.q_x.shape))
+        term1 = self.scat_abs**2 + 2 * self.scat_vec[..., 2] * sqrt(1 - self.num_ap**2)
+        term2 = 2 * np.sqrt(self.scat_vec[..., 0]**2 + self.scat_vec[..., 1]**2) * self.num_ap
+        source_pt1 = np.stack((-self.num_ap * np.cos(self.scat_phi + np.arccos(term1 / term2)),
+                               -self.num_ap * np.sin(self.scat_phi + np.arccos(term1 / term2)),
+                               np.repeat(sqrt(1 - self.num_ap**2), self.scat_vec.shape[0])), axis=-1)
+        source_pt2 = np.stack((-self.num_ap * np.cos(self.scat_phi - np.arccos(term1 / term2)),
+                               -self.num_ap * np.sin(self.scat_phi - np.arccos(term1 / term2)),
+                               np.repeat(sqrt(1 - self.num_ap**2), self.scat_vec.shape[0])), axis=-1)
+        return np.stack((source_pt1, source_pt2), axis=1)
 
-    def exit_pts(self):
-        """
-        Return second point array of source lines
-        """
-        dphi = np.arccos((self.q_abs**2 + 2 * self.q_z * sqrt(1 - self.num_ap**2)) / (2 * np.sqrt(self.q_x**2 + self.q_y**2) * self.num_ap))
-        return (-self.num_ap * np.cos(self.phi - dphi),
-                -self.num_ap * np.sin(self.phi - dphi),
-                np.repeat(sqrt(1 - self.num_ap**2), self.q_x.shape))
-
-class SquareModel(ABCModel):
+class RectModel(ABCModel):
     """
     Rectangular aperture convergent beam diffraction pattern generator class
 
     rec_lat - reciprocal lattice object
-    num_ap - convergent beam numerical aperture
+    num_ap = [num_ap_x, num_ap_y] - convergent beam numerical apertures in x- and y-axis
     """
-    condition = None
+    sol_m = np.array([[[0, 1], [0, 1], [1, 0], [1, 0]]])
 
     def __init__(self, rec_lat, num_ap, q_max):
-        super(SquareModel, self).__init__(rec_lat, num_ap, q_max)
-        self.condition = np.abs(np.sin(self.betta - np.arccos(self.rec_abs / 2))) < sqrt(2) * self.num_ap
-        self._pts_x, self._pts_y, _mask = self._source_lines()
-        self.condition = (np.where(self.condition)[0][_mask],)
+        super(RectModel, self).__init__(rec_lat, num_ap, q_max)
+        cond_list = [np.abs(self.rec_vec[..., 1] / self.rec_vec[..., 0]) <= self.num_ap[1] / self.num_ap[0],
+                     np.abs(self.rec_vec[..., 1] / self.rec_vec[..., 0]) >= self.num_ap[1] / self.num_ap[0]]
+        func_list = [lambda rec_phi: self.num_ap[0] / np.cos(rec_phi),
+                     lambda rec_phi: self.num_ap[1] / np.sin(rec_phi)]
+        kin_bound = np.piecewise(self.rec_phi, cond_list, func_list)
+        self.condition = np.abs(np.sin(self.rec_th - np.arccos(self.rec_abs / 2))) < np.abs(kin_bound)
+        self.bounds = np.array([[[self.num_ap[0], 0],
+                                 [-self.num_ap[0], 0],
+                                 [0, self.num_ap[1]],
+                                 [0, -self.num_ap[1]]]])
+        self.init_source_lines()
 
-    @property
-    def bounds(self):
-        return np.stack(([self.num_ap, 0],
-                         [-self.num_ap, 0],
-                         [0, self.num_ap],
-                         [0, -self.num_ap]), axis=1)
+    def init_source_lines(self):
+        """
+        Derive source lines of a rectangular aperture lens
+        """
+        coeff1 = (self.source * self.scat_vec).sum(axis=-1)[..., None] - (self.bounds * self.scat_vec[..., None, :2]).sum(axis=-1)
+        coeff2 = np.stack((self.scat_vec[..., 1], self.scat_vec[..., 1], self.scat_vec[..., 0], self.scat_vec[..., 0]), axis=-1)
+        alpha = coeff2**2 + self.scat_vec[..., None, 2]**2
+        betta = coeff2 * coeff1
+        gamma = coeff1**2 - self.scat_vec[..., None, 2]**2 * (1 - self.bounds.sum(axis=2)**2)
+        delta = betta**2 - alpha * gamma
+        delta_mask = np.where((delta > 0).all(axis=-1))[0]
 
-    def _source_lines(self):
-        boundary_prd = (np.multiply.outer(self.q_x, self.bounds[0]) +
-                        np.multiply.outer(self.q_y, self.bounds[1]))
-        source_x, source_y, source_z = self.source_pts()
-        c_1 = (source_x * self.q_x + source_y * self.q_y + source_z * self.q_z)[:, np.newaxis] - boundary_prd
-        c_2 = np.stack((self.q_y, self.q_y, self.q_x, self.q_x), axis=1)
-        c_3 = np.stack(([0, 1], [0, 1], [1, 0], [1, 0]), axis=1)
-        a_coeff, b_coeff, c_coeff = (c_2**2 + self.q_z[:, np.newaxis]**2,
-                                     c_2 * c_1,
-                                     c_1**2 - (self.q_z**2 * (1 - self.num_ap**2))[:, np.newaxis])
-        delta = b_coeff**2 - a_coeff * c_coeff
-        delta_mask = np.where((delta > 0).all(axis=1))
-        a_masked, b_masked, delta_masked = a_coeff[delta_mask], b_coeff[delta_mask], delta[delta_mask]
-        pts = np.concatenate((self.bounds + (c_3 * ((b_masked + np.sqrt(delta_masked)) / a_masked)[:, np.newaxis]),
-                              self.bounds + (c_3 * ((b_masked - np.sqrt(delta_masked)) / a_masked)[:, np.newaxis])), axis=2)
-        ort_mask = np.abs((source_x[delta_mask][:, np.newaxis] - pts[:, 0]) *
-                          self.q_x[delta_mask][:, np.newaxis] +
-                          (source_y[delta_mask][:, np.newaxis] - pts[:, 1]) *
-                          self.q_y[delta_mask][:, np.newaxis] +
-                          (source_z[delta_mask][:, np.newaxis] - np.sqrt(1 - pts[:, 0]**2 - pts[:, 1]**2)) *
-                          self.q_z[delta_mask][:, np.newaxis]) < 1e-6
-        pts_x = pts[:, 0][(np.abs(pts) <= self.num_ap).all(axis=1) & ort_mask].reshape(-1, 2)
-        pts_y = pts[:, 1][(np.abs(pts) <= self.num_ap).all(axis=1) & ort_mask].reshape(-1, 2)
-        return pts_x, pts_y, (delta_mask[0][((np.abs(pts) <= self.num_ap).all(axis=1) & ort_mask).any(axis=1)],)
+        alpha, betta, delta = alpha[delta_mask], betta[delta_mask], delta[delta_mask]
+        self.condition = np.where(self.condition)[0][delta_mask]
 
-    def entry_pts(self):
-        """
-        Return first point array of source lines
-        """
-        return (self._pts_x[:, 0],
-                self._pts_y[:, 0],
-                np.sqrt(1 - self._pts_x[:, 0]**2 - self._pts_y[:, 0]**2))
+        solution = np.concatenate((self.bounds + self.sol_m * ((betta + np.sqrt(delta)) / alpha)[..., None],
+                                   self.bounds + self.sol_m * ((betta - np.sqrt(delta)) / alpha)[..., None]), axis=1)
+        solution = np.stack((solution[..., 0],
+                             solution[..., 1],
+                             np.sqrt(1 - solution[..., 0]**2 - solution[..., 1]**2)), axis=-1)
+        ort_mask = np.abs(((self.source[:, None] - solution) * self.scat_vec[:, None]).sum(axis=-1)) < 1e-6
+        sol_mask = (np.abs(solution[..., 0]) <= self.num_ap[0]) & (np.abs(solution[..., 1]) <= self.num_ap[1]) & ort_mask
+        self._source_lines = solution[sol_mask].reshape((-1, 2, 3))
 
-    def exit_pts(self):
+    def source_lines(self):
         """
-        Return second point array of source lines
+        Return source lines of a rectangular aperture lens
         """
-        return (self._pts_x[:, 1],
-                self._pts_y[:, 1],
-                np.sqrt(1 - self._pts_x[:, 1]**2 - self._pts_y[:, 1]**2))
+        return self._source_lines
 
 class GradientDescent():
     """

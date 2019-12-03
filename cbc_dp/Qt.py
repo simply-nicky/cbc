@@ -279,6 +279,51 @@ class VolumeViewer(Viewer3D):
         self.roi = roi
         self.set_camera()
 
+class SurfaceViewer(Viewer3D):
+    """
+    3D surface viewer class
+
+    title - plot title
+    origin - axes origin
+    roi - viewer region of interest
+    size - viewer window size    
+    """
+    def __init__(self, title='Volume Plot', origin=(0.0, 0.0, 0.0), roi=(1.0, 1.0, 1.0), size=(800, 600), parent=None):
+        Viewer3D.__init__(self, title, origin, roi, size, parent)
+        self.s_w = gl.GLSurfacePlotItem(data=None)
+        self.addItem(self.s_w)
+
+    def set_data(self, x, y, z, color=(1.0, 1.0, 1.0, 0.5)):
+        """
+        Update the data in this surface plot
+
+        ==============  =====================================================================
+        **Arguments:**
+        x, y            1D arrays of values specifying the x,y positions of vertexes in the
+                        grid. If these are omitted, then the values will be assumed to be
+                        integers.
+        z               2D array of height values for each grid vertex.
+        color           (width, height, 4) array of vertex colors.
+        ==============  =====================================================================
+
+        All arguments are optional.
+
+        Note that if vertex positions are updated, the normal vectors for each triangle must
+        be recomputed. This is somewhat expensive if the surface was initialized with smooth=False
+        and very expensive if smooth=True. For faster performance, initialize with
+        computeNormals=False and use per-vertex colors or a normal-independent shader program.
+        """
+        colors = np.array(color)
+        if colors.shape == (4,):
+            colors = colors * np.ones(z.shape + (4,))
+        kwds = {'x': x, 'y': y, 'z': z, 'colors': colors}
+        self.s_w.setData(**kwds)
+        origin = np.array([x.min(), y.min(), z.min()])
+        roi = np.array([x.max(), y.max(), z.max()]) - origin
+        self.set_grid(origin, roi)
+        self.origin, self.roi = origin, roi
+        self.set_camera()
+
 def vol_data(data, col=np.array([255, 255, 255]), alpha=1.0):
     """
     Generate volumetric data from 3d numpy array
