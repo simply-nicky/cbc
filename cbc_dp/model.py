@@ -393,13 +393,20 @@ class QIndexTF(IndexTF):
                             exp_vec=self.data.scat_vec.mean(axis=1),
                             num_ap=self.num_ap)
 
-    def values(self, point):
+    def grid_values(self, point):
         """
-        Return target function value array for a given point
+        Return target function value array for a given grid of voting points
         """
         index_lat = self.lattice(point)
         norm = index_lat.rec_vec[:, :, None] - self.data.kout[:, None]
         norm_grid = np.abs(1 - np.ma.sqrt((norm**2).sum(axis=-1))).sum(axis=-1)
+
+        dist_x = ma.where(np.abs(index_lat.exp_vec[..., None, 0] - index_lat.rec_vec[..., 0]) > self.num_ap[0],
+                          np.abs(index_lat.exp_vec[..., None, 0] - index_lat.rec_vec[..., 0]) - self.num_ap[0],
+                          0)
+        dist_y = ma.where(np.abs(index_lat.exp_vec[..., None, 1] - index_lat.rec_vec[..., 1]) > self.num_ap[1],
+                          np.abs(index_lat.exp_vec[..., None, 1] - index_lat.rec_vec[..., 1]) - self.num_ap[1],
+                          0)
 
         pen_x = ma.where(np.abs(index_lat.source_lines[..., 0]) > self.num_ap[0],
                          np.abs(index_lat.source_lines[..., 0]) - self.num_ap[0],
@@ -408,8 +415,19 @@ class QIndexTF(IndexTF):
                          np.abs(index_lat.source_lines[..., 1]) - self.num_ap[1],
                          0)
 
-        tf_grid = norm_grid + 10 * (pen_x + pen_y).min(axis=-1)
-        return tf_grid.min(axis=-1)
+        return norm_grid + 10 * (pen_x + pen_y).min(axis=-1) + 10 * (dist_x + dist_y)
+
+    def values(self, point):
+        """
+        Return target function value for the best point
+        """
+        return self.grid_values(point).min(axis=-1)
+
+    def idxs(self, point):
+        """
+        Return best points indices
+        """
+        return (np.arange(self.data.size), np.argmin(self.grid_values(point), axis=1))
 
 class RotQIndexTF(QIndexTF):
     """
