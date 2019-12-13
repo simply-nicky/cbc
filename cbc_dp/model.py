@@ -4,116 +4,115 @@ model.py - convergent beam diffraction forward model
 from math import sqrt
 from abc import ABCMeta, abstractmethod
 import numpy as np
+from numpy import ma
 from . import utils
-from .feat_detect import RecVectors
 
-class RecLattice():
+class ABCLattice():
     """
-    Reciprocal lattice class
+    Bare-bone reciprocal lattice class
+    """
+    rec_vec, hkl_idxs = None, None
+    rec_abs, rec_th, rec_phi, source = None, None, None, None
 
-    rec_basis - unit cell vectors (dimensionless)
+    def kout_pts(self):
+        """
+        Return output wave vectors of source points
+        """
+        return self.source + self.rec_vec
+
+    def det_pts(self, exp_set):
+        """
+        Return detector diffraction orders points for a detector at given distance
+
+        exp_set - ExperrimentSettings class object
+        """
+        k_out = self.kout_pts()
+        det_x = exp_set.det_pos[2] * np.tan(np.arccos(k_out[..., 2])) * np.cos(np.arctan2(k_out[..., 1], k_out[..., 0]))
+        det_y = exp_set.det_pos[2] * np.tan(np.arccos(k_out[..., 2])) * np.sin(np.arctan2(k_out[..., 1], k_out[..., 0]))
+        return (np.stack((det_x, det_y), axis=-1) + exp_set.det_pos[:2]) / exp_set.pix_size
+
+class IndexLattice(ABCLattice):
+    """
+    Reciprocal lattice class for convergent beam crystallography indexing
+
+    rec_basis - reciprocal lattice basis vectors
+    num_ap = [num_ap_x, num_ap_y] - convergent beam numerical apertures in x- and y-axis
+    hkl_idxs - hkl indices to initialize reciprocal vectors array
+    """
+    sol_m = np.array([[[0, 1], [0, 1], [1, 0], [1, 0]]])
+
+    def __init__(self, lattice):
+        self.rec_vec, self.hkl_idxs, self.num_ap = lattice.rec_vec, lattice.hkl_idxs, lattice.num_ap
+        self.init_attributes()
+        rec_mask = np.abs(np.sin(self.rec_th - np.arccos(self.rec_abs / 2))) > np.sqrt(self.num_ap[0]**2 + self.num_ap[1]**2)
+        self.apply_mask(rec_mask[..., None])
+        self.bounds = np.array([[[self.num_ap[0], 0],
+                                 [-self.num_ap[0], 0],
+                                 [0, self.num_ap[1]],
+                                 [0, -self.num_ap[1]]]])
+        self.mask_rec_vectors()
+
+    def init_attributes(self):
+        """
+        Initialize attributes
+        """
+        self.rec_abs = ma.sqrt((self.rec_vec**2).sum(axis=-1))
+        self.rec_th = ma.arccos(-self.rec_vec[..., 2] / self.rec_abs)
+        self.rec_phi = np.arctan2(self.rec_vec[..., 1], self.rec_vec[..., 0])
+        self.source = ma.stack((-np.sin(self.rec_th - np.arccos(self.rec_abs / 2)) * np.cos(self.rec_phi),
+                                -np.sin(self.rec_th - np.arccos(self.rec_abs / 2)) * np.sin(self.rec_phi),
+                                np.cos(self.rec_th - np.arccos(self.rec_abs / 2))), axis=-1)
+
+    def apply_mask(self, mask):
+        """
+        Mask reciprocal vectors array using numpy.masked_array module
+        """
+        self.rec_vec = ma.masked_array(self.rec_vec, np.broadcast_to(mask, self.rec_vec.shape))
+        self.hkl_idxs = ma.masked_array(self.rec_vec, np.broadcast_to(mask, self.hkl_idxs.shape))
+
+    def mask_rec_vectors(self):
+        """
+        Mask lattice scattering vectors based on rectanglurar aperture lens confinement
+        """
+        coeff1 = (self.source * self.rec_vec).sum(axis=-1)[..., None] - (self.bounds * self.rec_vec[..., None, :2]).sum(axis=-1)
+        coeff2 = ma.stack((self.rec_vec[..., 1], self.rec_vec[..., 1], self.rec_vec[..., 0], self.rec_vec[..., 0]), axis=-1)
+        alpha = coeff2**2 + self.rec_vec[..., None, 2]**2
+        betta = coeff2 * coeff1
+        gamma = coeff1**2 - self.rec_vec[..., None, 2]**2 * (1 - self.bounds.sum(axis=-1)**2)
+        delta = betta**2 - alpha * gamma
+
+        solution = np.concatenate((self.bounds + self.sol_m * ((betta + ma.sqrt(delta)) / alpha)[..., None],
+                                   self.bounds + self.sol_m * ((betta - ma.sqrt(delta)) / alpha)[..., None]), axis=-2)
+        solution = ma.stack((solution[..., 0],
+                             solution[..., 1],
+                             np.sqrt(1 - solution[..., 0]**2 - solution[..., 1]**2)), axis=-1)
+        ort_mask = np.abs(((self.source[..., None, :] - solution) * self.rec_vec[..., None, :]).sum(axis=-1)) > 1e-6
+        sol_mask = (np.abs(solution[..., 0]) > self.num_ap[0]) | (np.abs(solution[..., 1]) > self.num_ap[1]) | ort_mask
+        sol_mask = ma.filled(sol_mask, fill_value=True)
+
+        self.apply_mask(sol_mask.all(axis=-1)[..., None])
+
+class RecLattice(ABCLattice, metaclass=ABCMeta):
+    """
+    Abstract reciprocal lattice in convergent beam diffraction class
+
+    rec_basis - reciprocal lattice basis vectors
     """
     def __init__(self, rec_basis):
         self.rec_basis = rec_basis
         self.basis_sizes = np.sqrt((rec_basis**2).sum(axis=1))
-        self.inv_basis = np.linalg.inv(self.rec_basis)
 
-    def hkl_grid(self, scat_vec):
-        """
-        Return a grid of all possible hkl indices of the scattering vectors array
-
-        scat_vec - scattering vectors array of shape (N, 3)
-        """
-        hkl = scat_vec.dot(self.inv_basis)
-        hkl_vals = np.stack((np.ceil(hkl), np.floor(hkl)), axis=1)
-        hkl_grid = []
-        for hkl in hkl_vals:
-            h_idx, k_idx, l_idx = np.meshgrid(hkl[..., 0], hkl[..., 1], hkl[..., 2])
-            hkl_grid.append(np.stack((h_idx.ravel(), k_idx.ravel(), l_idx.ravel()), axis=-1))
-        return np.stack(hkl_grid)
-
-    def scat_vec(self, scat_vec):
-        """
-        Return model scattering vectors based on an experimental scattering vectors array
-
-        scat_vec - scattering vectors array of shape (N, 3)
-        """
-        hkl_idx = self.hkl_grid(scat_vec)
-        return hkl_idx.dot(self.rec_basis)
-
-    def sph_vectors(self, q_max):
-        """
-        Return flattened reciprocal lattice vectors inside a sphere
-
-        q_max - reciprocal sphere radius
-        """
-        lat_size = np.rint(q_max / self.basis_sizes)
-        h_idxs = np.arange(-lat_size[0], lat_size[0] + 1)
-        k_idxs = np.arange(-lat_size[1], lat_size[1] + 1)
-        l_idxs = np.arange(-lat_size[2], lat_size[2] + 1)
-        h_grid, k_grid, l_grid = np.meshgrid(h_idxs, k_idxs, l_idxs)
-        hkl_idx = np.stack((h_grid.ravel(), k_grid.ravel(), l_grid.ravel()), axis=1)
-        rec_vec = hkl_idx.dot(self.rec_basis)
-        rec_abs = np.sqrt((rec_vec * rec_vec).sum(axis=1))
-        idxs = np.where((rec_abs != 0) & (rec_abs < q_max))
-        return rec_vec[idxs], hkl_idx[idxs]
-
-class IndexingSolution():
-    def __init__(self, rec_basis, hkl_idxs):
-        self.rec_basis, self.hkl_idxs = rec_basis, hkl_idxs
-        self.qs_model = hkl_idxs.dot(rec_basis)
+    @abstractmethod
+    def init_rec_vectors(self):
+        pass
 
     @property
-    def qabs_model(self):
-        return np.sqrt((self.qs_model**2).sum(axis=1))
+    def inv_basis(self):
+        return np.linalg.inv(self.rec_basis)
 
-    def kin(self):
-        """
-        Return model outcoming wavevectors based on an experimental scattering vectors array
-
-        scat_vec - scattering vectors array of shape (N, 3)
-        """
-        thetas = np.arccos(-self.qs_model[:, 2] / self.qabs_model)
-        phis = np.arctan2(self.qs_model[:, 1], self.qs_model[:, 0])
-        kin_x = -np.sin(thetas - np.arccos(self.qabs_model / 2)) * np.cos(phis)
-        kin_y = -np.sin(thetas - np.arccos(self.qabs_model / 2)) * np.sin(phis)
-        kin_z = np.cos(thetas - np.arccos(self.qabs_model / 2))
-        return np.stack((kin_x, kin_y, kin_z), axis=1)
-
-    def kout(self):
-        """
-        Return model outcoming wavevectors based on an experimental scattering vectors array
-
-        scat_vec - scattering vectors array of shape (N, 3)
-        """
-        return self.qs_model + self.kin()
-
-    def det_pts(self, exp_set):
-        """
-        Return predicted diffraction points at detector plane in pixels
-        """
-        kout = self.kout()
-        phis = np.arctan2(kout[:, 1], kout[:, 0])
-        thetas = np.arccos(kout[:, 2])
-        det_x = exp_set.det_pos[2] * np.tan(thetas) * np.cos(phis)
-        det_y = exp_set.det_pos[2] * np.tan(thetas) * np.sin(phis)
-        return (np.stack((det_x, det_y), axis=1) + exp_set.det_pos[:2]) / exp_set.pix_size
-
-class ABCModel(metaclass=ABCMeta):
-    """
-    Abstract convergent beam diffraction pattern generator class
-
-    rec_lat - reciprocal lattice object
-    num_ap - convergent beam numerical aperture
-    """
-    condition = None
-
-    def __init__(self, rec_lat, num_ap, q_max):
-        if q_max > 2:
-            raise ValueError('q_max must be less than 2')
-        self.rec_lat, self.num_ap = rec_lat, num_ap
-        self.rec_vec, self.raw_hkl = rec_lat.sph_vectors(q_max)
-        self.rec_abs = np.sqrt((self.rec_vec**2).sum(axis=-1))
+    @property
+    def rec_abs(self):
+        return np.sqrt((self.rec_vec**2).sum(axis=-1))
 
     @property
     def rec_th(self):
@@ -124,57 +123,109 @@ class ABCModel(metaclass=ABCMeta):
         return np.arctan2(self.rec_vec[..., 1], self.rec_vec[..., 0])
 
     @property
-    def scat_vec(self):
-        return self.rec_vec[self.condition]
-
-    @property
-    def scat_abs(self):
-        return self.rec_abs[self.condition]
-
-    @property
-    def scat_th(self):
-        return np.arccos(-self.scat_vec[..., 2] / self.scat_abs)
-
-    @property
-    def scat_phi(self):
-        return np.arctan2(self.scat_vec[..., 1], self.scat_vec[..., 0])
-
-    @property
-    def hkl_idx(self):
-        return self.raw_hkl[self.condition]
-
-    @property
     def source(self):
         """
         Return source points that define incoming wavevectors for given reciprocal lattice
         """
-        return np.stack((-np.sin(self.scat_th - np.arccos(self.scat_abs / 2)) * np.cos(self.scat_phi),
-                         -np.sin(self.scat_th - np.arccos(self.scat_abs / 2)) * np.sin(self.scat_phi),
-                         np.cos(self.scat_th - np.arccos(self.scat_abs / 2))), axis=-1)
+        return np.stack((-np.sin(self.rec_th - np.arccos(self.rec_abs / 2)) * np.cos(self.rec_phi),
+                         -np.sin(self.rec_th - np.arccos(self.rec_abs / 2)) * np.sin(self.rec_phi),
+                         np.cos(self.rec_th - np.arccos(self.rec_abs / 2))), axis=-1)
 
-    def laue_vectors(self):
-        """
-        Return reciprocal lattice points that take part in diffracton
-        """
-        return self.scat_vec, self.scat_abs
+class VotingLattice(RecLattice):
+    """
+    Voting reciprocal lattice points class used in indexing algorithm
 
+    rec_basis - reciprocal lattice basis vectors
+    exp_vec - experimental scattering vectors
+    num_ap = [num_ap_x, num_ap_y] - convergent beam numerical apertures in x- and y-axis
+    """
+    def __init__(self, rec_basis, exp_vec, num_ap):
+        super(VotingLattice, self).__init__(rec_basis)
+        self.num_ap, self.exp_vec = num_ap, exp_vec
+        na_box = np.array([num_ap[0], num_ap[1], num_ap.max()**2 / 2])
+        self.box_size = 2 * np.ceil(np.abs(na_box.dot(self.inv_basis)))
+        self.init_rec_vectors()
+
+    def hkl_box(self):
+        """
+        Return hkl indices voting box based on numerical aperture of the lens
+        """
+        h_vals = np.arange(0, self.box_size[0])
+        k_vals = np.arange(0, self.box_size[1])
+        l_vals = np.arange(0, self.box_size[2])
+        h_grid, k_grid, l_grid = np.meshgrid(h_vals, k_vals, l_vals)
+        return np.stack((h_grid.ravel(), k_grid.ravel(), l_grid.ravel()), axis=-1)
+
+    def init_rec_vectors(self):
+        """
+        Initialize voting lattice scattering vectors
+        """
+        hkl_origin = np.floor(self.exp_vec.dot(self.inv_basis)) - np.ones(3) * (self.box_size - 2) // 2
+        self.hkl_idxs = hkl_origin[:, None] + self.hkl_box()[None]
+        self.rec_vec = self.hkl_idxs.dot(self.rec_basis)
+
+class BallLattice(RecLattice):
+    """
+    Ball shaped reciprocal lattice class
+
+    rec_basis - reciprocal lattice basis vectors
+    q_max - maximax scattering vector norm value
+    """
+    rec_vec, hkl_idxs = None, None
+
+    def __init__(self, rec_basis, q_max):
+        super(BallLattice, self).__init__(rec_basis)
+        if q_max > 2:
+            raise ValueError('q_max must be less than 2')
+        self.q_max = q_max
+        self.init_rec_vectors()
+
+    def init_rec_vectors(self):
+        """
+        Initialize reciprocal lattice vectors
+        """
+        lat_size = np.rint(self.q_max / self.basis_sizes)
+        h_idxs = np.arange(-lat_size[0], lat_size[0] + 1)
+        k_idxs = np.arange(-lat_size[1], lat_size[1] + 1)
+        l_idxs = np.arange(-lat_size[2], lat_size[2] + 1)
+        h_grid, k_grid, l_grid = np.meshgrid(h_idxs, k_idxs, l_idxs)
+        hkl_idxs = np.stack((h_grid.ravel(), k_grid.ravel(), l_grid.ravel()), axis=1)
+        rec_vec = hkl_idxs.dot(self.rec_basis)
+        rec_abs = np.sqrt((rec_vec * rec_vec).sum(axis=1))
+        idxs = np.where((rec_abs != 0) & (rec_abs < self.q_max))
+        self.rec_vec, self.hkl_idxs = rec_vec[idxs], hkl_idxs[idxs]
+
+class ABCModel(BallLattice):
+    """
+    Abstract convergent beam diffraction pattern generator class
+
+    rec_basis - reciprocal lattice basis vectors
+    num_ap - convergent beam numerical aperture
+    q_max - maximax scattering vector norm value
+    """
     @abstractmethod
     def source_lines(self):
         pass
 
-    def out_wavevectors(self):
+    def apply_mask(self, mask):
         """
-        Return output wave vectors
+        Select out reciprocal vectors based on a mask
         """
-        return self.source_lines() + self.scat_vec[:, None]
+        self.rec_vec, self.hkl_idxs = self.rec_vec[mask], self.hkl_idxs[mask]
 
-    def det_pts(self, exp_set):
+    def kout_lines(self):
+        """
+        Return output wave vectors of diffraction streaks
+        """
+        return self.source_lines() + self.rec_vec[:, None]
+
+    def det_lines(self, exp_set):
         """
         Return detector diffraction orders points for a detector at given distance
 
         exp_set - ExperrimentSettings class object
         """
-        k_out = self.out_wavevectors()
+        k_out = self.kout_lines()
         det_x = exp_set.det_pos[2] * np.tan(np.arccos(k_out[..., 2])) * np.cos(np.arctan2(k_out[..., 1], k_out[..., 0]))
         det_y = exp_set.det_pos[2] * np.tan(np.arccos(k_out[..., 2])) * np.sin(np.arctan2(k_out[..., 1], k_out[..., 0]))
         return (np.stack((det_x, det_y), axis=-1) + exp_set.det_pos[:2]) / exp_set.pix_size
@@ -183,44 +234,43 @@ class CircModel(ABCModel):
     """
     Circular aperture convergent beam diffraction pattern generator class
 
-    rec_lat - reciprocal lattice object
+    rec_basis - reciprocal lattice basis vectors
     num_ap - convergent beam numerical aperture
+    q_max - maximax scattering vector norm value
     """
-    def __init__(self, rec_lat, num_ap, q_max):
-        super(CircModel, self).__init__(rec_lat, num_ap, q_max)
-        self.condition = np.abs(np.sin(self.rec_th - np.arccos(self.rec_abs / 2))) < self.num_ap
+    def __init__(self, rec_basis, num_ap, q_max):
+        super(CircModel, self).__init__(rec_basis, q_max)
+        self.num_ap = num_ap
+        self.apply_mask(np.abs(np.sin(self.rec_th - np.arccos(self.rec_abs / 2))) < self.num_ap)
 
     def source_lines(self):
         """
         Return source lines of a circular aperture lens
         """
-        term1 = self.scat_abs**2 + 2 * self.scat_vec[..., 2] * sqrt(1 - self.num_ap**2)
-        term2 = 2 * np.sqrt(self.scat_vec[..., 0]**2 + self.scat_vec[..., 1]**2) * self.num_ap
-        source_pt1 = np.stack((-self.num_ap * np.cos(self.scat_phi + np.arccos(term1 / term2)),
-                               -self.num_ap * np.sin(self.scat_phi + np.arccos(term1 / term2)),
-                               np.repeat(sqrt(1 - self.num_ap**2), self.scat_vec.shape[0])), axis=-1)
-        source_pt2 = np.stack((-self.num_ap * np.cos(self.scat_phi - np.arccos(term1 / term2)),
-                               -self.num_ap * np.sin(self.scat_phi - np.arccos(term1 / term2)),
-                               np.repeat(sqrt(1 - self.num_ap**2), self.scat_vec.shape[0])), axis=-1)
+        term1 = self.rec_abs**2 + 2 * self.rec_vec[..., 2] * sqrt(1 - self.num_ap**2)
+        term2 = 2 * np.sqrt(self.rec_vec[..., 0]**2 + self.rec_vec[..., 1]**2) * self.num_ap
+        source_pt1 = np.stack((-self.num_ap * np.cos(self.rec_phi + np.arccos(term1 / term2)),
+                               -self.num_ap * np.sin(self.rec_phi + np.arccos(term1 / term2)),
+                               np.repeat(sqrt(1 - self.num_ap**2), self.rec_vec.shape[0])), axis=-1)
+        source_pt2 = np.stack((-self.num_ap * np.cos(self.rec_phi - np.arccos(term1 / term2)),
+                               -self.num_ap * np.sin(self.rec_phi - np.arccos(term1 / term2)),
+                               np.repeat(sqrt(1 - self.num_ap**2), self.rec_vec.shape[0])), axis=-1)
         return np.stack((source_pt1, source_pt2), axis=1)
 
 class RectModel(ABCModel):
     """
     Rectangular aperture convergent beam diffraction pattern generator class
 
-    rec_lat - reciprocal lattice object
+    rec_basis - reciprocal lattice basis vectors
     num_ap = [num_ap_x, num_ap_y] - convergent beam numerical apertures in x- and y-axis
+    q_max - maximax scattering vector norm value
     """
     sol_m = np.array([[[0, 1], [0, 1], [1, 0], [1, 0]]])
 
-    def __init__(self, rec_lat, num_ap, q_max):
-        super(RectModel, self).__init__(rec_lat, num_ap, q_max)
-        cond_list = [np.abs(self.rec_vec[..., 1] / self.rec_vec[..., 0]) <= self.num_ap[1] / self.num_ap[0],
-                     np.abs(self.rec_vec[..., 1] / self.rec_vec[..., 0]) >= self.num_ap[1] / self.num_ap[0]]
-        func_list = [lambda rec_phi: self.num_ap[0] / np.cos(rec_phi),
-                     lambda rec_phi: self.num_ap[1] / np.sin(rec_phi)]
-        kin_bound = np.piecewise(self.rec_phi, cond_list, func_list)
-        self.condition = np.abs(np.sin(self.rec_th - np.arccos(self.rec_abs / 2))) < np.abs(kin_bound)
+    def __init__(self, rec_basis, num_ap, q_max):
+        super(RectModel, self).__init__(rec_basis, q_max)
+        self.num_ap = num_ap
+        self.apply_mask(np.abs(np.sin(self.rec_th - np.arccos(self.rec_abs / 2))) < np.sqrt(self.num_ap[0]**2 + self.num_ap[1]**2))
         self.bounds = np.array([[[self.num_ap[0], 0],
                                  [-self.num_ap[0], 0],
                                  [0, self.num_ap[1]],
@@ -231,24 +281,26 @@ class RectModel(ABCModel):
         """
         Derive source lines of a rectangular aperture lens
         """
-        coeff1 = (self.source * self.scat_vec).sum(axis=-1)[..., None] - (self.bounds * self.scat_vec[..., None, :2]).sum(axis=-1)
-        coeff2 = np.stack((self.scat_vec[..., 1], self.scat_vec[..., 1], self.scat_vec[..., 0], self.scat_vec[..., 0]), axis=-1)
-        alpha = coeff2**2 + self.scat_vec[..., None, 2]**2
+        coeff1 = (self.source * self.rec_vec).sum(axis=-1)[..., None] - (self.bounds * self.rec_vec[..., None, :2]).sum(axis=-1)
+        coeff2 = np.stack((self.rec_vec[..., 1], self.rec_vec[..., 1], self.rec_vec[..., 0], self.rec_vec[..., 0]), axis=-1)
+        alpha = coeff2**2 + self.rec_vec[..., None, 2]**2
         betta = coeff2 * coeff1
-        gamma = coeff1**2 - self.scat_vec[..., None, 2]**2 * (1 - self.bounds.sum(axis=2)**2)
+        gamma = coeff1**2 - self.rec_vec[..., None, 2]**2 * (1 - self.bounds.sum(axis=2)**2)
         delta = betta**2 - alpha * gamma
-        delta_mask = np.where((delta > 0).all(axis=-1))[0]
+        delta_mask = (delta > 0).all(axis=-1)
 
+        self.apply_mask(delta_mask)
         alpha, betta, delta = alpha[delta_mask], betta[delta_mask], delta[delta_mask]
-        self.condition = np.where(self.condition)[0][delta_mask]
 
         solution = np.concatenate((self.bounds + self.sol_m * ((betta + np.sqrt(delta)) / alpha)[..., None],
                                    self.bounds + self.sol_m * ((betta - np.sqrt(delta)) / alpha)[..., None]), axis=1)
         solution = np.stack((solution[..., 0],
                              solution[..., 1],
                              np.sqrt(1 - solution[..., 0]**2 - solution[..., 1]**2)), axis=-1)
-        ort_mask = np.abs(((self.source[:, None] - solution) * self.scat_vec[:, None]).sum(axis=-1)) < 1e-6
+        ort_mask = np.abs(((self.source[:, None] - solution) * self.rec_vec[:, None]).sum(axis=-1)) < 1e-6
         sol_mask = (np.abs(solution[..., 0]) <= self.num_ap[0]) & (np.abs(solution[..., 1]) <= self.num_ap[1]) & ort_mask
+
+        self.apply_mask(sol_mask.any(axis=1))
         self._source_lines = solution[sol_mask].reshape((-1, 2, 3))
 
     def source_lines(self):
@@ -346,6 +398,10 @@ class IndexTF(TargetFunction, metaclass=ABCMeta):
     """
     mat_shape = (3, 3)
 
+    def __init__(self, data, num_ap, step_size):
+        super(IndexTF, self).__init__(data, step_size)
+        self.num_ap = num_ap
+
     def rec_basis(self, point):
         """
         Return rectangular lattice basis vectors based on the point
@@ -383,44 +439,27 @@ class QIndexTF(IndexTF):
 
     Point is a flattened array of basis vectors lengths and orientation matrix
     """
-    def __init__(self, data, step_size=1e-10 * np.ones(12)):
-        super(QIndexTF, self).__init__(data, step_size)
+    def __init__(self, data, num_ap, step_size=1e-10 * np.ones(12)):
+        super(QIndexTF, self).__init__(data, num_ap, step_size)
 
-    def grid_values(self, point):
+    def lattice(self, point):
         """
-        Return target function value array for all possible hkl indices
+        Return reciprocal lattice object for a given point
         """
-        rec_lat = RecLattice(self.rec_basis(point))
-        qs_model = rec_lat.scat_vec(self.data.scat_vec)
-        norm = qs_model - self.data.kout[:, None]
-        return (1 - np.sqrt((norm * norm).sum(axis=-1)))**2
+        vot_lat = VotingLattice(self.rec_basis(point), self.data.scat_vec.mean(axis=1), self.num_ap)
+        return IndexLattice(vot_lat)
 
     def values(self, point):
         """
         Return target function value array for a given point
         """
-        return np.min(self.grid_values(point), axis=-1)
+        index_lat = self.lattice(point)
+        norm = index_lat.rec_vec[:, :, None] - self.data.kout[:, None]
+        tf_grid = np.abs(1 - np.ma.sqrt((norm**2).sum(axis=-1))).sum(axis=-1)
+        return ma.filled(np.ma.min(tf_grid, axis=1),
+                         fill_value=2 * np.sqrt((self.num_ap**2).sum()))
 
-    def hkl_idxs(self, point):
-        """
-        Return the most optimal hkl indices based on target function values
-        """
-        rec_lat = RecLattice(self.rec_basis(point))
-        hkl_grid = rec_lat.hkl_grid(self.data.scat_vec)
-        ind = (np.arange(hkl_grid.shape[0]), np.argmin(self.grid_values(point), axis=-1))
-        return hkl_grid[ind]
-
-class QIndexStreaksTF(QIndexTF):
-    def grid_values(self, point):
-        """
-        Return target function value array for all possible hkl indices
-        """
-        rec_lat = RecLattice(self.rec_basis(point))
-        qs_model = rec_lat.scat_vec(self.data.scat_vec)
-        norm = qs_model[:, :, None] - self.data.kout[:, None]
-        return ((1 - np.sqrt((norm * norm).sum(axis=-1)))**2).sum(axis=-1)
-
-class OrthQIndexTF(QIndexTF):
+class RotQIndexTF(QIndexTF):
     """
     Indexing solution target function class based on scattering vectors error
     with orthogonal basis vectors implied
@@ -431,69 +470,70 @@ class OrthQIndexTF(QIndexTF):
     Point is a flattened array of basis vectors lengths and euler angles [phi1, Phi, phi2]
     Euler angles with Bunge convention are used
     """
-    def __init__(self, data, step_size=1e-10 * np.ones(6)):
-        super(OrthQIndexTF, self).__init__(data, step_size)
+    def __init__(self, data, num_ap, rec_basis, step_size=1e-10 * np.ones(12)):
+        super(RotQIndexTF, self).__init__(data, num_ap, step_size)
+        self.basis = rec_basis
 
     def rec_basis(self, point):
         """
         Return orthogonal orientation matrix based on euler angles
         """
-        return utils.euler_matrix(point[3], point[4], point[5]) * point[:3][:, None]
+        return self.basis.dot(utils.euler_matrix(point[0], point[1], point[2]).T)
 
-class ExpSetTF(TargetFunction):
-    """
-    Experimental geaometry refinement target function class
+# class ExpSetTF(TargetFunction):
+#     """
+#     Experimental geaometry refinement target function class
 
-    data - tilt series diffraction streaks positions in detector pixels
-    rec_basis - indexing solution of the first frame in tilt series
-    step_size - step size in numerical derivation
+#     data - tilt series diffraction streaks positions in detector pixels
+#     rec_basis - indexing solution of the first frame in tilt series
+#     step_size - step size in numerical derivation
 
-    Point is as follows: [theta, phi, det_x, det_y, det_z]
-    theta, phi - axis of rotation angles
-    det_x, det_y, det_z - position of detector center in respect to the sample
-    """
-    pix_size = 75 * 1e-3
+#     Point is as follows: [theta, phi, det_x, det_y, det_z]
+#     theta, phi - axis of rotation angles
+#     det_x, det_y, det_z - position of detector center in respect to the sample
+#     """
+#     pix_size = 75 * 1e-3
 
-    def __init__(self, data, rec_basis, frame_idx=1, step_size=1e-10 * np.ones(5)):
-        det_lines = data[frame_idx].raw_lines.mean(axis=1)
-        super(ExpSetTF, self).__init__(det_lines, step_size)
-        self.rec_basis, self.frame_idx = rec_basis, frame_idx
+#     def __init__(self, data, rec_basis, frame_idx=1, step_size=1e-10 * np.ones(5)):
+#         det_lines = data[frame_idx].raw_lines.mean(axis=1)
+#         super(ExpSetTF, self).__init__(det_lines, step_size)
+#         self.rec_basis, self.frame_idx = rec_basis, frame_idx
 
-    @property
-    def kin(self):
-        return np.tile(np.array([0, 0, 1]), (self.data.shape[0], 1))
+#     @property
+#     def kin(self):
+#         return np.tile(np.array([0, 0, 1]), (self.data.shape[0], 1))
 
-    def rot_axis(self, point):
-        """
-        Return an axis of rotation
-        """
-        return np.array([np.sin(point[0]) * np.cos(point[1]),
-                         np.sin(point[0]) * np.sin(point[1]),
-                         np.cos(point[0])])
+#     def rot_axis(self, point):
+#         """
+#         Return an axis of rotation
+#         """
+#         return np.array([np.sin(point[0]) * np.cos(point[1]),
+#                          np.sin(point[0]) * np.sin(point[1]),
+#                          np.cos(point[0])])
 
-    def rot_matrix(self, point):
-        """
-        Return one degree rotation matrix
-        """
-        return utils.rotation_matrix(self.rot_axis(point), -np.radians(self.frame_idx))
+#     def rot_matrix(self, point):
+#         """
+#         Return one degree rotation matrix
+#         """
+#         return utils.rotation_matrix(self.rot_axis(point), -np.radians(self.frame_idx))
 
-    def rec_vec(self, point):
-        """
-        Return outcoming wavevectors array of the examined frame
-        """
-        pts = self.data * self.pix_size - point[2:4]
-        angles = np.arctan2(pts[..., 1], pts[..., 0])
-        thetas = np.arctan(np.sqrt(pts[..., 0]**2 + pts[..., 1]**2) / point[4])
-        kout = np.stack((np.sin(thetas) * np.cos(angles),
-                         np.sin(thetas) * np.sin(angles),
-                         np.cos(thetas)), axis=-1)
-        return RecVectors(kout=kout, kin=self.kin)
+#     def rec_vec(self, point):
+#         """
+#         Return outcoming wavevectors array of the examined frame
+#         """
+#         pts = self.data * self.pix_size - point[2:4]
+#         angles = np.arctan2(pts[..., 1], pts[..., 0])
+#         thetas = np.arctan(np.sqrt(pts[..., 0]**2 + pts[..., 1]**2) / point[4])
+#         kout = np.stack((np.sin(thetas) * np.cos(angles),
+#                          np.sin(thetas) * np.sin(angles),
+#                          np.cos(thetas)), axis=-1)
+#         return RecVectors(kout=kout, kin=self.kin)
 
-    def values(self, point):
-        """
-        Return target function array of values at the given point
-        """
-        rec_basis = self.rec_basis.dot(self.rot_matrix(point).T)
-        q_tf = QIndexTF(self.rec_vec(point))
-        return q_tf.values(qindex_point(rec_basis))
+#     def values(self, point):
+#         """
+#         Return target function array of values at the given point
+#         """
+#         rec_basis = self.rec_basis.dot(self.rot_matrix(point).T)
+#         q_tf = QIndexTF(self.rec_vec(point))
+#         return q_tf.values(qindex_point(rec_basis))
     
