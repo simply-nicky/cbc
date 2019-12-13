@@ -385,11 +385,19 @@ class QIndexTF(IndexTF):
     def __init__(self, data, num_ap, step_size=1e-10 * np.ones(12)):
         super(QIndexTF, self).__init__(data, num_ap, step_size)
 
+    def lattice(self, point):
+        """
+        Return reciprocal lattice object for a given point
+        """
+        return IndexLattice(rec_basis=self.rec_basis(point),
+                            exp_vec=self.data.scat_vec.mean(axis=1),
+                            num_ap=self.num_ap)
+
     def values(self, point):
         """
         Return target function value array for a given point
         """
-        index_lat = IndexLattice(self.rec_basis(point), self.data.scat_vec.mean(axis=1), self.num_ap)
+        index_lat = self.lattice(point)
         norm = index_lat.rec_vec[:, :, None] - self.data.kout[:, None]
         norm_grid = np.abs(1 - np.ma.sqrt((norm**2).sum(axis=-1))).sum(axis=-1)
 

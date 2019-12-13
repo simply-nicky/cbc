@@ -1,7 +1,6 @@
 import pickle
 import numpy as np
 from scipy import constants
-from scipy.optimize import minimize
 from cbc_dp import QIndexTF, qindex_point
 from cbc_dp.utils import rotation_matrix
 
@@ -12,7 +11,7 @@ b12_rec_sizes = b12_sizes**-1 * wavelength
 rec_basis_full = np.array([[-0.00795996, 0.04611703, 0.00019548],
                            [-0.03183985, -0.0060065, 0.00078193],
                            [-0.00236648, -0.00173342, 0.02502171]])
-b12_scan = pickle.load(open('b12_scan.p', 'rb'))
+b12_scan = pickle.load(open('exp_results/b12_scan.p', 'rb'))
 rot_axis = np.array([0, 1, 0])
 
 frame_idx = 0
@@ -22,8 +21,4 @@ rec_basis = rec_basis_full.dot(rot_m.T)
 
 q_tf = QIndexTF(data=qs_frame, num_ap=pupil_size)
 
-size_bounds = np.stack((0.95 * b12_rec_sizes, 1.05 * b12_rec_sizes), axis=1)
-bounds = [bound for bound in size_bounds] + 9 * [(None, None)]
-start_point = qindex_point(rec_basis)
-res = minimize(q_tf, start_point, bounds=bounds)
-bfgs_basis = q_tf.rec_basis(res.x)
+q_tf(qindex_point(rec_basis))
