@@ -7,12 +7,34 @@ import numpy as np
 from numpy import ma
 from . import utils
 
-class ABCLattice():
+class RecLattice(metaclass=ABCMeta):
     """
-    Bare-bone reciprocal lattice class
+    Abstract reciprocal lattice in convergent beam diffraction class
+
+    rec_basis - reciprocal lattice basis vectors
     """
     rec_vec, hkl_idxs = None, None
-    rec_abs, rec_th, rec_phi, source = None, None, None, None
+
+    def __init__(self, rec_basis):
+        self.rec_basis, self.inv_basis = rec_basis, np.linalg.inv(rec_basis)
+        self.basis_sizes = np.sqrt((rec_basis**2).sum(axis=1))
+        self.init_rec_vectors()
+        self.init_source()
+
+    @abstractmethod
+    def init_rec_vectors(self):
+        pass
+
+    def init_source(self):
+        """
+        Initialize source line origin points
+        """
+        self.rec_abs = ma.sqrt((self.rec_vec**2).sum(axis=-1))
+        self.rec_th = ma.arccos(-self.rec_vec[..., 2] / self.rec_abs)
+        self.rec_phi = np.arctan2(self.rec_vec[..., 1], self.rec_vec[..., 0])
+        self.source = ma.stack((-np.sin(self.rec_th - ma.arccos(self.rec_abs / 2)) * np.cos(self.rec_phi),
+                                -np.sin(self.rec_th - ma.arccos(self.rec_abs / 2)) * np.sin(self.rec_phi),
+                                np.cos(self.rec_th - ma.arccos(self.rec_abs / 2))), axis=-1)
 
     def kout_pts(self):
         """
@@ -31,107 +53,7 @@ class ABCLattice():
         det_y = exp_set.det_pos[2] * np.tan(np.arccos(k_out[..., 2])) * np.sin(np.arctan2(k_out[..., 1], k_out[..., 0]))
         return (np.stack((det_x, det_y), axis=-1) + exp_set.det_pos[:2]) / exp_set.pix_size
 
-class IndexLattice(ABCLattice):
-    """
-    Reciprocal lattice class for convergent beam crystallography indexing
-
-    rec_basis - reciprocal lattice basis vectors
-    num_ap = [num_ap_x, num_ap_y] - convergent beam numerical apertures in x- and y-axis
-    hkl_idxs - hkl indices to initialize reciprocal vectors array
-    """
-    sol_m = np.array([[[0, 1], [0, 1], [1, 0], [1, 0]]])
-
-    def __init__(self, lattice):
-        self.rec_vec, self.hkl_idxs, self.num_ap = lattice.rec_vec, lattice.hkl_idxs, lattice.num_ap
-        self.init_attributes()
-        rec_mask = np.abs(np.sin(self.rec_th - np.arccos(self.rec_abs / 2))) > np.sqrt(self.num_ap[0]**2 + self.num_ap[1]**2)
-        self.apply_mask(rec_mask[..., None])
-        self.bounds = np.array([[[self.num_ap[0], 0],
-                                 [-self.num_ap[0], 0],
-                                 [0, self.num_ap[1]],
-                                 [0, -self.num_ap[1]]]])
-        self.mask_rec_vectors()
-
-    def init_attributes(self):
-        """
-        Initialize attributes
-        """
-        self.rec_abs = ma.sqrt((self.rec_vec**2).sum(axis=-1))
-        self.rec_th = ma.arccos(-self.rec_vec[..., 2] / self.rec_abs)
-        self.rec_phi = np.arctan2(self.rec_vec[..., 1], self.rec_vec[..., 0])
-        self.source = ma.stack((-np.sin(self.rec_th - np.arccos(self.rec_abs / 2)) * np.cos(self.rec_phi),
-                                -np.sin(self.rec_th - np.arccos(self.rec_abs / 2)) * np.sin(self.rec_phi),
-                                np.cos(self.rec_th - np.arccos(self.rec_abs / 2))), axis=-1)
-
-    def apply_mask(self, mask):
-        """
-        Mask reciprocal vectors array using numpy.masked_array module
-        """
-        self.rec_vec = ma.masked_array(self.rec_vec, np.broadcast_to(mask, self.rec_vec.shape))
-        self.hkl_idxs = ma.masked_array(self.rec_vec, np.broadcast_to(mask, self.hkl_idxs.shape))
-
-    def mask_rec_vectors(self):
-        """
-        Mask lattice scattering vectors based on rectanglurar aperture lens confinement
-        """
-        coeff1 = (self.source * self.rec_vec).sum(axis=-1)[..., None] - (self.bounds * self.rec_vec[..., None, :2]).sum(axis=-1)
-        coeff2 = ma.stack((self.rec_vec[..., 1], self.rec_vec[..., 1], self.rec_vec[..., 0], self.rec_vec[..., 0]), axis=-1)
-        alpha = coeff2**2 + self.rec_vec[..., None, 2]**2
-        betta = coeff2 * coeff1
-        gamma = coeff1**2 - self.rec_vec[..., None, 2]**2 * (1 - self.bounds.sum(axis=-1)**2)
-        delta = betta**2 - alpha * gamma
-
-        solution = np.concatenate((self.bounds + self.sol_m * ((betta + ma.sqrt(delta)) / alpha)[..., None],
-                                   self.bounds + self.sol_m * ((betta - ma.sqrt(delta)) / alpha)[..., None]), axis=-2)
-        solution = ma.stack((solution[..., 0],
-                             solution[..., 1],
-                             np.sqrt(1 - solution[..., 0]**2 - solution[..., 1]**2)), axis=-1)
-        ort_mask = np.abs(((self.source[..., None, :] - solution) * self.rec_vec[..., None, :]).sum(axis=-1)) > 1e-6
-        sol_mask = (np.abs(solution[..., 0]) > self.num_ap[0]) | (np.abs(solution[..., 1]) > self.num_ap[1]) | ort_mask
-        sol_mask = ma.filled(sol_mask, fill_value=True)
-
-        self.apply_mask(sol_mask.all(axis=-1)[..., None])
-
-class RecLattice(ABCLattice, metaclass=ABCMeta):
-    """
-    Abstract reciprocal lattice in convergent beam diffraction class
-
-    rec_basis - reciprocal lattice basis vectors
-    """
-    def __init__(self, rec_basis):
-        self.rec_basis = rec_basis
-        self.basis_sizes = np.sqrt((rec_basis**2).sum(axis=1))
-
-    @abstractmethod
-    def init_rec_vectors(self):
-        pass
-
-    @property
-    def inv_basis(self):
-        return np.linalg.inv(self.rec_basis)
-
-    @property
-    def rec_abs(self):
-        return np.sqrt((self.rec_vec**2).sum(axis=-1))
-
-    @property
-    def rec_th(self):
-        return np.arccos(-self.rec_vec[..., 2] / self.rec_abs)
-
-    @property
-    def rec_phi(self):
-        return np.arctan2(self.rec_vec[..., 1], self.rec_vec[..., 0])
-
-    @property
-    def source(self):
-        """
-        Return source points that define incoming wavevectors for given reciprocal lattice
-        """
-        return np.stack((-np.sin(self.rec_th - np.arccos(self.rec_abs / 2)) * np.cos(self.rec_phi),
-                         -np.sin(self.rec_th - np.arccos(self.rec_abs / 2)) * np.sin(self.rec_phi),
-                         np.cos(self.rec_th - np.arccos(self.rec_abs / 2))), axis=-1)
-
-class VotingLattice(RecLattice):
+class IndexLattice(RecLattice):
     """
     Voting reciprocal lattice points class used in indexing algorithm
 
@@ -139,12 +61,16 @@ class VotingLattice(RecLattice):
     exp_vec - experimental scattering vectors
     num_ap = [num_ap_x, num_ap_y] - convergent beam numerical apertures in x- and y-axis
     """
-    def __init__(self, rec_basis, exp_vec, num_ap):
-        super(VotingLattice, self).__init__(rec_basis)
+    sol_m = np.array([[[0, 1], [0, 1], [1, 0], [1, 0]]])
+
+    def __init__(self, rec_basis, num_ap, exp_vec):
         self.num_ap, self.exp_vec = num_ap, exp_vec
-        na_box = np.array([num_ap[0], num_ap[1], num_ap.max()**2 / 2])
-        self.box_size = 2 * np.ceil(np.abs(na_box.dot(self.inv_basis)))
-        self.init_rec_vectors()
+        self.bounds = np.array([[[self.num_ap[0], 0],
+                                 [-self.num_ap[0], 0],
+                                 [0, self.num_ap[1]],
+                                 [0, -self.num_ap[1]]]])
+        super(IndexLattice, self).__init__(rec_basis)
+        self.init_source_lines()
 
     def hkl_box(self):
         """
@@ -160,9 +86,25 @@ class VotingLattice(RecLattice):
         """
         Initialize voting lattice scattering vectors
         """
+        na_box = np.array([self.num_ap[0], self.num_ap[1], self.num_ap.max()**2 / 2])
+        self.box_size = 2 * np.ceil(np.abs(na_box.dot(self.inv_basis)))
         hkl_origin = np.floor(self.exp_vec.dot(self.inv_basis)) - np.ones(3) * (self.box_size - 2) // 2
         self.hkl_idxs = hkl_origin[:, None] + self.hkl_box()[None]
         self.rec_vec = self.hkl_idxs.dot(self.rec_basis)
+
+    def init_source_lines(self):
+        """
+        Mask lattice scattering vectors based on rectangular aperture lens confinement
+        """
+        coeff1 = (self.source * self.rec_vec).sum(axis=-1)[..., None] - (self.bounds * self.rec_vec[..., None, :2]).sum(axis=-1)
+        coeff2 = ma.stack((self.rec_vec[..., 1], self.rec_vec[..., 1], self.rec_vec[..., 0], self.rec_vec[..., 0]), axis=-1)
+        alpha = coeff2**2 + self.rec_vec[..., None, 2]**2
+        betta = coeff2 * coeff1
+        gamma = coeff1**2 - self.rec_vec[..., None, 2]**2 * (1 - self.bounds.sum(axis=-1)**2)
+        delta = betta**2 - alpha * gamma
+
+        self.source_lines = ma.concatenate((self.bounds + self.sol_m * ((betta + ma.sqrt(delta)) / alpha)[..., None],
+                                            self.bounds + self.sol_m * ((betta - ma.sqrt(delta)) / alpha)[..., None]), axis=-2)
 
 class BallLattice(RecLattice):
     """
@@ -174,11 +116,10 @@ class BallLattice(RecLattice):
     rec_vec, hkl_idxs = None, None
 
     def __init__(self, rec_basis, q_max):
-        super(BallLattice, self).__init__(rec_basis)
-        if q_max > 2:
-            raise ValueError('q_max must be less than 2')
         self.q_max = q_max
-        self.init_rec_vectors()
+        if self.q_max > 2:
+            raise ValueError('q_max must be less than 2')
+        super(BallLattice, self).__init__(rec_basis)
 
     def init_rec_vectors(self):
         """
@@ -211,7 +152,9 @@ class ABCModel(BallLattice):
         """
         Select out reciprocal vectors based on a mask
         """
-        self.rec_vec, self.hkl_idxs = self.rec_vec[mask], self.hkl_idxs[mask]
+        self.rec_vec = self.rec_vec[mask]
+        self.hkl_idxs = self.hkl_idxs[mask]
+        self.source = self.source[mask]
 
     def kout_lines(self):
         """
@@ -239,8 +182,8 @@ class CircModel(ABCModel):
     q_max - maximax scattering vector norm value
     """
     def __init__(self, rec_basis, num_ap, q_max):
-        super(CircModel, self).__init__(rec_basis, q_max)
         self.num_ap = num_ap
+        super(CircModel, self).__init__(rec_basis, q_max)
         self.apply_mask(np.abs(np.sin(self.rec_th - np.arccos(self.rec_abs / 2))) < self.num_ap)
 
     def source_lines(self):
@@ -268,8 +211,8 @@ class RectModel(ABCModel):
     sol_m = np.array([[[0, 1], [0, 1], [1, 0], [1, 0]]])
 
     def __init__(self, rec_basis, num_ap, q_max):
-        super(RectModel, self).__init__(rec_basis, q_max)
         self.num_ap = num_ap
+        super(RectModel, self).__init__(rec_basis, q_max)
         self.apply_mask(np.abs(np.sin(self.rec_th - np.arccos(self.rec_abs / 2))) < np.sqrt(self.num_ap[0]**2 + self.num_ap[1]**2))
         self.bounds = np.array([[[self.num_ap[0], 0],
                                  [-self.num_ap[0], 0],
@@ -442,22 +385,23 @@ class QIndexTF(IndexTF):
     def __init__(self, data, num_ap, step_size=1e-10 * np.ones(12)):
         super(QIndexTF, self).__init__(data, num_ap, step_size)
 
-    def lattice(self, point):
-        """
-        Return reciprocal lattice object for a given point
-        """
-        vot_lat = VotingLattice(self.rec_basis(point), self.data.scat_vec.mean(axis=1), self.num_ap)
-        return IndexLattice(vot_lat)
-
     def values(self, point):
         """
         Return target function value array for a given point
         """
-        index_lat = self.lattice(point)
+        index_lat = IndexLattice(self.rec_basis(point), self.data.scat_vec.mean(axis=1), self.num_ap)
         norm = index_lat.rec_vec[:, :, None] - self.data.kout[:, None]
-        tf_grid = np.abs(1 - np.ma.sqrt((norm**2).sum(axis=-1))).sum(axis=-1)
-        return ma.filled(np.ma.min(tf_grid, axis=1),
-                         fill_value=2 * np.sqrt((self.num_ap**2).sum()))
+        norm_grid = np.abs(1 - np.ma.sqrt((norm**2).sum(axis=-1))).sum(axis=-1)
+
+        pen_x = ma.where(np.abs(index_lat.source_lines[..., 0]) > self.num_ap[0],
+                         np.abs(index_lat.source_lines[..., 0]) - self.num_ap[0],
+                         0)
+        pen_y = ma.where(np.abs(index_lat.source_lines[..., 1]) > self.num_ap[1],
+                         np.abs(index_lat.source_lines[..., 1]) - self.num_ap[1],
+                         0)
+
+        tf_grid = norm_grid + 10 * (pen_x + pen_y).min(axis=-1)
+        return tf_grid.min(axis=-1)
 
 class RotQIndexTF(QIndexTF):
     """
