@@ -5,7 +5,6 @@ from itertools import accumulate
 from operator import add
 from abc import ABCMeta, abstractmethod
 import numpy as np
-import numba as nb
 from skimage.transform import probabilistic_hough_line
 from skimage.draw import line_aa
 from scipy.ndimage.filters import gaussian_filter
@@ -81,7 +80,7 @@ class LineDetector(metaclass=ABCMeta):
     """
     @staticmethod
     @abstractmethod
-    def _refiner(lines, taus, drtau, drn):
+    def _refiner(lines, taus, d_tau, d_n):
         pass
 
     @abstractmethod
@@ -91,19 +90,19 @@ class LineDetector(metaclass=ABCMeta):
     def det_frame_raw(self, frame):
         return np.array([[[x0, y0], [x1, y1]] for (x0, y0), (x1, y1) in self._detector(frame)])
 
-    def det_frame(self, frame, exp_set, drtau=1.5, drn=0.75):
+    def det_frame(self, frame, exp_set, d_tau=1.5, d_n=0.75):
         """
         Return FrameStreaks class object of detected lines
 
         frame - diffraction pattern
         exp_set - ExperimentalSettings class object
-        drtau - tangent detection error
-        drn - radial detection error
+        d_tau - tangent detection error
+        d_n - radial detection error
         """
         frame_strks = FrameStreaks(self.det_frame_raw(frame), exp_set)
         ref_lines = type(self)._refiner(lines=frame_strks.lines,
                                         taus=frame_strks.taus,
-                                        drtau=drtau, drn=drn)
+                                        d_tau=d_tau, d_n=d_n)
         return FrameStreaks((ref_lines + exp_set.det_pos[:2]) / exp_set.pix_size, exp_set)
 
     def det_scan_raw(self, scan):
@@ -112,16 +111,16 @@ class LineDetector(metaclass=ABCMeta):
         """
         return [self.det_frame_raw(frame) for frame in scan]
 
-    def det_scan(self, data, exp_set, drtau=1.5, drn=0.75):
+    def det_scan(self, data, exp_set, d_tau=1.5, d_n=0.75):
         """
         Return ScanStreaks class obect of detected lines
 
         scan - rotational scan
         exp_set - ExperimentalSettings class object
-        drtau - tangent detection error
-        drn - radial detection error
+        d_tau - tangent detection error
+        d_n - radial detection error
         """
-        return ScanStreaks([self.det_frame(frame, exp_set, drtau, drn) for frame in data])
+        return ScanStreaks([self.det_frame(frame, exp_set, d_tau, d_n) for frame in data])
 
 class HoughLineDetector(LineDetector):
     """
@@ -136,45 +135,7 @@ class HoughLineDetector(LineDetector):
         self.threshold, self.line_length, self.line_gap = threshold, line_length, line_gap
         self.thetas = np.linspace(-np.pi / 2, np.pi / 2, int(np.pi / dth), endpoint=True)
 
-    @staticmethod
-    @nb.njit(nb.float64[:, :, :](nb.float64[:, :, :],
-                                 nb.float64[:, :],
-                                 nb.float64,
-                                 nb.float64))
-    def _refiner(lines, taus, drtau, drn):
-        hl_lines = np.empty(lines.shape, dtype=np.float64)
-        pts = (lines[:, 0] + lines[:, 1]) / 2
-        radii = np.sqrt(pts[:, 0]**2 + pts[:, 1]**2)
-        angles = np.arctan2(pts[:, 1], pts[:, 0])
-        idxs = []
-        count = 0
-        for idx in range(lines.shape[0]):
-            if idx not in idxs:
-                new_line = np.empty((2, 2), dtype=np.float64)
-                proj0 = lines[idx, 0, 0] * taus[idx, 0] + lines[idx, 0, 1] * taus[idx, 1]
-                proj1 = lines[idx, 1, 0] * taus[idx, 0] + lines[idx, 1, 1] * taus[idx, 1]
-                if proj0 < proj1:
-                    new_line = lines[idx]
-                else:
-                    new_line = lines[idx, ::-1]
-                for idx2 in range(lines.shape[0]):
-                    if idx == idx2:
-                        continue
-                    elif abs((angles[idx] - angles[idx2]) * radii[idx]) < drtau and abs(radii[idx] - radii[idx2]) < drn:
-                        idxs.append(idx2)
-                        proj20 = lines[idx2, 0, 0] * taus[idx, 0] + lines[idx2, 0, 1] * taus[idx, 1]
-                        proj21 = lines[idx2, 1, 0] * taus[idx, 0] + lines[idx2, 1, 1] * taus[idx, 1]
-                        if proj20 < proj0:
-                            new_line[0] = lines[idx2, 0]
-                        elif proj20 > proj1:
-                            new_line[1] = lines[idx2, 0]
-                        if proj21 < proj0:
-                            new_line[0] = lines[idx2, 1]
-                        elif proj21 > proj1:
-                            new_line[1] = lines[idx2, 1]
-                hl_lines[count] = new_line
-                count += 1
-        return hl_lines[:count]
+    _refiner = staticmethod(utils.hl_refiner)
 
     def _detector(self, frame):
         return probabilistic_hough_line(frame,
@@ -199,43 +160,7 @@ class LineSegmentDetector(LineDetector):
                                                   _sigma_scale=sigma_scale,
                                                   _log_eps=log_eps)
 
-    @staticmethod
-    @nb.njit(nb.float64[:, :, :](nb.float64[:, :, :],
-                                 nb.float64[:, :],
-                                 nb.float64,
-                                 nb.float64))
-    def _refiner(lines, taus, drtau, drn):
-        pts = (lines[:, 0] + lines[:, 1]) / 2
-        radii = np.sqrt(pts[:, 0]**2 + pts[:, 1]**2)
-        angles = np.arctan2(pts[:, 1], pts[:, 0])
-        lsd_lines = np.empty(lines.shape, dtype=np.float64)
-        idxs = []
-        count = 0
-        for idx in range(lines.shape[0]):
-            if idx not in idxs:
-                new_line = np.empty((2, 2), dtype=np.float64)
-                proj0 = lines[idx, 0, 0] * taus[idx, 0] + lines[idx, 0, 1] * taus[idx, 1]
-                proj1 = lines[idx, 1, 0] * taus[idx, 0] + lines[idx, 1, 1] * taus[idx, 1]
-                if proj0 < proj1:
-                    new_line = lines[idx]
-                else:
-                    new_line[0] = lines[idx, ::-1]
-                for idx2 in range(lines.shape[0]):
-                    if idx == idx2:
-                        continue
-                    elif abs((angles[idx] - angles[idx2]) * radii[idx]) < drtau and abs(radii[idx] - radii[idx2]) < drn:
-                        idxs.append(idx2)
-                        proj20 = lines[idx2, 0, 0] * taus[idx, 0] + lines[idx2, 0, 1] * taus[idx, 1]
-                        proj21 = lines[idx2, 1, 0] * taus[idx, 0] + lines[idx2, 1, 1] * taus[idx, 1]
-                        if proj20 < proj21:
-                            new_line[0] = (lines[idx2, 0] + new_line[0]) / 2
-                            new_line[1] = (lines[idx2, 1] + new_line[1]) / 2
-                        else:
-                            new_line[0] = (lines[idx2, 1] + new_line[0]) / 2
-                            new_line[1] = (lines[idx2, 0] + new_line[1]) / 2
-                lsd_lines[count] = new_line
-                count += 1
-        return lsd_lines[:count]
+    _refiner = staticmethod(utils.lsd_refiner)
 
     def _detector(self, frame):
         cap = np.mean(frame[frame != 0]) + np.std(frame[frame != 0])
