@@ -4,7 +4,6 @@ model.py - convergent beam diffraction forward model
 from math import sqrt
 from abc import ABCMeta, abstractmethod
 import numpy as np
-from numpy import ma
 from . import utils
 from .feat_detect import RecVectors
 
@@ -17,7 +16,7 @@ class RecLattice(metaclass=ABCMeta):
     rec_vec, hkl_idxs, source = None, None, None
 
     def __init__(self, rec_basis):
-        self.rec_basis, self.inv_basis = rec_basis, np.linalg.inv(rec_basis)
+        self.rec_basis, self.inv_basis = rec_basis, np.linalg.inv(rec_basis).T
         self.basis_sizes = np.sqrt((rec_basis**2).sum(axis=1))
         self.init_rec_vectors()
         self.init_source()
@@ -225,23 +224,11 @@ class RectModel(ABCModel):
         """
         Derive source lines of a rectangular aperture lens
         """
-        coeff1 = (self.source * self.rec_vec).sum(axis=-1)[..., None] - (self.bounds * self.rec_vec[..., None, :2]).sum(axis=-1)
-        coeff2 = np.stack((self.rec_vec[..., 1], self.rec_vec[..., 1], self.rec_vec[..., 0], self.rec_vec[..., 0]), axis=-1)
-        alpha = coeff2**2 + self.rec_vec[..., None, 2]**2
-        betta = coeff2 * coeff1
-        gamma = coeff1**2 - self.rec_vec[..., None, 2]**2 * (1 - self.bounds.sum(axis=2)**2)
-        delta = betta**2 - alpha * gamma
-
-        solution = np.concatenate((self.bounds + self.sol_m * ((betta + ma.sqrt(delta)) / alpha)[..., None],
-                                   self.bounds + self.sol_m * ((betta - ma.sqrt(delta)) / alpha)[..., None]), axis=1)
-        solution = np.stack((solution[..., 0],
-                             solution[..., 1],
-                             np.sqrt(1 - solution[..., 0]**2 - solution[..., 1]**2)), axis=-1)
-        ort_mask = np.abs(((self.source[:, None] - solution) * self.rec_vec[:, None]).sum(axis=-1)) < 1e-6
-        sol_mask = (np.abs(solution[..., 0]) <= self.num_ap[0]) & (np.abs(solution[..., 1]) <= self.num_ap[1]) & ort_mask
-
-        self.apply_mask(sol_mask.any(axis=1))
-        self._source_lines = solution[sol_mask].reshape((-1, 2, 3))
+        self._source_lines, _sol_mask = utils.model_source_lines(self.source,
+                                                                 self.rec_vec,
+                                                                 self.num_ap[0],
+                                                                 self.num_ap[1])
+        self.apply_mask(_sol_mask)
 
     def source_lines(self):
         """

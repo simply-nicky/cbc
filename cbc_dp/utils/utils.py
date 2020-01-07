@@ -114,30 +114,6 @@ def euler_matrix(phi1, Phi, phi2):
                       -cos(phi1) * sin(Phi),
                       cos(Phi)]])
 
-# @nb.njit(nb.float64[:, :](nb.float64[:, :]))
-# def nonmax_supression(image):
-#     """
-#     Apply Non-maximal supression algorithm to an image
-#     """
-#     a, b = image.shape
-#     res = np.zeros((a, b), dtype=np.float64)
-#     for i in range(1, a - 1):
-#         for j in range(1, b - 1):
-#             phase = atan2(image[i + 1, j] - image[i - 1, j], image[i, j+1] - image[i, j - 1])
-#             if (phase >= 0.875 * np.pi or phase < -0.875 * np.pi) or (phase >= -0.125 * np.pi and phase < 0.125 * np.pi):
-#                 if image[i, j] >= image[i, j + 1] and image[i, j] >= image[i, j - 1]:
-#                     res[i, j] = image[i, j]
-#             if (phase >= 0.625 * np.pi and phase < 0.875 * np.pi) or (phase >= -0.375 * np.pi and phase < -0.125 * np.pi):
-#                 if image[i, j] >= image[i - 1, j + 1] and image[i, j] >= image[i + 1, j - 1]:
-#                     res[i, j] = image[i, j]
-#             if (phase >= 0.375 * np.pi and phase < 0.625 * np.pi) or (phase >= -0.625 * np.pi and phase < -0.375 * np.pi):
-#                 if image[i, j] >= image[i - 1, j] and image[i, j] >= image[i + 1, j]:
-#                     res[i, j] = image[i, j]
-#             if (phase >= 0.125 * np.pi and phase < 0.375 * np.pi) or (phase >= -0.875 * np.pi and phase < -0.625 * np.pi):
-#                 if image[i, j] >= image[i - 1, j - 1] and image[i, j] >= image[i + 1, j + 1]:
-#                     res[i, j] = image[i, j]
-#     return res
-
 def find_reduced(vectors, basis):
     """
     Find reduced vector to basis set
