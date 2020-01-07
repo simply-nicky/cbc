@@ -14,7 +14,7 @@ REC_BASIS = 1.4 * np.array([[2e5, 0, 0],
                             [0, 0, 3e5]])
 REC_BASIS = REC_BASIS.dot(cbc_dp.utils.rotation_matrix(np.array([1, 0, 0]), np.radians(20)).T)
 REC_BASIS = REC_BASIS.dot(cbc_dp.utils.rotation_matrix(np.array([0, 1, 0]), np.radians(7)).T)
-LAT_R = 4e-5
+LAT_R = 1e-4
 
 def main(rec_basis=REC_BASIS, lat_r=LAT_R, num_ap=NUM_AP, focus=FOCUS, wavelength=WL,
          det_dist=DET_DIST, det_nx=DET_NX, det_ny=DET_NY, pix_size=PIX_SIZE):
