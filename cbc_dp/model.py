@@ -16,7 +16,7 @@ class RecLattice(metaclass=ABCMeta):
     rec_vec, hkl_idxs, source = None, None, None
 
     def __init__(self, rec_basis):
-        self.rec_basis, self.inv_basis = rec_basis, np.linalg.inv(rec_basis).T
+        self.rec_basis, self.inv_basis = rec_basis, np.linalg.inv(rec_basis)
         self.basis_sizes = np.sqrt((rec_basis**2).sum(axis=1))
         self.init_rec_vectors()
         self.init_source()

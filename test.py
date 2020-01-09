@@ -9,7 +9,7 @@ NUM_AP = np.sqrt(2.5e5**2 + 3e5**2) * WL
 FOCUS = 1.
 PIX_SIZE = 75 * 1e-3
 DET_NX, DET_NY, DET_DIST = 2000, 2000, 100
-REC_BASIS = 1.4 * np.array([[2e5, 0, 0],
+REC_BASIS = 2. * np.array([[2e5, 0, 0],
                             [0, 2.5e5, 0],
                             [0, 0, 3e5]])
 REC_BASIS = REC_BASIS.dot(cbc_dp.utils.rotation_matrix(np.array([1, 0, 0]), np.radians(20)).T)
