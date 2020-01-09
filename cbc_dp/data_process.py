@@ -228,8 +228,8 @@ class Scan1D(ABCScan, metaclass=ABCMeta):
         else:
             return np.stack(data_list, axis=0)
 
-    def corrected_data(self):
-        return CorrectedData(self.data)
+    def corrected_data(self, mask=None):
+        return CorrectedData(self.data, mask)
 
     def _save_data(self, outfile):
         datagroup = outfile.create_group('data')
@@ -238,27 +238,31 @@ class Scan1D(ABCScan, metaclass=ABCMeta):
         for key in self.coordinates:
             datagroup.create_dataset(key, data=self.coordinates[key])
 
-    def save_corrected(self):
+    def save_corrected(self, mask=None):
         """
         Save raw and corrected data to a hdf5 file
         """
         outfile = self._create_outfile(tag='corrected')
         self._save_parameters(outfile)
         self._save_data(outfile)
-        cordata = self.corrected_data()
+        cordata = self.corrected_data(mask)
         cordata.save(outfile)
         outfile.close()
 
-    def save_streaks(self, zero, drtau, drn):
+    def save_streaks(self, exp_set, d_tau=1.5, d_n=0.75, mask=None):
         """
         Save raw and corrected data, detected streaks position to a hdf5 file
+
+        exp_set - ExperimentalSettings class object
+        d_tau - tangent detection error
+        d_n - radial detection error
         """
         out_file = self._create_outfile(tag='corrected')
         self._save_parameters(out_file)
         self._save_data(out_file)
-        cor_data = self.corrected_data()
+        cor_data = self.corrected_data(mask)
         cor_data.save(out_file)
-        streaks = LineSegmentDetector().det_scan(cor_data.strks_data, zero, drtau, drn)
+        streaks = LineSegmentDetector().det_scan(cor_data.strks_data, exp_set, d_tau, d_n)
         streaks.save(raw_data=self.data, background=cor_data.background, out_file=out_file)
         out_file.close()
 
