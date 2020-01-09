@@ -384,10 +384,13 @@ class CorrectedData(object):
     strks_filter = partial(median_filter, size=(1, 3, 3))
     THRESHOLD = 10
 
-    def __init__(self, data):
+    def __init__(self, data, mask=None):
         self.data = data
-        self.bad_mask = np.median((self.data > np.percentile(self.data, 99)).astype(np.uint8),
-                                  axis=0)
+        if mask is None:
+            self.bad_mask = np.median((self.data > np.percentile(self.data, 99)).astype(np.uint8),
+                                      axis=0)
+        else:
+            self.bad_mask = mask
         self._init_bgd()
         self._init_strks()
 
