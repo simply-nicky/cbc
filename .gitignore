@@ -2,6 +2,8 @@
 results/
 logs/
 figures/
+exp_results/
+movies/
 *.hdf5
 *.png
 *.eps
