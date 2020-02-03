@@ -13,23 +13,15 @@ from cv2 import createLineSegmentDetector
 from . import utils
 from .grouper import TiltGroups
 
-class ExperimentSettings():
+class FrameSetup():
     """
-    Experimment parameters class
+    Detector frame experimental setup class
 
-    axis - axis of rotation
     pix_size - detector pixel size
     det_pos - detector position in respect to the sample [mm]
     """
-    def __init__(self, axis, pix_size, det_pos, wavelength):
-        self.axis, self.pix_size, self.det_pos = axis, pix_size, det_pos
-        self.wavelength = wavelength
-
-    def rotation_matrix(self, theta):
-        """
-        Return roational matrix for a given angle of rotation
-        """
-        return utils.rotation_matrix(self.axis, theta)
+    def __init__(self, pix_size, det_pos):
+        self.pix_size, self.det_pos = pix_size, det_pos
 
     def pixtoq(self, pixels):
         """
@@ -37,20 +29,7 @@ class ExperimentSettings():
         """
         return pixels * self.pix_size / self.det_pos[2]
 
-    def laue_raw(self, det_pixels):
-        """
-        Project detected diffraction streaks to reciprocal space vectors in [a.u.]
-
-        det_pixels - detector points: [fs, ss]
-        """
-        pts = det_pixels * self.pix_size - self.det_pos[:2]
-        angles = np.arctan2(pts[..., 1], pts[..., 0])
-        thetas = np.arctan(np.sqrt(pts[..., 0]**2 + pts[..., 1]**2) / self.det_pos[2])
-        return np.stack((np.sin(thetas) * np.cos(angles),
-                         np.sin(thetas) * np.sin(angles),
-                         np.cos(thetas)), axis=-1)
-
-    def laue(self, det_pts):
+    def kout_exp(self, det_pts):
         """
         Project detected diffraction streaks to reciprocal space vectors in [a.u.]
 
@@ -62,6 +41,44 @@ class ExperimentSettings():
                          np.sin(thetas) * np.sin(angles),
                          np.cos(thetas)), axis=-1)
 
+    def det_pts(self, k_out):
+        """
+        Return diffraction streaks locations at the detector plane
+
+        k_out - outcoming wavevectors
+        """
+        det_x = self.det_pos[2] * np.tan(np.arccos(k_out[..., 2])) * np.cos(np.arctan2(k_out[..., 1], k_out[..., 0]))
+        det_y = self.det_pos[2] * np.tan(np.arccos(k_out[..., 2])) * np.sin(np.arctan2(k_out[..., 1], k_out[..., 0]))
+        return (np.stack((det_x, det_y), axis=-1) + self.det_pos[:2]) / self.pix_size
+
+    def save(self, out_file):
+        """
+        Save experiment settings to an HDF5 file
+
+        out_file - h5py File object
+        """
+        out_group = out_file.create_group("experiment_settings")
+        out_group.create_dataset('pix_size', self.pix_size)
+        out_group.create_dataset('det_dist', self.det_pos)
+
+class ScanSetup(FrameSetup):
+    """
+    Detector tilt scan experimental setup class
+
+    pix_size - detector pixel size
+    det_pos - detector position in respect to the sample [mm]
+    rot_axis - axis of rotation
+    """
+    def __init__(self, pix_size, det_pos, rot_axis):
+        super(ScanSetup, self).__init__(pix_size, det_pos)
+        self.axis = rot_axis
+
+    def rotation_matrix(self, theta):
+        """
+        Return roational matrix for a given angle of rotation
+        """
+        return utils.rotation_matrix(self.axis, theta)
+
     def save(self, out_file):
         """
         Save experiment settings to an HDF5 file
@@ -72,7 +89,6 @@ class ExperimentSettings():
         out_group.create_dataset('pix_size', self.pix_size)
         out_group.create_dataset('det_dist', self.det_pos)
         out_group.create_dataset('rot_axis', self.axis)
-        out_group.create_dataset('wavelength', self.wavelength)
 
 class LineDetector(metaclass=ABCMeta):
     """
@@ -95,7 +111,7 @@ class LineDetector(metaclass=ABCMeta):
         Return FrameStreaks class object of detected lines
 
         frame - diffraction pattern
-        exp_set - ExperimentalSettings class object
+        exp_set - FrameSetup class object
         d_tau - tangent detection error
         d_n - radial detection error
         """
@@ -116,7 +132,7 @@ class LineDetector(metaclass=ABCMeta):
         Return ScanStreaks class obect of detected lines
 
         scan - rotational scan
-        exp_set - ExperimentalSettings class object
+        exp_set - FrameSetup class object
         d_tau - tangent detection error
         d_n - radial detection error
         """
@@ -173,6 +189,7 @@ class FrameStreaks():
 
     lines - detected lines
     zero - zero output wavevector point
+    exp_set - ScanSetup class object
     """
     def __init__(self, lines, exp_set):
         self.raw_lines, self.exp_set = lines, exp_set
@@ -232,11 +249,10 @@ class FrameStreaks():
         """
         Return reciprocal vectors of detected diffraction streaks.
 
-        exp_set - ExperimentSettings class object
         theta - angle of rotation
         """
         rot_m = self.exp_set.rotation_matrix(theta)
-        kout = self.exp_set.laue(self.lines.mean(axis=1))
+        kout = self.exp_set.kout_exp(self.lines.mean(axis=1))
         return RecVectors(kout=kout.dot(rot_m.T),
                           kin=self.kin.dot(rot_m.T))
 
@@ -244,11 +260,10 @@ class FrameStreaks():
         """
         Return reciprocal vectors of detected diffraction streaks.
 
-        exp_set - ExperimentSettings class object
         theta - angle of rotation
         """
         rot_m = self.exp_set.rotation_matrix(theta)
-        kout = self.exp_set.laue(self.lines)
+        kout = self.exp_set.kout_exp(self.lines)
         return RecVectors(kout=kout.dot(rot_m.T),
                           kin=np.tile(self.kin[:, None], (1, 2, 1)))
 
@@ -256,12 +271,11 @@ class FrameStreaks():
         """
         Return reciprocal points of indexing points.
 
-        exp_set - ExperimentSettings class object
         theta - angle of rotation
         """
         index_pts = self.index_pts()
         rot_m = self.exp_set.rotation_matrix(theta)
-        kout = self.exp_set.laue(index_pts)
+        kout = self.exp_set.kout_exp(index_pts)
         return RecVectors(kout=kout.dot(rot_m.T), kin=self.kin.dot(rot_m.T))
 
 class ScanStreaks(FrameStreaks):
@@ -318,7 +332,6 @@ class ScanStreaks(FrameStreaks):
         """
         Return reciprocal vectors of detected diffraction streaks in rotational scan.
 
-        exp_set - ExperimentSettings class object
         theta - angles of rotation
         """
         kout_list, kin_list = [], []
@@ -333,7 +346,6 @@ class ScanStreaks(FrameStreaks):
         """
         Return refined reciprocal vectors of detected diffraction streaks in rotational scan.
 
-        exp_set - ExperimentSettings class object
         thetas - angles of rotation
         pixels - pixel distance between two adjacent streaks considered to be collapsed
         """
@@ -353,7 +365,6 @@ class ScanStreaks(FrameStreaks):
         """
         Return reciprocal streaks of detected diffraction streaks in rotational scan.
 
-        exp_set - ExperimentSettings class object
         thetas - angles of rotation
         """
         kout_list, kin_list = [], []
@@ -368,7 +379,6 @@ class ScanStreaks(FrameStreaks):
         """
         Return reciprocal vectors of indexing points in rotational scan.
 
-        exp_set - ExperimentSettings class object
         thetas - angles of rotation
         """
         kout_list, kin_list = [], []
