@@ -1,38 +1,34 @@
-import cbc, logging, os
 from timeit import default_timer as timer
 import numpy as np
+from scipy import constants
+import cbc
+import cbc_dp
 
-if __name__ == "__main__":
-    wavelength = 1.14e-7
-    thdiv = 0.015
-    waist = wavelength / np.pi / thdiv
-    Na, Nb, Nc = 100, 100, 100
-    r = 5e-4
-    detNx, detNy = 2000, 2000
-    pixsize = 88.6e-3
-    detdist = 250
+WL = constants.h * constants.c / 17000 / constants.e * 1e3
+NUM_AP = np.sqrt(2.5e5**2 + 3e5**2) * WL
+FOCUS = 1.
+PIX_SIZE = 75 * 1e-3
+DET_NX, DET_NY, DET_DIST = 2000, 2000, 100
+REC_BASIS = 2.2 * np.array([[2e5, 0, 0],
+                            [0, 2.5e5, 0],
+                            [0, 0, 3e5]])
+REC_BASIS = REC_BASIS.dot(cbc_dp.utils.rotation_matrix(np.array([1, 0, 0]), np.radians(20)).T)
+REC_BASIS = REC_BASIS.dot(cbc_dp.utils.rotation_matrix(np.array([0, 1, 0]), np.radians(7)).T)
+LAT_R = 5e-4
 
-    axis = np.random.rand(3)
-    theta = 2 * np.pi * np.random.random()
-
-    astar = np.array([0.00551908483885947, -0.00294352907953398, 0.0109864094612009])
-    bstar = np.array([-0.0112435046699143, 0.000431835526544485, 0.00576393741858660])
-    cstar = np.array([-0.00357471961041716, -0.0255767535096894, -0.00505686021507011])
-    aa = np.cross(bstar, cstar) / (np.cross(bstar, cstar).dot(astar)) * 1e-7
-    bb = np.cross(cstar, astar) / (np.cross(cstar, astar).dot(bstar)) * 1e-7
-    cc = np.cross(astar, bstar) / (np.cross(astar, bstar).dot(cstar)) * 1e-7
-    dz = r / thdiv
-
-    logpath = cbc.utils.get_logpath()
-    beam = cbc.GausBeam(waist, wavelength)
-    diff = cbc.Diff(beam=beam, setup=cbc.Setup(handler=logging.FileHandler(logpath)),
-                    detector=cbc.Detector(detdist=detdist, Nx=detNx, Ny=detNy, pixsize=pixsize),
-                    lattice=cbc.BallLattice(a=aa, b=bb, c=cc, r=r))
-
-    diff.rotate_lat(axis, theta)
-    diff.move_lat([0, 0, dz])
-    
+def main(rec_basis=REC_BASIS, lat_r=LAT_R, num_ap=NUM_AP, focus=FOCUS, wavelength=WL,
+         det_dist=DET_DIST, det_nx=DET_NX, det_ny=DET_NY, pix_size=PIX_SIZE):
+    basis = cbc.rec_basis(rec_basis)
+    delta_z = lat_r / np.arctan(num_ap) / 2
+    detector = cbc.Detector(det_dist=det_dist, det_nx=det_nx, det_ny=det_ny, pix_size=pix_size)
+    beam = cbc.CircLens(focus=focus, aperture=2 * focus * num_ap, wavelength=wavelength)
+    lattice = cbc.BallLattice(basis_a=basis[0], basis_b=basis[1], basis_c=basis[2], lat_r=lat_r)
+    diff = cbc.DiffYar(beam=beam, detector=detector, lattice=lattice)
+    diff.move_lat([0, 0, delta_z])
     start = timer()
     diffres = diff.calculate().pool()
     diffres.write()
     print('Estimated time: %fs' % (timer() - start))
+
+if __name__ == "__main__":
+    main()
