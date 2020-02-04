@@ -263,6 +263,7 @@ def voting_vectors(float_t[:, ::1] kout_exp, float_t[:, ::1] rec_basis, float_t 
     """
     cdef:
         int_t a = kout_exp.shape[0], i, ii, jj, kk, h_orig, k_orig, l_orig, h_ind, k_ind, l_ind, ind
+        float_t rec_x, rec_y, rec_z, rec_abs, source_th, source_phi
         float_t[:, ::1] inv_basis = np.linalg.inv(rec_basis)
         float_t max_na = max(num_ap_x, num_ap_y)**2 / 2
         int_t h_size = int(ceil(abs(num_ap_x * inv_basis[0, 0] + num_ap_y * inv_basis[1, 0] + max_na * inv_basis[2, 0])))
@@ -286,100 +287,96 @@ def voting_vectors(float_t[:, ::1] kout_exp, float_t[:, ::1] rec_basis, float_t 
                     k_ind = k_orig + jj - k_size + 1
                     l_ind = l_orig + kk - l_size + 1
                     ind = 4 * k_size * l_size * ii + 2 * l_size * jj + kk
-                    vot_vec[i, ind, 0] = h_ind * rec_basis[0, 0] + k_ind * rec_basis[1, 0] + l_ind * rec_basis[2, 0]
-                    vot_vec[i, ind, 1] = h_ind * rec_basis[0, 1] + k_ind * rec_basis[1, 1] + l_ind * rec_basis[2, 1]
-                    vot_vec[i, ind, 2] = h_ind * rec_basis[0, 2] + k_ind * rec_basis[1, 2] + l_ind * rec_basis[2, 2]
+                    rec_x = h_ind * rec_basis[0, 0] + k_ind * rec_basis[1, 0] + l_ind * rec_basis[2, 0]
+                    rec_y = h_ind * rec_basis[0, 1] + k_ind * rec_basis[1, 1] + l_ind * rec_basis[2, 1]
+                    rec_z = h_ind * rec_basis[0, 2] + k_ind * rec_basis[1, 2] + l_ind * rec_basis[2, 2]
+                    rec_abs = sqrt(rec_x**2 + rec_y**2 + rec_z**2)
+                    source_th = acos(-rec_z / rec_abs) - acos(rec_abs / 2)
+                    source_phi = atan2(rec_y, rec_x)
+                    vot_vec[i, ind, 0] = rec_x - sin(source_th) * cos(source_phi)
+                    vot_vec[i, ind, 1] = rec_y - sin(source_th) * sin(source_phi)
+                    vot_vec[i, ind, 2] = rec_z + cos(source_th)
     return np.array(vot_vec)
 
-def fitness(float_t[:, :, ::1] vot_vec, float_t[:, :, ::1] kout_exp, float_t num_ap_x, float_t num_ap_y, float_t pen_coeff):
+def fitness(float_t[:, :, ::1] vot_vec,
+            float_t[:, :, ::1] kout_exp,
+            float_t num_ap,
+            float_t pen_coeff):
     """
     Return target function fitness value for a given point with the penalty added
 
     vot_vec - voting reciprocal lattice vectors
     kout_exp - experimental outcoming wavevectors
-    num_ap_x, num_ap_y - convergent beam numerical apertures in x- and y-axis
+    num_ap - convergent beam numerical aperture
     pen_coeff - penalty coefficient
     """
     cdef:
         int a = vot_vec.shape[0], b = vot_vec.shape[1], i, j
-        float_t fitness = 0.0, norm_abs_0, norm_abs_1, pt_fit, min_fit
-        float_t dist_x, dist_y
+        float_t tau_x, tau_y, dk_x, dk_y, fit_x, fit_y, dist
+        float_t fitness = 0.0, min_fit, pt_fit
     for i in range(a):
-        norm_abs_0 = sqrt((vot_vec[i, 0, 0] - kout_exp[i, 0, 0])**2 +
-                          (vot_vec[i, 0, 1] - kout_exp[i, 0, 1])**2 +
-                          (vot_vec[i, 0, 2] - kout_exp[i, 0, 2])**2)
-        norm_abs_1 = sqrt((vot_vec[i, 0, 0] - kout_exp[i, 1, 0])**2 +
-                          (vot_vec[i, 0, 1] - kout_exp[i, 1, 1])**2 +
-                          (vot_vec[i, 0, 2] - kout_exp[i, 1, 2])**2)
-        min_fit = abs(1 - norm_abs_0) + abs(1 - norm_abs_1)
-        dist_x = abs(vot_vec[i, 0, 0] - (kout_exp[i, 0, 0] + kout_exp[i, 1, 0]) / 2)
-        dist_y = abs(vot_vec[i, 0, 1] - (kout_exp[i, 0, 1] + kout_exp[i, 1, 1]) / 2)
-        if dist_x > num_ap_x:
-            min_fit += pen_coeff * (dist_x - num_ap_x)
-        if dist_y > num_ap_y:
-            min_fit += pen_coeff * (dist_y - num_ap_y)
+        tau_x = kout_exp[i, 1, 0] - kout_exp[i, 0, 0]
+        tau_y = kout_exp[i, 1, 1] - kout_exp[i, 0, 1]
+        dk_x = vot_vec[i, 0, 0] - (kout_exp[i, 0, 0] + kout_exp[i, 1, 0]) / 2
+        dk_y = vot_vec[i, 0, 1] - (kout_exp[i, 0, 1] + kout_exp[i, 1, 1]) / 2
+        fit_x = (dk_x * tau_y**2 - dk_y * tau_y * tau_x) / (tau_x**2 + tau_y**2)
+        fit_y = (dk_y * tau_y**2 - dk_x * tau_x * tau_y) / (tau_x**2 + tau_y**2)
+        min_fit = sqrt(fit_x**2 + fit_y**2)
+        dist = sqrt(dk_x**2 + dk_y**2)
+        if dist > num_ap:
+            min_fit += pen_coeff * (dist - num_ap)
         for j in range(1, b):
-            norm_abs_0 = sqrt((vot_vec[i, j, 0] - kout_exp[i, 0, 0])**2 +
-                              (vot_vec[i, j, 1] - kout_exp[i, 0, 1])**2 +
-                              (vot_vec[i, j, 2] - kout_exp[i, 0, 2])**2)
-            norm_abs_1 = sqrt((vot_vec[i, j, 0] - kout_exp[i, 1, 0])**2 +
-                              (vot_vec[i, j, 1] - kout_exp[i, 1, 1])**2 +
-                              (vot_vec[i, j, 2] - kout_exp[i, 1, 2])**2)
-            pt_fit = abs(1 - norm_abs_0) + abs(1 - norm_abs_1)
-            dist_x = abs(vot_vec[i, j, 0] - (kout_exp[i, 0, 0] + kout_exp[i, 1, 0]) / 2)
-            dist_y = abs(vot_vec[i, j, 1] - (kout_exp[i, 0, 1] + kout_exp[i, 1, 1]) / 2)
-            if dist_x > num_ap_x:
-                pt_fit += pen_coeff * (dist_x - num_ap_x)
-            if dist_y > num_ap_y:
-                pt_fit += pen_coeff * (dist_y - num_ap_y)
+            dk_x = vot_vec[i, j, 0] - (kout_exp[i, 0, 0] + kout_exp[i, 1, 0]) / 2
+            dk_y = vot_vec[i, j, 1] - (kout_exp[i, 0, 1] + kout_exp[i, 1, 1]) / 2
+            fit_x = (dk_x * tau_y**2 - dk_y * tau_y * tau_x) / (tau_x**2 + tau_y**2)
+            fit_y = (dk_y * tau_y**2 - dk_x * tau_x * tau_y) / (tau_x**2 + tau_y**2)
+            pt_fit = sqrt(fit_x**2 + fit_y**2)
+            dist = sqrt(dk_x**2 + dk_y**2)
+            if dist > num_ap:
+                pt_fit += pen_coeff * (dist - num_ap)
             if pt_fit < min_fit:
                 min_fit = pt_fit
         fitness += min_fit
     return fitness / a
 
-def fitness_idxs(float_t[:, :, ::1] vot_vec, float_t[:, :, ::1] kout_exp, float_t num_ap_x, float_t num_ap_y, float_t pen_coeff):
+def fitness_idxs(float_t[:, :, ::1] vot_vec,
+                 float_t[:, :, ::1] kout_exp,
+                 float_t num_ap,
+                 float_t pen_coeff):
     """
     Return indices of the best lattice vectors based on fitness values with the penalty added
 
     vot_vec - voting reciprocal lattice vectors
     kout_exp - experimental outcoming wavevectors
-    num_ap_x, num_ap_y - convergent beam numerical apertures in x- and y-axis
+    num_ap - convergent beam numerical aperture
     pen_coeff - penalty coefficient
     """
     cdef:
         int a = vot_vec.shape[0], b = vot_vec.shape[1], i, j
-        float_t norm_abs_0, norm_abs_1, pt_fit, min_fit
-        float_t dist_x, dist_y
+        float_t tau_x, tau_y, dk_x, dk_y, fit_x, fit_y, dist
+        float_t fitness = 0.0, min_fit, pt_fit
         int_t[::1] idxs = np.empty(a, dtype=np.int64)
     for i in range(a):
-        norm_abs_0 = sqrt((vot_vec[i, 0, 0] - kout_exp[i, 0, 0])**2 +
-                          (vot_vec[i, 0, 1] - kout_exp[i, 0, 1])**2 +
-                          (vot_vec[i, 0, 2] - kout_exp[i, 0, 2])**2)
-        norm_abs_1 = sqrt((vot_vec[i, 0, 0] - kout_exp[i, 1, 0])**2 +
-                          (vot_vec[i, 0, 1] - kout_exp[i, 1, 1])**2 +
-                          (vot_vec[i, 0, 2] - kout_exp[i, 1, 2])**2)
-        min_fit = abs(1 - norm_abs_0) + abs(1 - norm_abs_1)
-        dist_x = abs(vot_vec[i, 0, 0] - (kout_exp[i, 0, 0] + kout_exp[i, 1, 0]) / 2)
-        dist_y = abs(vot_vec[i, 0, 1] - (kout_exp[i, 0, 1] + kout_exp[i, 1, 1]) / 2)
-        if dist_x > num_ap_x:
-            min_fit += pen_coeff * (dist_x - num_ap_x)
-        if dist_y > num_ap_y:
-            min_fit += pen_coeff * (dist_y - num_ap_y)
+        tau_x = kout_exp[i, 1, 0] - kout_exp[i, 0, 0]
+        tau_y = kout_exp[i, 1, 1] - kout_exp[i, 0, 1]
+        dk_x = vot_vec[i, 0, 0] - kout_exp[i, 0, 0]
+        dk_y = vot_vec[i, 0, 1] - kout_exp[i, 0, 1]
+        fit_x = (dk_x * tau_y**2 - dk_y * tau_y * tau_x) / (tau_x**2 + tau_y**2)
+        fit_y = (dk_y * tau_y**2 - dk_x * tau_x * tau_y) / (tau_x**2 + tau_y**2)
+        min_fit = sqrt(fit_x**2 + fit_y**2)
+        dist = sqrt(dk_x**2 + dk_y**2)
+        if dist > num_ap:
+            min_fit += pen_coeff * (dist - num_ap)
         idxs[i] = 0
         for j in range(1, b):
-            norm_abs_0 = sqrt((vot_vec[i, j, 0] - kout_exp[i, 0, 0])**2 +
-                              (vot_vec[i, j, 1] - kout_exp[i, 0, 1])**2 +
-                              (vot_vec[i, j, 2] - kout_exp[i, 0, 2])**2)
-            norm_abs_1 = sqrt((vot_vec[i, j, 0] - kout_exp[i, 1, 0])**2 +
-                              (vot_vec[i, j, 1] - kout_exp[i, 1, 1])**2 +
-                              (vot_vec[i, j, 2] - kout_exp[i, 1, 2])**2)
-            pt_fit = abs(1 - norm_abs_0) + abs(1 - norm_abs_1)
-            dist_x = abs(vot_vec[i, j, 0] - (kout_exp[i, 0, 0] + kout_exp[i, 1, 0]) / 2)
-            dist_y = abs(vot_vec[i, j, 1] - (kout_exp[i, 0, 1] + kout_exp[i, 1, 1]) / 2)
-            if dist_x > num_ap_x:
-                pt_fit += pen_coeff * (dist_x - num_ap_x)
-            if dist_y > num_ap_y:
-                pt_fit += pen_coeff * (dist_y - num_ap_y)
+            dk_x = vot_vec[i, j, 0] - kout_exp[i, 0, 0]
+            dk_y = vot_vec[i, j, 1] - kout_exp[i, 0, 1]
+            fit_x = (dk_x * tau_y**2 - dk_y * tau_y * tau_x) / (tau_x**2 + tau_y**2)
+            fit_y = (dk_y * tau_y**2 - dk_x * tau_x * tau_y) / (tau_x**2 + tau_y**2)
+            pt_fit = sqrt(fit_x**2 + fit_y**2)
+            dist = sqrt(dk_x**2 + dk_y**2)
+            if dist > num_ap:
+                pt_fit += pen_coeff * (dist - num_ap)
             if pt_fit < min_fit:
                 min_fit = pt_fit; idxs[i] = j
     return (np.arange(a), np.asarray(idxs))

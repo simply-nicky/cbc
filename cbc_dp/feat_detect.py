@@ -47,8 +47,9 @@ class FrameSetup():
 
         k_out - outcoming wavevectors
         """
-        det_x = self.det_pos[2] * np.tan(np.arccos(k_out[..., 2])) * np.cos(np.arctan2(k_out[..., 1], k_out[..., 0]))
-        det_y = self.det_pos[2] * np.tan(np.arccos(k_out[..., 2])) * np.sin(np.arctan2(k_out[..., 1], k_out[..., 0]))
+        theta, phi = np.arccos(k_out[..., 2]), np.arctan2(k_out[..., 1], k_out[..., 0])
+        det_x = self.det_pos[2] * np.tan(theta) * np.cos(phi)
+        det_y = self.det_pos[2] * np.tan(theta) * np.sin(phi)
         return (np.stack((det_x, det_y), axis=-1) + self.det_pos[:2]) / self.pix_size
 
     def save(self, out_file):
