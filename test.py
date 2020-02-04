@@ -2,8 +2,9 @@
 test.py - cbc and cbc_dp packages testing script
 """
 import os
-import numpy as np
 from timeit import default_timer as timer
+import argparse
+import numpy as np
 import pygmo
 import h5py
 import cbc_dp
@@ -70,8 +71,10 @@ def main(prefix, scan_num, exp_set, num_ap, mask, tol, arch_size):
     start = timer()
     for arch in archs:
         arch.evolve()
+    print(archs[0])
     for arch in archs:
         arch.wait()
+    print(archs[0])
     print("The refinement has been completed, elapsed time: {:f}s".format(timer() - start))
     index_sol = np.stack([arch.get_champions_x() for arch in archs], axis=-1)
     index_f = np.stack([arch.get_champions_f() for arch in archs], axis=-1)
@@ -82,4 +85,9 @@ def main(prefix, scan_num, exp_set, num_ap, mask, tol, arch_size):
     out_file.close()
 
 if __name__ == "__main__":
-    main(B12_PREFIX, B12_NUM, B12_EXP, B12_PUPIL, B12_MASK, (0.05, 0.15), 50)
+    parser = argparse.ArgumentParser(description='Index b12 diffraction data')
+    parser.add_argument('arch_size', type=int, help='Number of refinement evaluations')
+    parser.add_argument('tol', type=float, nargs='?', default=(0.05, 0.15), help='Refinement tolerance: det_pos, rec_basis')
+    args = parser.parse_args()
+
+    main(B12_PREFIX, B12_NUM, B12_EXP, B12_PUPIL, B12_MASK, args.tol, args.arch_size)
