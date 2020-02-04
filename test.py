@@ -15,6 +15,7 @@ import numpy as np
 import pygmo
 import h5py
 import cbc_dp
+import cbc
 
 PIX_SIZE = 75 * 1e-3 #mm
 WL = 7.293188082141599e-08 #mm
@@ -79,7 +80,7 @@ def main(prefix, scan_num, exp_set, num_ap, mask, tol, n_isl):
     print("{:d} streaks detected in total".format(det_scan.size))
     print("Projecting streaks to reciprocal space...")
     scan_qs = det_scan.kout_ref(theta=np.radians(np.arange(len(det_scan.shapes))))
-    rec_basis = scan_qs.index()
+    rec_basis = cbc.rec_basis(scan_qs.index())
     print("The Diffraction data successfully autoindexed, reciprocal basis:\n{:}".format(rec_basis))
     print("Setting up the indexing solution refinement...")
     archi = get_refine(det_scan, exp_set, rec_basis, num_ap, tol, n_isl)
