@@ -9,4 +9,4 @@ from .feat_detect import HoughLineDetector, LineSegmentDetector, FrameSetup, Sca
 from .feat_detect import FrameStreaks, ScanStreaks, RecVectors
 from .grouper import Grouper, TiltGroups
 from .model import BallLattice, CircModel, RectModel
-from .indexer import IndexSetup, FCBI, RCBI, IndexSolution
+from .indexer import FCBI, RCBI, IndexSolution

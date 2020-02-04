@@ -3,6 +3,7 @@ test.py - cbc and cbc_dp packages testing script
 """
 import os
 import numpy as np
+from timeit import default_timer as timer
 import pygmo
 import h5py
 import cbc_dp
@@ -47,24 +48,38 @@ def get_refine(det_scan, exp_set, rec_basis, num_ap,
         archs.append(arch)
     return archs
 
-def main(prefix, scan_num, exp_set, num_ap, mask):
+def main(prefix, scan_num, exp_set, num_ap, mask, tol, arch_size):
     out_path = os.path.join(os.path.dirname(__file__),
-                            cbc_dp.utils.OUT_PATH['scan'].format(scan_num),
+                            "exp_results/scan_{0:05d}".format(scan_num),
                             cbc_dp.utils.FILENAME['scan'].format('corrected', scan_num, 'h5'))
+    print("Looking for file: {:s}".format(out_path))
     if not os.path.exists(out_path):
+        print('The file has not been found, generating the file...')
         save_exp_data(prefix, scan_num, mask)
+    print("Opening the file {:s}".format(out_path))
     scan_file = h5py.File(out_path, 'r')
     strks_data = scan_file['corrected_data/streaks_data'][:]
+    print("Detecting diffraction streaks...")
     det_scan = detect_scan(strks_data, exp_set)
+    print("{:d} streaks detected in total".format(det_scan.size))
     scan_qs = det_scan.kout_ref(theta=np.radians(np.arange(strks_data.shape[0])))
     rec_basis = scan_qs.index()
-    archs = get_refine(det_scan, exp_set, rec_basis, num_ap)
+    print("The Diffraction data successfully autoindexed, reciprocal basis:\n{:}".format(rec_basis))
+    archs = get_refine(det_scan, exp_set, rec_basis, num_ap, tol, arch_size)
+    print("Starting indexing solution refinement")
+    start = timer()
     for arch in archs:
         arch.evolve()
     for arch in archs:
         arch.wait()
-    index_sol = np.stack([arch.get_champion_x() for arch in archs], axis=-1)
-    np.save('exp_results/index_solutions.npy', index_sol)
+    print("The refinement has been completed, elapsed time: {:f}s".format(timer() - start))
+    index_sol = np.stack([arch.get_champions_x() for arch in archs], axis=-1)
+    index_f = np.stack([arch.get_champions_f() for arch in archs], axis=-1)
+    out_file = h5py.File('exp_results/index_sol.h5', 'w')
+    out_file.create_dataset('data/index_sol', data=index_sol)
+    out_file.create_dataset('data/index_f', data=index_f)
+    print("The refined solutions have been saved, file: {}".format(out_file.filename))
+    out_file.close()
 
 if __name__ == "__main__":
-    main(B12_PREFIX, B12_NUM, B12_EXP, B12_PUPIL, B12_MASK)
+    main(B12_PREFIX, B12_NUM, B12_EXP, B12_PUPIL, B12_MASK, (0.05, 0.15), 50)
