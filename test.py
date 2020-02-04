@@ -36,7 +36,7 @@ def detect_scan(strks_data, exp_set, scale=0.6, sigma_scale=0.4, log_eps=0):
     return lsd.det_scan(strks_data, exp_set)
 
 def get_refine(det_scan, exp_set, rec_basis, num_ap,
-               tol=(0.1, 0.1), n_isl=20, pop_size=36, gen_num=2000):
+               tol=(0.05, 0.12), n_isl=20, pop_size=50, gen_num=2000):
     archi = pygmo.archipelago()
     for idx, frame in enumerate(det_scan):
         frame_basis = rec_basis.dot(exp_set.rotation_matrix(-np.radians(idx)).T)
@@ -51,7 +51,7 @@ def get_refine(det_scan, exp_set, rec_basis, num_ap,
             archi.push_back(algo=pygmo.de(gen_num), pop=pop)
     return archi
 
-def main(prefix, scan_num, exp_set, num_ap, mask, tol, arch_size):
+def main(prefix, scan_num, exp_set, num_ap, mask, tol, n_isl):
     data_path = os.path.join(os.path.dirname(__file__),
                              "exp_results/scan_{0:05d}".format(scan_num),
                              cbc_dp.utils.FILENAME['scan'].format('corrected', scan_num, 'h5'))
@@ -76,7 +76,7 @@ def main(prefix, scan_num, exp_set, num_ap, mask, tol, arch_size):
     rec_basis = scan_qs.index()
     print("The Diffraction data successfully autoindexed, reciprocal basis:\n{:}".format(rec_basis))
     print("Setting up the indexing solution refinement...")
-    archi = get_refine(det_scan, exp_set, rec_basis, num_ap, tol, arch_size)
+    archi = get_refine(det_scan, exp_set, rec_basis, num_ap, tol, n_isl)
     print("Starting indexing solution refinement")
     start = timer()
     archi.evolve()
@@ -92,8 +92,8 @@ def main(prefix, scan_num, exp_set, num_ap, mask, tol, arch_size):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Index b12 diffraction data')
-    parser.add_argument('arch_size', type=int, help='Number of refinement evaluations')
-    parser.add_argument('tol', type=float, nargs='?', default=(0.05, 0.15), help='Refinement tolerance: det_pos, rec_basis')
+    parser.add_argument('n_isl', type=int, help='Number of islands for one frame')
+    parser.add_argument('tol', type=float, nargs='?', default=(0.05, 0.12), help='Refinement tolerance: det_pos, rec_basis')
     args = parser.parse_args()
 
-    main(B12_PREFIX, B12_NUM, B12_EXP, B12_PUPIL, B12_MASK, args.tol, args.arch_size)
+    main(B12_PREFIX, B12_NUM, B12_EXP, B12_PUPIL, B12_MASK, args.tol, args.n_isl)
