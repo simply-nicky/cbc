@@ -4,6 +4,7 @@ test.py - cbc and cbc_dp packages testing script
 import os
 from timeit import default_timer as timer
 import argparse
+import pickle
 import numpy as np
 import pygmo
 import h5py
@@ -35,8 +36,8 @@ def detect_scan(strks_data, exp_set, scale=0.6, sigma_scale=0.4, log_eps=0):
     return lsd.det_scan(strks_data, exp_set)
 
 def get_refine(det_scan, exp_set, rec_basis, num_ap,
-               tol=(0.1, 0.1), arch_size=20, pop_size=36, gen_num=2000):
-    archs = []
+               tol=(0.1, 0.1), n_isl=20, pop_size=36, gen_num=2000):
+    archi = pygmo.archipelago()
     for idx, frame in enumerate(det_scan):
         frame_basis = rec_basis.dot(exp_set.rotation_matrix(-np.radians(idx)).T)
         full_tf = cbc_dp.FCBI(lines=frame.raw_lines,
@@ -45,39 +46,44 @@ def get_refine(det_scan, exp_set, rec_basis, num_ap,
                               rec_basis=frame_basis,
                               tol=tol)
         prob = pygmo.problem(full_tf)
-        arch = pygmo.archipelago(arch_size, algo=pygmo.de(gen_num), prob=prob, pop_size=pop_size)
-        archs.append(arch)
-    return archs
+        populations = [pygmo.population(size=pop_size, prob=prob, b=pygmo.mp_bfe()) for _ in range(n_isl)]
+        for pop in populations:
+            archi.push_back(algo=pygmo.de(gen_num), pop=pop)
+    return archi
 
 def main(prefix, scan_num, exp_set, num_ap, mask, tol, arch_size):
-    out_path = os.path.join(os.path.dirname(__file__),
-                            "exp_results/scan_{0:05d}".format(scan_num),
-                            cbc_dp.utils.FILENAME['scan'].format('corrected', scan_num, 'h5'))
-    print("Looking for file: {:s}".format(out_path))
-    if not os.path.exists(out_path):
-        print('The file has not been found, generating the file...')
-        save_exp_data(prefix, scan_num, mask)
-    print("Opening the file {:s}".format(out_path))
-    scan_file = h5py.File(out_path, 'r')
-    strks_data = scan_file['corrected_data/streaks_data'][:]
-    print("Detecting diffraction streaks...")
-    det_scan = detect_scan(strks_data, exp_set)
+    data_path = os.path.join(os.path.dirname(__file__),
+                             "exp_results/scan_{0:05d}".format(scan_num),
+                             cbc_dp.utils.FILENAME['scan'].format('corrected', scan_num, 'h5'))
+    scan_path = os.path.join(os.path.dirname(__file__),
+                             "exp_results/b12_scan.p")
+    print("Looking for scan file: {}".format(scan_path))
+    if not os.path.exists(scan_path):
+        print("Scan file doesn't exist, looking for data file: {}".format(scan_path))
+        if not os.path.exists(data_path):
+            print('Data file has not been found, generating the file...')
+            save_exp_data(prefix, scan_num, mask)
+        print("Opening the data file...")
+        data_file = h5py.File(data_path, 'r')
+        strks_data = data_file['corrected_data/streaks_data'][:]
+        print("Detecting diffraction streaks...")
+        det_scan = detect_scan(strks_data, exp_set)
+    else:
+        det_scan = pickle.load(open(scan_path, 'rb'))
     print("{:d} streaks detected in total".format(det_scan.size))
-    scan_qs = det_scan.kout_ref(theta=np.radians(np.arange(strks_data.shape[0])))
+    print("Projecting streaks to reciprocal space...")
+    scan_qs = det_scan.kout_ref(theta=np.radians(np.arange(len(det_scan.shapes))))
     rec_basis = scan_qs.index()
     print("The Diffraction data successfully autoindexed, reciprocal basis:\n{:}".format(rec_basis))
-    archs = get_refine(det_scan, exp_set, rec_basis, num_ap, tol, arch_size)
+    print("Setting up the indexing solution refinement...")
+    archi = get_refine(det_scan, exp_set, rec_basis, num_ap, tol, arch_size)
     print("Starting indexing solution refinement")
     start = timer()
-    for arch in archs:
-        arch.evolve()
-    print(archs[0])
-    for arch in archs:
-        arch.wait()
-    print(archs[0])
+    archi.evolve()
+    archi.wait()
     print("The refinement has been completed, elapsed time: {:f}s".format(timer() - start))
-    index_sol = np.stack([arch.get_champions_x() for arch in archs], axis=-1)
-    index_f = np.stack([arch.get_champions_f() for arch in archs], axis=-1)
+    index_sol = archi.get_champions_x()
+    index_f = archi.get_champions_f()
     out_file = h5py.File('exp_results/index_sol.h5', 'w')
     out_file.create_dataset('data/index_sol', data=index_sol)
     out_file.create_dataset('data/index_f', data=index_f)
