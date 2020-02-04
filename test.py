@@ -93,7 +93,7 @@ def main(prefix, scan_num, exp_set, num_ap, mask, tol, n_isl):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Index b12 diffraction data')
     parser.add_argument('n_isl', type=int, help='Number of islands for one frame')
-    parser.add_argument('tol', type=float, nargs='?', default=(0.05, 0.12), help='Refinement tolerance: det_pos, rec_basis')
+    parser.add_argument('--tol', type=float, nargs=2, default=[0.05, 0.12], help='Refinement tolerance: det_pos, rec_basis')
     args = parser.parse_args()
 
     main(B12_PREFIX, B12_NUM, B12_EXP, B12_PUPIL, B12_MASK, args.tol, args.n_isl)
