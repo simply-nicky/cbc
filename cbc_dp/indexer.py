@@ -58,6 +58,25 @@ class AbcCBI(metaclass=ABCMeta):
                                     num_ap_x=self.num_ap[0],
                                     num_ap_y=self.num_ap[1])
 
+    def voting_hkl(self, vec, kout_exp):
+        """
+        Return the reciprocal lattice voting hkl indices for the given experimental outcoming
+        wavevectors kout_exp
+        """
+        return utils.voting_idxs(kout_exp=kout_exp.mean(axis=1),
+                                 rec_basis=self.rec_basis(vec),
+                                 num_ap_x=self.num_ap[0],
+                                 num_ap_y=self.num_ap[1])
+
+    def idxs(self, vot_vec, kout_exp):
+        """
+        Return the indices of the optimal reciprocal lattice voting vectors
+        """
+        return utils.fitness_idxs(vot_vec=vot_vec,
+                                  kout_exp=kout_exp,
+                                  num_ap=np.sqrt(self.num_ap[0]**2 + self.num_ap[1]**2),
+                                  pen_coeff=self.pen_coeff)
+
     def get_bounds(self):
         """
         Return the TF argument vector bounds
@@ -75,16 +94,14 @@ class AbcCBI(metaclass=ABCMeta):
                               num_ap=np.sqrt(self.num_ap[0]**2 + self.num_ap[1]**2),
                               pen_coeff=self.pen_coeff)]
 
-    def idxs(self, vec):
+    def hkl_idxs(self, vec):
         """
-        Return the indices of the optimal reciprocal lattice voting vectors
+        Return the hkl indices of the optimal reciprocal lattice voting vectors
         """
         kout_exp = self.kout_exp(vec)
         vot_vec = self.voting_vectors(vec, kout_exp)
-        return utils.fitness_idxs(vot_vec=vot_vec,
-                                  kout_exp=kout_exp,
-                                  num_ap=np.sqrt(self.num_ap[0]**2 + self.num_ap[1]**2),
-                                  pen_coeff=self.pen_coeff)
+        hkl_idxs = self.voting_hkl(vec, kout_exp)
+        return hkl_idxs[self.idxs(vot_vec, kout_exp)]
 
     def gradient(self, d_vec):
         """

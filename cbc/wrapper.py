@@ -6,7 +6,6 @@ Dependencies: numpy, matplotlib and h5py.
 
 Made by Nikolay Ivanov, 2018-2019.
 """
-
 import os
 import concurrent.futures
 import datetime

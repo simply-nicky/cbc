@@ -255,7 +255,7 @@ def kout(float_t[:, :, ::1] lines, float_t[::1] det_pos, float_t[::1] vec):
 
 def voting_vectors(float_t[:, ::1] kout_exp, float_t[:, ::1] rec_basis, float_t num_ap_x, float_t num_ap_y):
     """
-    Return reciprocal lattice voting point for the given experiment outcoming wavevectors kout_exp
+    Return reciprocal lattice voting points for the given experiment outcoming wavevectors kout_exp
 
     kout_exp - experimental outcoming wavevectors
     rec_basis - reciprocal lattice basis vectors
@@ -297,6 +297,42 @@ def voting_vectors(float_t[:, ::1] kout_exp, float_t[:, ::1] rec_basis, float_t 
                     vot_vec[i, ind, 1] = rec_y - sin(source_th) * sin(source_phi)
                     vot_vec[i, ind, 2] = rec_z + cos(source_th)
     return np.array(vot_vec)
+
+def voting_idxs(float_t[:, ::1] kout_exp, float_t[:, ::1] rec_basis, float_t num_ap_x, float_t num_ap_y):
+    """
+    Return voting points hkl indices for the given experiment outcoming wavevectors kout_exp
+
+    kout_exp - experimental outcoming wavevectors
+    rec_basis - reciprocal lattice basis vectors
+    num_ap_x, num_ap_y - numerical apertires in x- and y-axes
+    """
+    cdef:
+        int_t a = kout_exp.shape[0], i, ii, jj, kk, h_orig, k_orig, l_orig, h_ind, k_ind, l_ind, ind
+        float_t rec_x, rec_y, rec_z, rec_abs, source_th, source_phi
+        float_t[:, ::1] inv_basis = np.linalg.inv(rec_basis)
+        float_t max_na = max(num_ap_x, num_ap_y)**2 / 2
+        int_t h_size = int(ceil(abs(num_ap_x * inv_basis[0, 0] + num_ap_y * inv_basis[1, 0] + max_na * inv_basis[2, 0])))
+        int_t k_size = int(ceil(abs(num_ap_x * inv_basis[0, 1] + num_ap_y * inv_basis[1, 1] + max_na * inv_basis[2, 1])))
+        int_t l_size = int(ceil(abs(num_ap_x * inv_basis[0, 2] + num_ap_y * inv_basis[1, 2] + max_na * inv_basis[2, 2])))
+        int_t[:, :, ::1] vot_idxs = np.empty((a, 8 * h_size * k_size * l_size, 3), dtype=np.int64)
+    for i in range(a):
+        h_orig = int(floor(kout_exp[i, 0] * inv_basis[0, 0] +
+                      kout_exp[i, 1] * inv_basis[1, 0] +
+                      (kout_exp[i, 2] - 1) * inv_basis[2, 0]))
+        k_orig = int(floor(kout_exp[i, 0] * inv_basis[0, 1] +
+                      kout_exp[i, 1] * inv_basis[1, 1] +
+                      (kout_exp[i, 2] - 1) * inv_basis[2, 1]))
+        l_orig = int(floor(kout_exp[i, 0] * inv_basis[0, 2] +
+                      kout_exp[i, 1] * inv_basis[1, 2] +
+                      (kout_exp[i, 2] - 1) * inv_basis[2, 2]))
+        for ii in range(2 * h_size):
+            for jj in range(2 * k_size):
+                for kk in range(2 * l_size):
+                    ind = 4 * k_size * l_size * ii + 2 * l_size * jj + kk
+                    vot_idxs[i, ind, 0] = h_orig + ii - h_size + 1
+                    vot_idxs[i, ind, 1] = k_orig + jj - k_size + 1
+                    vot_idxs[i, ind, 2] = l_orig + kk - l_size + 1
+    return np.array(vot_idxs)
 
 def fitness(float_t[:, :, ::1] vot_vec,
             float_t[:, :, ::1] kout_exp,

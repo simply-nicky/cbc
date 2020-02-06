@@ -2,21 +2,17 @@
 beam.py - incoming beam classes module
 """
 import concurrent.futures
-from math import cos, sin, pi, sqrt
 from abc import ABCMeta, abstractmethod
 import numpy as np
-from scipy import special
+from scipy.special import jv
+from scipy.integrate import quad
 from . import utils
 
 class ABCBeam(object):
     __metaclass__ = ABCMeta
 
     def __init__(self, wavelength):
-        self.wavelength = wavelength
-
-    @property
-    def k(self):
-        return 2 * pi / self.wavelength
+        self.wavelength, self.k = wavelength, 2 * np.pi / wavelength
 
     @abstractmethod
     def wave(self, xs, ys, zs): pass
@@ -37,15 +33,8 @@ class Beam(ABCBeam):
 
     def __init__(self, waist, wavelength):
         super(Beam, self).__init__(wavelength)
-        self.waist = waist
-
-    @property
-    def zr(self):
-        return pi * self.waist**2 / self.wavelength
-
-    @property
-    def thdiv(self):
-        return self.wavelength / pi / self.waist
+        self.waist, self.zr = waist, np.pi * self.waist**2 / self.wavelength
+        self.thdiv = self.wavelength / np.pi / self.waist
 
     @abstractmethod
     def amplitude(self, xs, ys, zs): pass
@@ -68,7 +57,7 @@ class GausBeam(Beam):
     """
     def amplitude(self, xs, ys, zs):
         wz = self.waist * np.sqrt(1 + zs**2 / self.zr**2)
-        return pi**-1 * self.waist**-1 * wz**-1 * np.exp(-(xs**2 + ys**2) / wz**2)
+        return np.pi**-1 * self.waist**-1 * wz**-1 * np.exp(-(xs**2 + ys**2) / wz**2)
 
     def wavevectors(self, xs, ys, zs):
         rs = zs + self.zr**2 / zs
@@ -91,14 +80,14 @@ class BesselBeam(Beam):
     """
     def amplitude(self, xs, ys, zs):
         rs = np.sqrt(xs**2 + ys**2)
-        return special.jv(1, self.k * self.thdiv * rs) / self.thdiv / pi / rs
+        return jv(1, self.k * self.thdiv * rs) / self.thdiv / np.pi / rs
 
     def wavevectors(self, xs, ys, zs):
         return np.tile([0.0, 0.0, 1.0 - self.thdiv**2 / 2], xs.shape + (1,))
 
     def dist(self, N):
         ths = self.thdiv * np.sqrt(np.random.rand(N))
-        phis = 2 * pi * np.random.rand(N)
+        phis = 2 * np.pi * np.random.rand(N)
         return np.stack((ths * np.cos(phis), ths * np.sin(phis), 1 - ths**2 / 2), axis=-1)
 
 class LensBeam(ABCBeam):
@@ -136,35 +125,21 @@ class RectLens(LensBeam):
     ap - half aperture size
     wavelength - light wavelength
     """
-    @staticmethod
-    @utils.jit_integrand
-    def int_re(xx, x, z, k, focus):
-        return cos(k * xx**2 / 2 * (1 / focus - 1 / z) + k / z * x * xx)
-
-    @staticmethod
-    @utils.jit_integrand
-    def int_im(xx, x, z, k, focus):
-        return -sin(k * xx**2 / 2 * (1 / focus - 1 / z) + k / z * x * xx)
-
     def worker(self, xs, ys, zs):
         coeffs = -1j * np.exp(1j * self.k * (zs + self.focus)) / self.wavelength / (zs + self.focus) * np.exp(1j * self.k / 2.0 / (zs + self.focus) * (xs**2 + ys**2))
         x_vals, y_vals = [], []
-        for _x, _y, _z in zip(xs.ravel(), ys.ravel(), zs.ravel()):
-            limit = int(2.0 * self.aperture / sqrt(2.0 * self.wavelength * abs(_z)))
-            x_quad = utils.quad_complex(RectLens.int_re,
-                                        RectLens.int_im,
-                                        -self.aperture,
-                                        self.aperture,
-                                        args=(_x, _z + self.focus, self.k, self.focus),
-                                        limit=limit)
-            y_quad = utils.quad_complex(RectLens.int_re,
-                                        RectLens.int_im,
-                                        -self.aperture,
-                                        self.aperture,
-                                        args=(_y, _z + self.focus, self.k, self.focus),
-                                        limit=limit)
-            x_vals.append(x_quad)
-            y_vals.append(y_quad)
+        for x_val, y_val, z_val in zip(xs.ravel(), ys.ravel(), zs.ravel()):
+            limit = int(2.0 * self.aperture / np.sqrt(2.0 * self.wavelength * abs(z_val)))
+            x_int_re = utils.llc_rectlens_re(x_val, z_val + self.focus, self.k, self.focus)
+            x_int_im = utils.llc_rectlens_im(x_val, z_val + self.focus, self.k, self.focus)
+            y_int_re = utils.llc_rectlens_re(y_val, z_val + self.focus, self.k, self.focus)
+            y_int_im = utils.llc_rectlens_im(y_val, z_val + self.focus, self.k, self.focus)
+            x_quad_re = quad(x_int_re, -self.aperture, self.aperture, limit=limit)[0]
+            x_quad_im = quad(x_int_im, -self.aperture, self.aperture, limit=limit)[0]
+            y_quad_re = quad(y_int_re, -self.aperture, self.aperture, limit=limit)[0]
+            y_quad_im = quad(y_int_im, -self.aperture, self.aperture, limit=limit)[0]
+            x_vals.append(x_quad_re + x_quad_im * 1j)
+            y_vals.append(y_quad_re + y_quad_im * 1j)
         return coeffs * np.array(x_vals).reshape(xs.shape) * np.array(y_vals).reshape(ys.shape)
 
 class CircLens(LensBeam):
@@ -175,27 +150,15 @@ class CircLens(LensBeam):
     ap - half aperture size
     wavelength - light wavelength
     """
-    @staticmethod
-    @utils.jit_integrand
-    def int_re(rr, r, z, k, focus):
-        return cos(k * rr**2 / 2 * (1 / focus - 1 / z)) * utils.j0(k * r * rr / z) * 2 * pi * rr
-
-    @staticmethod
-    @utils.jit_integrand
-    def int_im(rr, r, z, k, focus):
-        return -sin(k * rr**2 / 2 * (1 / focus - 1 / z)) * utils.j0(k * r * rr / z) * 2 * pi * rr
-
     def worker(self, xs, ys, zs):
         coeffs = -1j * np.exp(1j * self.k * (zs + self.focus)) / self.wavelength / (zs + self.focus) * np.exp(1j * self.k * (xs**2 + ys**2) / 2.0 / (zs + self.focus))
         r_vals = []
-        for _x, _y, _z in zip(xs.ravel(), ys.ravel(), zs.ravel()):
-            limit = int(2.0 * self.aperture / sqrt(2.0 * self.wavelength * abs(_z)))
-            _r = sqrt(_x**2 + _y**2)
-            r_quad = utils.quad_complex(CircLens.int_re,
-                                        CircLens.int_im,
-                                        0,
-                                        self.aperture,
-                                        args=(_r, _z + self.focus, self.k, self.focus),
-                                        limit=limit)
-            r_vals.append(r_quad)
+        for x_val, y_val, z_val in zip(xs.ravel(), ys.ravel(), zs.ravel()):
+            limit = int(2.0 * self.aperture / np.sqrt(2.0 * self.wavelength * abs(z_val)))
+            r_val = np.sqrt(x_val**2 + y_val**2)
+            int_re = utils.llc_circlens_re(r_val, z_val + self.focus, self.k, self.focus)
+            int_im = utils.llc_circlens_im(r_val, z_val + self.focus, self.k, self.focus)
+            quad_re = quad(int_re, 0, self.aperture, limit=limit)[0]
+            quad_im = quad(int_im, 0, self.aperture, limit=limit)[0]
+            r_vals.append(quad_re + quad_im * 1j)
         return coeffs * np.array(r_vals).reshape(xs.shape)
