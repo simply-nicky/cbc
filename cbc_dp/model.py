@@ -6,26 +6,22 @@ from abc import ABCMeta, abstractmethod
 import numpy as np
 from . import utils
 
-class RecLattice(metaclass=ABCMeta):
+class ABCLattice(metaclass=ABCMeta):
     """
     Abstract reciprocal lattice in convergent beam diffraction class
 
     rec_basis - reciprocal lattice basis vectors
     """
-    rec_vec, hkl_idxs, source = None, None, None
+    rec_vec, hkl_idxs = None, None
 
     def __init__(self, rec_basis):
         self.rec_basis, self.inv_basis = rec_basis, np.linalg.inv(rec_basis)
         self.basis_sizes = np.sqrt((rec_basis**2).sum(axis=1))
-        self.init_rec_vectors()
-        self.init_source()
+        self._init_rec_vec()
+        self.rec_abs, self.rec_th, self.rec_phi, self.source = utils.init_source(self.rec_vec)
 
     @abstractmethod
-    def init_rec_vectors(self):
-        pass
-
-    @abstractmethod
-    def init_source(self):
+    def _init_rec_vec(self):
         pass
 
     def kout(self):
@@ -42,28 +38,20 @@ class RecLattice(metaclass=ABCMeta):
         """
         return exp_set.det_pts(self.kout())
 
-class BallLattice(RecLattice):
+class BallLattice(ABCLattice):
     """
     Ball shaped reciprocal lattice class
 
     rec_basis - reciprocal lattice basis vectors
     q_max - maximax scattering vector norm value
     """
-    rec_vec, hkl_idxs = None, None
-
     def __init__(self, rec_basis, q_max):
         self.q_max = q_max
         if self.q_max > 2:
             raise ValueError('q_max must be less than 2')
         super(BallLattice, self).__init__(rec_basis)
 
-    def init_source(self):
-        """
-        Initialize source line origin points
-        """
-        self.rec_abs, self.rec_th, self.rec_phi, self.source = utils.source_ball(self.rec_vec)
-
-    def init_rec_vectors(self):
+    def _init_rec_vec(self):
         """
         Initialize reciprocal lattice vectors
         """
@@ -78,7 +66,21 @@ class BallLattice(RecLattice):
         idxs = np.where((rec_abs != 0) & (rec_abs < self.q_max))
         self.rec_vec, self.hkl_idxs = rec_vec[idxs], hkl_idxs[idxs]
 
-class ABCModel(BallLattice):
+class RecLattice(ABCLattice):
+    """
+    Reciprocal lattice class
+
+    rec_basis - reciprocal lattice basis vectors
+    q_max - maximax scattering vector norm value
+    """
+    def __init__(self, rec_basis, hkl_idxs):
+        self.hkl_idxs = hkl_idxs
+        super(RecLattice, self).__init__(rec_basis)
+
+    def _init_rec_vec(self):
+        self.rec_vec = self.hkl_idxs.dot(self.rec_basis)
+
+class ABCModel():
     """
     Abstract convergent beam diffraction pattern generator class
 
@@ -86,20 +88,38 @@ class ABCModel(BallLattice):
     num_ap - convergent beam numerical aperture
     q_max - maximax scattering vector norm value
     """
+    mask = None
+    masked_attrs = ['rec_vec', 'hkl_idxs', 'rec_abs', 'rec_phi', 'rec_th', 'source']
+
+    def __init__(self, rec_lat, num_ap):
+        self.rec_lat, self.num_ap = rec_lat, num_ap
+        self._init_mask()
+
+    @abstractmethod
+    def _init_mask(self):
+        pass
+
     @abstractmethod
     def source_lines(self):
         pass
 
-    def apply_mask(self, mask):
+    def __getattr__(self, attr):
+        if attr in ABCModel.masked_attrs:
+            return self.rec_lat.__getattribute__(attr)[self.mask]
+
+    def kout(self):
         """
-        Select out reciprocal vectors based on a mask
+        Return output wave vectors of source points
         """
-        self.rec_vec = self.rec_vec[mask]
-        self.hkl_idxs = self.hkl_idxs[mask]
-        self.rec_abs = self.rec_abs[mask]
-        self.rec_th = self.rec_th[mask]
-        self.rec_phi = self.rec_phi[mask]
-        self.source = self.source[mask]
+        return self.source + self.rec_vec
+
+    def det_pts(self, exp_set):
+        """
+        Return detector diffraction orders points for a detector at given distance
+
+        exp_set - FrameSetup class object
+        """
+        return exp_set.det_pts(self.kout())
 
     def kout_lines(self):
         """
@@ -123,10 +143,8 @@ class CircModel(ABCModel):
     num_ap - convergent beam numerical aperture
     q_max - maximax scattering vector norm value
     """
-    def __init__(self, rec_basis, num_ap, q_max):
-        self.num_ap = num_ap
-        super(CircModel, self).__init__(rec_basis, q_max)
-        self.apply_mask(np.abs(np.sin(self.rec_th - np.arccos(self.rec_abs / 2))) < self.num_ap)
+    def _init_mask(self):
+        self.mask = (np.abs(np.sin(self.rec_lat.rec_th - np.arccos(self.rec_lat.rec_abs / 2))) < self.num_ap)
 
     def source_lines(self):
         """
@@ -150,25 +168,15 @@ class RectModel(ABCModel):
     num_ap = [num_ap_x, num_ap_y] - convergent beam numerical apertures in x- and y-axis
     q_max - maximax scattering vector norm value
     """
-
-    def __init__(self, rec_basis, num_ap, q_max):
-        self.num_ap = num_ap
-        super(RectModel, self).__init__(rec_basis, q_max)
-        self.apply_mask(np.abs(np.sin(self.rec_th - np.arccos(self.rec_abs / 2))) < np.sqrt(self.num_ap[0]**2 + self.num_ap[1]**2))
-        self.init_source_lines()
-
-    def init_source_lines(self):
-        """
-        Derive source lines of a rectangular aperture lens
-        """
-        self._source_lines, _sol_mask = utils.model_source_lines(self.source,
-                                                                 self.rec_vec,
+    def _init_mask(self):
+        self._source_lines, self.mask = utils.model_source_lines(self.rec_lat.source,
+                                                                 self.rec_lat.rec_vec,
                                                                  self.num_ap[0],
                                                                  self.num_ap[1])
-        self.apply_mask(_sol_mask)
 
     def source_lines(self):
         """
         Return source lines of a rectangular aperture lens
         """
         return self._source_lines
+    

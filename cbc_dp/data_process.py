@@ -5,7 +5,7 @@ import os
 import concurrent.futures
 from abc import ABCMeta, abstractmethod, abstractproperty
 from functools import partial
-from scipy.ndimage.filters import median_filter
+from scipy.ndimage import median_filter, binary_dilation, binary_fill_holes
 from scipy import constants
 import numpy as np
 import h5py
@@ -385,8 +385,8 @@ class CorrectedData(object):
     data - raw data
     """
     bgd_filter = partial(median_filter, size=(10, 1))
-    strks_filter = partial(median_filter, size=(1, 3, 3))
     THRESHOLD = 10
+    line_detector = LineSegmentDetector(scale=0.6, sigma_scale=0.4)
 
     def __init__(self, data, mask=None):
         self.data = data
@@ -410,12 +410,24 @@ class CorrectedData(object):
         self.background[:, idxs[0], idxs[1]] = filt_data
         self.cor_data = (self.data - self.background).astype(np.int64)
 
+    def process_frame(self, frame_data):
+        """
+        Supress noise in the frame via line detection and masking
+        """
+        streaks = self.line_detector.det_frame_raw(median_filter(frame_data, 3))
+        noise_mask = utils.draw_lines_aa(lines=streaks.astype(np.int64),
+                                         w=1,
+                                         shape_x=frame_data.shape[0],
+                                         shape_y=frame_data.shape[1])
+        noise_mask = binary_dilation(noise_mask, iterations=3)
+        noise_mask = binary_fill_holes(noise_mask)
+        return frame_data * noise_mask
+
     def _init_strks(self):
-        self.strks_data = np.where(self.cor_data > self.THRESHOLD, self.cor_data, 0)
         futures = []
         with concurrent.futures.ProcessPoolExecutor() as executor:
-            for data_chunk in np.array_split(self.strks_data, utils.CPU_COUNT):
-                futures.append(executor.submit(self.strks_filter, data_chunk))
+            for frame_data in self.cor_data:
+                futures.append(executor.submit(self.process_frame, frame_data))
         self.strks_data = np.concatenate([future.result() for future in futures])
 
     def save(self, outfile):

@@ -59,8 +59,8 @@ class FrameSetup():
         out_file - h5py File object
         """
         out_group = out_file.create_group("experiment_settings")
-        out_group.create_dataset('pix_size', self.pix_size)
-        out_group.create_dataset('det_dist', self.det_pos)
+        out_group.create_dataset('pix_size', data=self.pix_size)
+        out_group.create_dataset('det_pos', data=self.det_pos)
 
 class ScanSetup(FrameSetup):
     """
@@ -87,9 +87,9 @@ class ScanSetup(FrameSetup):
         out_file - h5py File object
         """
         out_group = out_file.create_group("experiment_settings")
-        out_group.create_dataset('pix_size', self.pix_size)
-        out_group.create_dataset('det_dist', self.det_pos)
-        out_group.create_dataset('rot_axis', self.axis)
+        out_group.create_dataset('pix_size', data=self.pix_size)
+        out_group.create_dataset('det_pos', data=self.det_pos)
+        out_group.create_dataset('rot_axis', data=self.axis)
 
 class LineDetector(metaclass=ABCMeta):
     """
@@ -107,7 +107,7 @@ class LineDetector(metaclass=ABCMeta):
     def det_frame_raw(self, frame):
         return np.array([[[x0, y0], [x1, y1]] for (x0, y0), (x1, y1) in self._detector(frame)])
 
-    def det_frame(self, frame, exp_set, d_tau=1.5, d_n=0.75):
+    def det_frame(self, frame, exp_set, d_tau=1.5, d_n=1.):
         """
         Return FrameStreaks class object of detected lines
 
@@ -128,16 +128,16 @@ class LineDetector(metaclass=ABCMeta):
         """
         return [self.det_frame_raw(frame) for frame in scan]
 
-    def det_scan(self, data, exp_set, d_tau=1.5, d_n=0.75):
+    def det_scan(self, data, exp_set, d_tau=1.5, d_n=1.):
         """
         Return ScanStreaks class obect of detected lines
 
         scan - rotational scan
         exp_set - FrameSetup class object
-        d_tau - tangent detection error
-        d_n - radial detection error
+        d_tau - tangent detection error [pixels]
+        d_n - radial detection error [pixels]
         """
-        return ScanStreaks([self.det_frame(frame, exp_set, d_tau, d_n) for frame in data])
+        return ScanStreaks.import_series([self.det_frame(frame, exp_set, d_tau, d_n) for frame in data])
 
 class HoughLineDetector(LineDetector):
     """
@@ -213,6 +213,9 @@ class FrameStreaks():
         for line in self.raw_lines:
             yield line
 
+    def __getitem__(self, idx):
+        return FrameStreaks(self.raw_lines[idx], self.exp_set)
+
     def index_pts(self):
         """
         Return indexing points
@@ -285,11 +288,18 @@ class ScanStreaks(FrameStreaks):
 
     strks_list - detected lines FrameStreaks class object list
     """
-    def __init__(self, strks_list):
+    def __init__(self, raw_lines, exp_set, shapes):
+        self.shapes = shapes
+        super(ScanStreaks, self).__init__(raw_lines, exp_set)
+
+    @classmethod
+    def import_series(cls, strks_list):
+        """
+        Import ScanStreaks object from list of FrameStreaks
+        """
         shapes = [0] + list(accumulate([strks.size for strks in strks_list], add))
-        self.shapes = np.array(shapes)
         raw_lines = np.concatenate([strks.raw_lines for strks in strks_list])
-        super(ScanStreaks, self).__init__(raw_lines, strks_list[0].exp_set)
+        return cls(raw_lines, strks_list[0].exp_set, np.array(shapes))
 
     def __getitem__(self, index):
         starts = self.shapes[:-1][index]
@@ -297,8 +307,27 @@ class ScanStreaks(FrameStreaks):
         try:
             return FrameStreaks(self.raw_lines[starts:stops], self.exp_set)
         except (IndexError, TypeError):
-            return ScanStreaks([FrameStreaks(self.raw_lines[start:stop], self.exp_set)
-                                for start, stop in zip(starts, stops)])
+            return ScanStreaks.import_series([FrameStreaks(self.raw_lines[start:stop], self.exp_set)
+                                              for start, stop in zip(starts, stops)])
+
+    def get_index(self, idxs):
+        """
+        Return elements frame indexes
+        """
+        frame_idxs = np.searchsorted(self.shapes, idxs, side='right') - 1
+        uniq_idxs = np.unique(frame_idxs)
+        return {idx: idxs[np.where(frame_idxs == idx)] - self.shapes[idx] for idx in uniq_idxs}
+
+    def extract(self, idxs):
+        """
+        Return a ScanStreaks object of the given streaks subset
+        """
+        index = self.get_index(idxs)
+        strks_list = []
+        for frame_idx in index:
+            frame = self.__getitem__(frame_idx)
+            strks_list.append(frame[index[frame_idx]])
+        return ScanStreaks.import_series(strks_list)
 
     def __iter__(self):
         for idx in range(self.shapes.size - 1):
@@ -400,7 +429,8 @@ class ScanStreaks(FrameStreaks):
         """
         out_group = out_file.create_group('streaks')
         out_group.create_dataset('counts', data=self.shapes)
-        out_group.create_dataset('lines', data=self.lines)
+        out_group.create_dataset('lines', data=self.raw_lines)
+        self.exp_set.save(out_group)
         out_group.create_dataset('intensities', data=self.intensities(raw_data))
         out_group.create_dataset('snr', data=self.snr(raw_data, background))
         self.exp_set.save(out_file)

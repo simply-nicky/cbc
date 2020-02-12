@@ -5,7 +5,6 @@ from abc import ABCMeta, abstractmethod
 import numpy as np
 import pygmo
 from . import utils
-from .model import RectModel
 
 class AbcCBI(metaclass=ABCMeta):
     """
@@ -74,7 +73,8 @@ class AbcCBI(metaclass=ABCMeta):
         """
         return utils.fitness_idxs(vot_vec=vot_vec,
                                   kout_exp=kout_exp,
-                                  num_ap=np.sqrt(self.num_ap[0]**2 + self.num_ap[1]**2),
+                                  num_ap_x=self.num_ap[0],
+                                  num_ap_y=self.num_ap[1],
                                   pen_coeff=self.pen_coeff)
 
     def get_bounds(self):
@@ -91,7 +91,8 @@ class AbcCBI(metaclass=ABCMeta):
         vot_vec = self.voting_vectors(vec, kout_exp)
         return [utils.fitness(vot_vec=vot_vec,
                               kout_exp=kout_exp,
-                              num_ap=np.sqrt(self.num_ap[0]**2 + self.num_ap[1]**2),
+                              num_ap_x=self.num_ap[0],
+                              num_ap_y=self.num_ap[1],
                               pen_coeff=self.pen_coeff)]
 
     def hkl_idxs(self, vec):
@@ -177,43 +178,3 @@ class RCBI(AbcCBI):
 
     def get_extra_info(self):
         return "Dimensions: 9 in total\n3 - detector position\n3 - reciprocal lattice basis vectors lengths\n3 - orientation matrix angles"
-
-class IndexSolution():
-    """
-    Refined indexing solution class
-
-    target_func - indexing refinement target function
-    sol - refined indexing solution
-    """
-    def __init__(self, target_func, sol):
-        self.target_func, self.sol = target_func, sol
-        self.rec_basis, self.exp_set = target_func.rec_basis(sol), target_func.exp_set(sol)
-
-    @property
-    def num_ap(self):
-        return self.target_func.num_ap
-
-    def rec_vectors(self):
-        """
-        Return the optimal reciprocal lattice vectors
-        """
-        return self.target_func.voting_vectors(self.sol)
-
-    def q_max(self):
-        """
-        Return the maximal reciprocal vectors norm value
-        """
-        return np.max(np.sqrt((self.rec_vectors**2).sum(axis=-1)))
-
-    def model(self):
-        """
-        Generate diffraction pattern based on indexing solution
-
-        Return detector plane indexing points and streaks positions
-        """
-        rect_model = RectModel(rec_basis=self.rec_basis,
-                               num_ap=self.num_ap,
-                               q_max=self.q_max())
-        model_pts = rect_model.det_pts(self.exp_set)
-        model_lines = rect_model.det_lines(self.exp_set)
-        return model_pts, model_lines
