@@ -4,7 +4,6 @@ wrapper.py - Eiger 4M detector data processing from Petra P06 beamline module
 import os
 import concurrent.futures
 from abc import ABCMeta, abstractmethod, abstractproperty
-from functools import partial
 from scipy.ndimage import median_filter, binary_dilation, binary_fill_holes
 from scipy import constants
 import numpy as np
@@ -384,7 +383,6 @@ class CorrectedData(object):
 
     data - raw data
     """
-    bgd_filter = partial(median_filter, size=(10, 1))
     THRESHOLD = 10
     line_detector = LineSegmentDetector(scale=0.6, sigma_scale=0.4)
 
@@ -395,26 +393,36 @@ class CorrectedData(object):
                                       axis=0)
         else:
             self.bad_mask = mask
-        self._init_bgd()
+        self._init_background()
         self._init_strks()
 
-    def _init_bgd(self):
+    def _init_background(self):
         idxs = np.where(self.bad_mask == 0)
         data = self.data[:, idxs[0], idxs[1]]
         futures = []
         with concurrent.futures.ProcessPoolExecutor() as executor:
             for data_chunk in np.array_split(data, utils.CPU_COUNT, axis=1):
-                futures.append(executor.submit(self.bgd_filter, data_chunk))
+                futures.append(executor.submit(CorrectedData._background_worker, data_chunk))
         self.background = np.copy(self.data)
+        self.cor_data = np.zeros(self.data.shape, dtype=np.int64)
         filt_data = np.concatenate([future.result() for future in futures], axis=1)
         self.background[:, idxs[0], idxs[1]] = filt_data
-        self.cor_data = (self.data - self.background).astype(np.int64)
+        self.cor_data[:, idxs[0], idxs[1]] = self.data - self.background
 
-    def process_frame(self, frame_data):
-        """
-        Supress noise in the frame via line detection and masking
-        """
-        streaks = self.line_detector.det_frame_raw(median_filter(frame_data, 3))
+    def _init_strks(self):
+        futures = []
+        with concurrent.futures.ProcessPoolExecutor() as executor:
+            for frame_data in self.cor_data:
+                futures.append(executor.submit(CorrectedData._streaks_worker, frame_data))
+        self.strks_data = np.stack([future.result() for future in futures], axis=0)
+
+    @classmethod
+    def _background_worker(data):
+        return median_filter(data, size=(10, 1))
+
+    @classmethod
+    def _streaks_worker(cls, frame_data):
+        streaks = cls.line_detector.det_frame_raw(median_filter(frame_data, 3))
         noise_mask = utils.draw_lines_aa(lines=streaks.astype(np.int64),
                                          w=1,
                                          shape_x=frame_data.shape[0],
@@ -422,13 +430,6 @@ class CorrectedData(object):
         noise_mask = binary_dilation(noise_mask, iterations=3)
         noise_mask = binary_fill_holes(noise_mask)
         return frame_data * noise_mask
-
-    def _init_strks(self):
-        futures = []
-        with concurrent.futures.ProcessPoolExecutor() as executor:
-            for frame_data in self.cor_data:
-                futures.append(executor.submit(self.process_frame, frame_data))
-        self.strks_data = np.concatenate([future.result() for future in futures])
 
     def save(self, outfile):
         """
