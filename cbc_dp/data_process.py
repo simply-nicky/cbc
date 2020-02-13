@@ -407,7 +407,7 @@ class CorrectedData(object):
         self.cor_data = np.zeros(self.data.shape, dtype=np.int64)
         filt_data = np.concatenate([future.result() for future in futures], axis=1)
         self.background[:, idxs[0], idxs[1]] = filt_data
-        self.cor_data[:, idxs[0], idxs[1]] = self.data - self.background
+        self.cor_data[:, idxs[0], idxs[1]] = data - filt_data
 
     def _init_strks(self):
         futures = []
