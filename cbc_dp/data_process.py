@@ -215,6 +215,9 @@ class Scan1D(ABCScan, metaclass=ABCMeta):
                                               int(self.attributes[2]) + 1)}
 
     def data_chunk(self, paths):
+        """
+        Return data from files of the given paths
+        """
         data_list = []
         for path in paths:
             with h5py.File(path, 'r') as datafile:
@@ -228,6 +231,11 @@ class Scan1D(ABCScan, metaclass=ABCMeta):
             return np.stack(data_list, axis=0)
 
     def corrected_data(self, mask=None):
+        """
+        Return CBC corrected data
+
+        mask - bad pixels mask
+        """
         return CorrectedData(self.data, mask)
 
     def _save_data(self, outfile):
@@ -248,7 +256,7 @@ class Scan1D(ABCScan, metaclass=ABCMeta):
         cordata.save(outfile)
         outfile.close()
 
-    def save_streaks(self, exp_set, d_tau=1.5, d_n=0.75, mask=None):
+    def save_streaks(self, exp_set, d_tau=1.5, d_n=1., mask=None):
         """
         Save raw and corrected data, detected streaks position to a hdf5 file
 
@@ -335,6 +343,9 @@ class ScanST(ABCScan):
         return constants.c * constants.h / self.energy
 
     def basis_vectors(self):
+        """
+        Return detector fast and slow axis basis vectors
+        """
         _vec_fs = np.tile(self.pixel_vector * self.unit_vector_fs, (self.size[0] * self.size[1], 1))
         _vec_ss = np.tile(self.pixel_vector * self.unit_vector_ss, (self.size[0] * self.size[1], 1))
         if self.flip_axes:
@@ -343,6 +354,9 @@ class ScanST(ABCScan):
             return np.stack((_vec_fs, _vec_ss), axis=1)
 
     def data_chunk(self, paths):
+        """
+        Return data from files of the given paths
+        """
         data_list = []
         for path in paths:
             with h5py.File(path, 'r') as datafile:
@@ -353,6 +367,9 @@ class ScanST(ABCScan):
         return None if not data_list else np.concatenate(data_list, axis=0)
 
     def translation(self):
+        """
+        Translate detector coordinates
+        """
         _x_pos = np.tile(self.coordinates['fs_coordinates'] * 1e-6, self.size[1])
         _y_pos = np.repeat(self.coordinates['ss_coordinates'] * 1e-6, self.size[0])
         _z_pos = np.zeros(self.size[0] * self.size[1])
@@ -365,6 +382,9 @@ class ScanST(ABCScan):
         outfile.create_dataset('entry_1/data_1/data', data=self.data)
 
     def save_st(self):
+        """
+        Save scan data for speckle tracking
+        """
         outfile = self._create_outfile(tag='st', ext='cxi')
         detector_1 = outfile.create_group('entry_1/instrument_1/detector_1')
         detector_1.create_dataset('basis_vectors', data=self.basis_vectors())
@@ -379,9 +399,10 @@ class ScanST(ABCScan):
 
 class CorrectedData(object):
     """
-    Eiger 4M correction class
+    CBC data correction class. Calculate background, content and streaks mask.
 
     data - raw data
+    mask - bad pixels mask
     """
     bgd_kernel = (11, 1)
     line_detector = LineSegmentDetector(scale=0.6, sigma_scale=0.4)
@@ -394,7 +415,7 @@ class CorrectedData(object):
         else:
             self.bad_mask = mask
         self._init_background()
-        self._correct_data()
+        self._mask_data()
 
     def _init_background(self):
         idxs = np.where(self.bad_mask == 0)
@@ -409,27 +430,27 @@ class CorrectedData(object):
         self.background[:, idxs[0], idxs[1]] = filt_data
         self.cor_data[:, idxs[0], idxs[1]] = data - filt_data
 
-    def _correct_data(self):
+    def _mask_data(self):
         futures = []
         with concurrent.futures.ProcessPoolExecutor() as executor:
             for frame_data in self.cor_data:
-                futures.append(executor.submit(CorrectedData._correct_worker, frame_data))
-        self.cor_data = np.stack([future.result() for future in futures], axis=0)
+                futures.append(executor.submit(CorrectedData._mask_worker, frame_data))
+        self.streaks_mask = np.stack([future.result() for future in futures], axis=0)
 
     @classmethod
     def _background_worker(cls, data):
         return median_filter(data, size=cls.bgd_kernel)
 
     @classmethod
-    def _correct_worker(cls, frame_data):
+    def _mask_worker(cls, frame_data):
         streaks = cls.line_detector.det_frame_raw(median_filter(frame_data, 3))
-        noise_mask = utils.draw_lines_aa(lines=streaks.astype(np.int64),
+        streaks_mask = utils.draw_lines_aa(lines=streaks.astype(np.int64),
                                          w=1,
                                          shape_x=frame_data.shape[0],
                                          shape_y=frame_data.shape[1])
-        noise_mask = binary_dilation(noise_mask, iterations=3)
-        noise_mask = binary_fill_holes(noise_mask)
-        return frame_data * noise_mask
+        streaks_mask = binary_dilation(streaks_mask, iterations=3)
+        streaks_mask = binary_fill_holes(streaks_mask)
+        return streaks_mask
 
     def save(self, outfile):
         """
@@ -439,6 +460,7 @@ class CorrectedData(object):
         """
         correct_group = outfile.create_group('corrected_data')
         correct_group.create_dataset('corrected_data', data=self.cor_data, compression='gzip')
+        correct_group.create_dataset('streaks_mask', data=self.streaks_mask, compression='gzip')
         correct_group.create_dataset('bad_mask', data=self.bad_mask, compression='gzip')
         correct_group.create_dataset('background', data=self.background, compression='gzip')
     
