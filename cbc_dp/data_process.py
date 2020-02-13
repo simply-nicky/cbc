@@ -383,7 +383,7 @@ class CorrectedData(object):
 
     data - raw data
     """
-    THRESHOLD = 10
+    bgd_kernel = (11, 1)
     line_detector = LineSegmentDetector(scale=0.6, sigma_scale=0.4)
 
     def __init__(self, data, mask=None):
@@ -417,8 +417,8 @@ class CorrectedData(object):
         self.strks_data = np.stack([future.result() for future in futures], axis=0)
 
     @classmethod
-    def _background_worker(data):
-        return median_filter(data, size=(10, 1))
+    def _background_worker(cls, data):
+        return median_filter(data, size=cls.bgd_kernel)
 
     @classmethod
     def _streaks_worker(cls, frame_data):
