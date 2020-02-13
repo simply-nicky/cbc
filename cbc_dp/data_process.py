@@ -261,7 +261,7 @@ class Scan1D(ABCScan, metaclass=ABCMeta):
         self._save_data(out_file)
         cor_data = self.corrected_data(mask)
         cor_data.save(out_file)
-        streaks = LineSegmentDetector().det_scan(cor_data.strks_data, exp_set, d_tau, d_n)
+        streaks = LineSegmentDetector().det_scan(cor_data.cor_data, exp_set, d_tau, d_n)
         streaks.save(raw_data=self.data, background=cor_data.background, out_file=out_file)
         out_file.close()
 
@@ -394,7 +394,7 @@ class CorrectedData(object):
         else:
             self.bad_mask = mask
         self._init_background()
-        self._init_strks()
+        self._correct_data()
 
     def _init_background(self):
         idxs = np.where(self.bad_mask == 0)
@@ -409,19 +409,19 @@ class CorrectedData(object):
         self.background[:, idxs[0], idxs[1]] = filt_data
         self.cor_data[:, idxs[0], idxs[1]] = data - filt_data
 
-    def _init_strks(self):
+    def _correct_data(self):
         futures = []
         with concurrent.futures.ProcessPoolExecutor() as executor:
             for frame_data in self.cor_data:
-                futures.append(executor.submit(CorrectedData._streaks_worker, frame_data))
-        self.strks_data = np.stack([future.result() for future in futures], axis=0)
+                futures.append(executor.submit(CorrectedData._correct_worker, frame_data))
+        self.cor_data = np.stack([future.result() for future in futures], axis=0)
 
     @classmethod
     def _background_worker(cls, data):
         return median_filter(data, size=cls.bgd_kernel)
 
     @classmethod
-    def _streaks_worker(cls, frame_data):
+    def _correct_worker(cls, frame_data):
         streaks = cls.line_detector.det_frame_raw(median_filter(frame_data, 3))
         noise_mask = utils.draw_lines_aa(lines=streaks.astype(np.int64),
                                          w=1,
@@ -441,5 +441,4 @@ class CorrectedData(object):
         correct_group.create_dataset('corrected_data', data=self.cor_data, compression='gzip')
         correct_group.create_dataset('bad_mask', data=self.bad_mask, compression='gzip')
         correct_group.create_dataset('background', data=self.background, compression='gzip')
-        correct_group.create_dataset('streaks_data', data=self.strks_data, compression='gzip')
     
