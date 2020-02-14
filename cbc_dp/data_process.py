@@ -268,7 +268,7 @@ class Scan1D(ABCScan, metaclass=ABCMeta):
         d_n - radial detection error
         mask - bad pixel mask
         """
-        out_file = self._create_outfile(tag='corrected')
+        out_file = self._create_outfile(tag='streaks')
         self._save_parameters(out_file)
         self._save_data(out_file)
         cor_data = self.corrected_data(mask)
