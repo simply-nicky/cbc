@@ -419,21 +419,29 @@ class ScanStreaks(FrameStreaks):
         return RecVectors(kout=np.concatenate(kout_list),
                           kin=np.concatenate(kin_list))
 
-    def save(self, raw_data, background, out_file):
+    def save(self, out_file):
         """
         Save detected diffraction streaks to an HDF5 file
 
-        raw_data - raw diffraction patterns
-        backgroun - background noises
         out_file - h5py file object
         """
-        out_group = out_file.create_group('streaks')
-        out_group.create_dataset('counts', data=self.shapes)
-        out_group.create_dataset('lines', data=self.raw_lines)
-        self.exp_set.save(out_group)
-        out_group.create_dataset('intensities', data=self.intensities(raw_data))
-        out_group.create_dataset('snr', data=self.snr(raw_data, background))
+        streaks_group = out_file.create_group('streaks')
+        streaks_group.create_dataset('counts', data=self.shapes)
+        streaks_group.create_dataset('lines', data=self.raw_lines)
         self.exp_set.save(out_file)
+
+    def save_intensities(self, out_file, raw_data, background):
+        """
+        Save detected diffraction streaks and intensities to an HDF5 file
+
+        out_file - h5py file object
+        raw_data - raw diffraction patterns
+        backgroun - background noises
+        """
+        self.save(out_file)
+        data_group = out_file.create_group('streaks_data')
+        data_group.create_dataset('intensities', data=self.intensities(raw_data))
+        data_group.create_dataset('snr', data=self.snr(raw_data, background))
 
 class RecVectors():
     """

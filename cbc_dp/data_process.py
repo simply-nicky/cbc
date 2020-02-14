@@ -4,7 +4,7 @@ wrapper.py - Eiger 4M detector data processing from Petra P06 beamline module
 import os
 import concurrent.futures
 from abc import ABCMeta, abstractmethod, abstractproperty
-from scipy.ndimage import median_filter, binary_dilation, binary_fill_holes
+from scipy.ndimage import median_filter, binary_dilation, binary_fill_holes, label, labeled_comprehension
 from scipy import constants
 import numpy as np
 import h5py
@@ -232,7 +232,7 @@ class Scan1D(ABCScan, metaclass=ABCMeta):
 
     def corrected_data(self, mask=None):
         """
-        Return CBC corrected data
+        Perform CBC data correction
 
         mask - bad pixels mask
         """
@@ -247,7 +247,9 @@ class Scan1D(ABCScan, metaclass=ABCMeta):
 
     def save_corrected(self, mask=None):
         """
-        Save raw and corrected data to a hdf5 file
+        Save the raw CBC data, correct the data, detect streaks,
+
+        mask - bad pixel mask
         """
         outfile = self._create_outfile(tag='corrected')
         self._save_parameters(outfile)
@@ -256,21 +258,24 @@ class Scan1D(ABCScan, metaclass=ABCMeta):
         cordata.save(outfile)
         outfile.close()
 
-    def save_streaks(self, exp_set, d_tau=1.5, d_n=1., mask=None):
+    def save_streaks(self, exp_set, d_tau=1.8, d_n=1.4, mask=None):
         """
-        Save raw and corrected data, detected streaks position to a hdf5 file
+        Save the raw CBC data, correct the data, detect streaks,
+        and save the data to an HDF5 file
 
-        exp_set - ExperimentalSettings class object
+        exp_set - FrameSetup class object
         d_tau - tangent detection error
         d_n - radial detection error
+        mask - bad pixel mask
         """
         out_file = self._create_outfile(tag='corrected')
         self._save_parameters(out_file)
         self._save_data(out_file)
         cor_data = self.corrected_data(mask)
         cor_data.save(out_file)
-        streaks = LineSegmentDetector().det_scan(cor_data.cor_data, exp_set, d_tau, d_n)
-        streaks.save(raw_data=self.data, background=cor_data.background, out_file=out_file)
+        norm_data = cor_data.normalize_data()
+        det_scan = norm_data.detect(exp_set, d_tau, d_n)
+        det_scan.save(out_file)
         out_file.close()
 
 class Scan2D(Scan1D):
@@ -452,15 +457,62 @@ class CorrectedData(object):
         streaks_mask = binary_fill_holes(streaks_mask)
         return streaks_mask
 
-    def save(self, outfile):
+    def normalize_data(self):
         """
-        Save corrected data to an outfile
+        Normalize CBC data for streaks detection
+        """
+        return NormalizedData(self.cor_data, self.streaks_mask)
 
-        outfile - h5py file object
+    def save(self, out_file):
         """
-        correct_group = outfile.create_group('corrected_data')
+        Save corrected data to an out_file
+
+        out_file - h5py file object
+        """
+        correct_group = out_file.create_group('corrected_data')
         correct_group.create_dataset('corrected_data', data=self.cor_data, compression='gzip')
         correct_group.create_dataset('streaks_mask', data=self.streaks_mask, compression='gzip')
         correct_group.create_dataset('bad_mask', data=self.bad_mask, compression='gzip')
         correct_group.create_dataset('background', data=self.background, compression='gzip')
+
+class NormalizedData(object):
+    """
+    CBC data normalization for streaks detection.
+
+    cor_data - corrected data
+    streaks_mask - streaks mask
+    """
+    threshold = 3.2
+    line_detector = LineSegmentDetector(scale=0.6)
+
+    def __init__(self, cor_data, streaks_mask):
+        self.cor_data, self.mask = cor_data, streaks_mask
+        self._label_streaks()
+        self._norm_data()
+
+    def _label_streaks(self):
+        self.labels, lbl_num = label(self.mask)
+        self.n_labels = np.arange(1, lbl_num + 1)
+
+    def _label_func(self, val, pos):
+        if val.max() > val.mean() + self.threshold * val.std():
+            self.norm_data[pos] = self.norm_data[pos] / val.mean()
+        else:
+            self.norm_data[pos] = 0
+
+    def _norm_data(self):
+        self.norm_data = (self.cor_data * self.mask).ravel()
+        labeled_comprehension(self.cor_data, self.labels, self.n_labels, self._label_func,
+                              float, None, True)
+        self.norm_data = self.norm_data.reshape(self.cor_data.shape)
+
+    def detect(self, exp_set, d_tau=1.8, d_n=1.4):
+        """
+        Detect detect streaks in diffraction data
+
+        exp_set - FrameSetup class object
+        d_tau - tangent detection error [pixels]
+        d_n - radial detection error [pixels]
+        """
+        return self.line_detector.det_scan(self.norm_data, exp_set, d_tau=d_tau, d_n=d_n)
     
