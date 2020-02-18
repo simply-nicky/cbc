@@ -515,4 +515,3 @@ class NormalizedData(object):
         d_n - radial detection error [pixels]
         """
         return self.line_detector.det_scan(self.norm_data, exp_set, d_tau=d_tau, d_n=d_n)
-    

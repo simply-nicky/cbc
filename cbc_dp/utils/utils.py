@@ -67,6 +67,16 @@ def rotation_matrix(axis, theta):
                       2 * (_c * _d - _a * _b),
                       _a * _a + _d * _d - _b * _b - _c * _c]])
 
+def rec_basis(basis):
+    """
+    Return orientation matrix based on unit cell primitive vectors matrix
+
+    basis - unit cell primitive vectors matrix
+    """
+    a_rec = np.cross(basis[1], basis[2]) / (np.cross(basis[1], basis[2]).dot(basis[0]))
+    b_rec = np.cross(basis[2], basis[0]) / (np.cross(basis[2], basis[0]).dot(basis[1]))
+    c_rec = np.cross(basis[0], basis[1]) / (np.cross(basis[0], basis[1]).dot(basis[2]))
+    return np.stack((a_rec, b_rec, c_rec))
 
 def proj(vec, axis):
     """

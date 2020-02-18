@@ -5,6 +5,7 @@ from itertools import accumulate
 from operator import add
 from abc import ABCMeta, abstractmethod
 import numpy as np
+import pygmo
 from skimage.transform import probabilistic_hough_line
 from skimage.draw import line_aa
 from scipy.ndimage.filters import gaussian_filter
@@ -12,6 +13,7 @@ from scipy.ndimage.measurements import label, maximum_position
 from cv2 import createLineSegmentDetector
 from . import utils
 from .grouper import TiltGroups
+from .indexer import FCBI
 
 class FrameSetup():
     """
@@ -282,6 +284,21 @@ class FrameStreaks():
         kout = self.exp_set.kout_exp(index_pts)
         return RecVectors(kout=kout.dot(rot_m.T), kin=self.kin.dot(rot_m.T))
 
+    def index_refine(self, rec_basis, num_ap, tol=(0.05, 0.015)):
+        """
+        Return refinement problem population
+
+        rec_basis - reciprocal lattice basis vectors matrix
+        num_ap = [num_ap_x, num_ap_y] - convergent beam numerical apertures in x- and y-axes
+        tol - tolerance defining refined solution bounds
+        """
+        full_tf = FCBI(lines=self.raw_lines,
+                       exp_set=self.exp_set,
+                       rec_basis=rec_basis,
+                       num_ap=num_ap,
+                       tol=tol)
+        return pygmo.problem(full_tf)
+
 class ScanStreaks(FrameStreaks):
     """
     Detected diffraction streaks of a rotational scan class
@@ -418,6 +435,27 @@ class ScanStreaks(FrameStreaks):
             kin_list.append(rec_vec.kin)
         return RecVectors(kout=np.concatenate(kout_list),
                           kin=np.concatenate(kin_list))
+
+    def index_refine(self, theta, num_ap, n_isl=20, pop_size=50, gen_num=2000, tol=(0.05, 0.015)):
+        """
+        Return refinement problems archipelago
+
+        num_ap = [num_ap_x, num_ap_y] - convergent beam numerical apertures in x- and y-axes
+        n_isl - number of islands of one frame
+        pop_size - population size
+        tol - tolerance defining refined solution bounds
+        """
+        rec_basis = utils.rec_basis(self.kout_ref(theta=theta).index())
+        archi = pygmo.archipelago()
+        for frame_strks, theta_val in zip(iter(self), theta):
+            frame_basis = rec_basis.dot(self.exp_set.rotation_matrix(-theta_val).T)
+            prob = frame_strks.index_refine(rec_basis=frame_basis,
+                                            num_ap=num_ap,
+                                            tol=tol)
+            pops = [pygmo.population(size=pop_size, prob=prob, b=pygmo.mp_bfe()) for _ in range(n_isl)]
+            for pop in pops:
+                archi.push_back(algo=pygmo.de(gen_num), pop=pop)
+        return archi
 
     def save(self, out_file):
         """
