@@ -58,7 +58,7 @@ def main(out_path, prefix, scan_num, exp_set, num_ap, mask, n_isl, pop_size, gen
     print("The refinement has been completed, elapsed time: {:f}s".format(timer() - start))
     index_sol = np.array(archi.get_champions_x()).reshape((n_isl, frame_num, -1), order='F')
     index_f = np.array(archi.get_champions_f()).reshape((n_isl, frame_num), order='F')
-    out_file = h5py.File(os.path.join('exp_results', out_path), 'w')
+    out_file = h5py.File(os.path.join('exp_results', out_path + '.h5'), 'w')
     out_file.create_dataset('data/index_sol', data=index_sol)
     out_file.create_dataset('data/index_f', data=index_f)
     print("The refined solutions have been saved, file: {}".format(out_file.filename))
