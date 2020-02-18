@@ -28,7 +28,7 @@ B12_EXP = cbc_dp.ScanSetup(rot_axis=ROT_AX,
 B12_MASK = 1 - np.load('cbc_dp/utils/b12_mask.npy')
 B12_PUPIL = np.radians([0.65, 1.05])
 
-def main(prefix, scan_num, exp_set, num_ap, mask, n_isl, pop_size, gen_num, tol):
+def main(out_path, prefix, scan_num, exp_set, num_ap, mask, n_isl, pop_size, gen_num, tol):
     data_path = os.path.join(os.path.dirname(__file__),
                              "exp_results/scan_{0:05d}".format(scan_num),
                              cbc_dp.utils.FILENAME['scan'].format('streaks', scan_num, 'h5'))
@@ -56,9 +56,9 @@ def main(prefix, scan_num, exp_set, num_ap, mask, n_isl, pop_size, gen_num, tol)
     archi.evolve()
     archi.wait()
     print("The refinement has been completed, elapsed time: {:f}s".format(timer() - start))
-    index_sol = archi.get_champions_x().reshape((n_isl, frame_num, -1), order='F')
-    index_f = archi.get_champions_f().reshape((n_isl, frame_num), order='F')
-    out_file = h5py.File('exp_results/index_sol.h5', 'w')
+    index_sol = np.array(archi.get_champions_x()).reshape((n_isl, frame_num, -1), order='F')
+    index_f = np.array(archi.get_champions_f()).reshape((n_isl, frame_num), order='F')
+    out_file = h5py.File(os.path.join('exp_results', out_path), 'w')
     out_file.create_dataset('data/index_sol', data=index_sol)
     out_file.create_dataset('data/index_f', data=index_f)
     print("The refined solutions have been saved, file: {}".format(out_file.filename))
@@ -66,11 +66,12 @@ def main(prefix, scan_num, exp_set, num_ap, mask, n_isl, pop_size, gen_num, tol)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Index b12 diffraction data')
-    parser.add_argument('n_isl', type=int, help='Number of islands for one frame')
+    parser.add_argument('out_path', type=str, help='Output file path')
+    parser.add_argument('--n_isl', type=int, default=20, help='Number of islands for one frame')
     parser.add_argument('--tol', type=float, nargs=2, default=[0.05, 0.15], help='Refinement tolerance: det_pos, rec_basis')
     parser.add_argument('--gen_num', type=int, default=2000, help='Generations number of the refinement algorithm')
     parser.add_argument('--pop_size', type=int, default=50, help='Population size of the refinement islands')
     args = parser.parse_args()
 
-    main(prefix=B12_PREFIX, scan_num=B12_NUM, exp_set=B12_EXP, num_ap=B12_PUPIL, mask=B12_MASK,
-         n_isl=args.n_isl, pop_size=args.pop_size, gen_num=args.gen_num, tol=args.tol)
+    main(out_path=args.out_path, prefix=B12_PREFIX, scan_num=B12_NUM, exp_set=B12_EXP, num_ap=B12_PUPIL,
+         mask=B12_MASK, n_isl=args.n_isl, pop_size=args.pop_size, gen_num=args.gen_num, tol=args.tol)
