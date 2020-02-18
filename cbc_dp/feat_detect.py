@@ -303,52 +303,47 @@ class ScanStreaks(FrameStreaks):
     """
     Detected diffraction streaks of a rotational scan class
 
-    strks_list - detected lines FrameStreaks class object list
+    raw_lines - detected lines
+    exp_set - ScanSetup class object
+    frame_idxs - frame indices
     """
-    def __init__(self, raw_lines, exp_set, shapes):
-        self.shapes = shapes
+    def __init__(self, raw_lines, exp_set, frame_idxs):
+        self.frame_idxs = frame_idxs
         super(ScanStreaks, self).__init__(raw_lines, exp_set)
 
     @classmethod
     def import_series(cls, strks_list):
         """
         Import ScanStreaks object from list of FrameStreaks
+
+        strks_list - detected lines FrameStreaks class object list
         """
-        shapes = [0] + list(accumulate([strks.size for strks in strks_list], add))
+        frame_idxs = np.concatenate([idx * np.ones(strks.size)
+                                     for idx, strks in enumerate(strks_list)])
         raw_lines = np.concatenate([strks.raw_lines for strks in strks_list])
-        return cls(raw_lines, strks_list[0].exp_set, np.array(shapes))
-
-    def __getitem__(self, index):
-        starts = self.shapes[:-1][index]
-        stops = self.shapes[1:][index]
-        try:
-            return FrameStreaks(self.raw_lines[starts:stops], self.exp_set)
-        except (IndexError, TypeError):
-            return ScanStreaks.import_series([FrameStreaks(self.raw_lines[start:stop], self.exp_set)
-                                              for start, stop in zip(starts, stops)])
-
-    def get_index(self, idxs):
-        """
-        Return elements frame indexes
-        """
-        frame_idxs = np.searchsorted(self.shapes, idxs, side='right') - 1
-        uniq_idxs = np.unique(frame_idxs)
-        return {idx: idxs[np.where(frame_idxs == idx)] - self.shapes[idx] for idx in uniq_idxs}
+        return cls(raw_lines, strks_list[0].exp_set, frame_idxs)
 
     def extract(self, idxs):
         """
         Return a ScanStreaks object of the given streaks subset
         """
-        index = self.get_index(idxs)
-        strks_list = []
-        for frame_idx in index:
-            frame = self.__getitem__(frame_idx)
-            strks_list.append(frame[index[frame_idx]])
-        return ScanStreaks.import_series(strks_list)
+        return ScanStreaks(self.raw_lines[idxs], self.exp_set, self.frame_idxs[idxs])
+    
+    def __getitem__(self, frame_idx):
+        if isinstance(frame_idx, int):
+            idxs = np.where(self.frame_idxs == frame_idx)
+            return FrameStreaks(self.raw_lines[idxs], self.exp_set)
+        elif isinstance(frame_idx, np.ndarray) and np.issubdtype(frame_idx.dtype, np.integer):
+            idxs = np.where((self.frame_idxs[:, None] == frame_idx[None, :]).any(axis=1))
+            return self.extract(idxs)
+        else:
+            raise IndexError('Only integers and integer arrays are valid indices')
 
     def __iter__(self):
-        for idx in range(self.shapes.size - 1):
-            yield self.__getitem__(idx)
+        uniq_idxs = np.unique(self.frame_idxs)
+        for frame_idx in uniq_idxs:
+            idxs = np.where(self.frame_idxs == frame_idx)
+            yield self.extract(idxs)
 
     def intensities(self, raw_data):
         """
@@ -464,7 +459,7 @@ class ScanStreaks(FrameStreaks):
         out_file - h5py file object
         """
         streaks_group = out_file.create_group('streaks')
-        streaks_group.create_dataset('counts', data=self.shapes)
+        streaks_group.create_dataset('frame_idxs', data=self.frame_idxs)
         streaks_group.create_dataset('lines', data=self.raw_lines)
         self.exp_set.save(out_file)
 
