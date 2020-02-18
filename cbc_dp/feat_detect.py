@@ -328,7 +328,7 @@ class ScanStreaks(FrameStreaks):
         Return a ScanStreaks object of the given streaks subset
         """
         return ScanStreaks(self.raw_lines[idxs], self.exp_set, self.frame_idxs[idxs])
-    
+
     def __getitem__(self, frame_idx):
         if isinstance(frame_idx, int):
             idxs = np.where(self.frame_idxs == frame_idx)
@@ -343,7 +343,7 @@ class ScanStreaks(FrameStreaks):
         uniq_idxs = np.unique(self.frame_idxs)
         for frame_idx in uniq_idxs:
             idxs = np.where(self.frame_idxs == frame_idx)
-            yield self.extract(idxs)
+            yield FrameStreaks(self.raw_lines[idxs], self.exp_set)
 
     def intensities(self, raw_data):
         """
