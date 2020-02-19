@@ -68,7 +68,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Index b12 diffraction data')
     parser.add_argument('out_path', type=str, help='Output file path')
     parser.add_argument('--n_isl', type=int, default=20, help='Number of islands for one frame')
-    parser.add_argument('--tol', type=float, nargs=2, default=[0.05, 0.15], help='Refinement tolerance: det_pos, rec_basis')
+    parser.add_argument('--tol', type=float, nargs=2, default=[0.05, 0.12], help='Refinement tolerance: det_pos, rec_basis')
     parser.add_argument('--gen_num', type=int, default=2000, help='Generations number of the refinement algorithm')
     parser.add_argument('--pop_size', type=int, default=50, help='Population size of the refinement islands')
     args = parser.parse_args()
