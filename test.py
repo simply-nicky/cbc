@@ -21,7 +21,7 @@ ROT_AX = np.array([0, 1, 0])
 
 B12_PREFIX = 'b12_2'
 B12_NUM = 135
-B12_DET_POS = np.array([115.21100409, 129.35695639, 105.32814487]) #mm
+B12_DET_POS = np.array([115.27488843, 129.2840341, 102.96257686]) #mm
 B12_EXP = cbc_dp.ScanSetup(rot_axis=ROT_AX,
                            pix_size=PIX_SIZE,
                            det_pos=B12_DET_POS)
