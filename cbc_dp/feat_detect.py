@@ -1,8 +1,6 @@
 """
 feat_detect.py - feature detection on convergent diffraction pattern module
 """
-from itertools import accumulate
-from operator import add
 from abc import ABCMeta, abstractmethod
 import numpy as np
 import pygmo
@@ -99,7 +97,7 @@ class LineDetector(metaclass=ABCMeta):
     """
     @staticmethod
     @abstractmethod
-    def _refiner(lines, taus, d_tau, d_n):
+    def _refiner(lines, width):
         pass
 
     @abstractmethod
@@ -109,20 +107,18 @@ class LineDetector(metaclass=ABCMeta):
     def det_frame_raw(self, frame):
         return np.array([[[x0, y0], [x1, y1]] for (x0, y0), (x1, y1) in self._detector(frame)])
 
-    def det_frame(self, frame, exp_set, d_tau=1.5, d_n=1.):
+    def det_frame(self, frame, exp_set, width=10):
         """
         Return FrameStreaks class object of detected lines
 
         frame - diffraction pattern
         exp_set - FrameSetup class object
-        d_tau - tangent detection error
-        d_n - radial detection error
+        width - line width [pixels]
         """
-        frame_strks = FrameStreaks(self.det_frame_raw(frame), exp_set)
-        ref_lines = type(self)._refiner(lines=frame_strks.lines,
-                                        taus=frame_strks.taus,
-                                        d_tau=d_tau, d_n=d_n)
-        return FrameStreaks((ref_lines + exp_set.det_pos[:2]) / exp_set.pix_size, exp_set)
+        raw_lines = self.det_frame_raw(frame).astype(float)
+        lines = self._refiner(raw_lines, width)
+        lines = self._refiner(lines, width)
+        return FrameStreaks(lines, exp_set)
 
     def det_scan_raw(self, scan):
         """
@@ -130,16 +126,15 @@ class LineDetector(metaclass=ABCMeta):
         """
         return [self.det_frame_raw(frame) for frame in scan]
 
-    def det_scan(self, data, exp_set, d_tau=1.5, d_n=1.):
+    def det_scan(self, data, exp_set, width=10):
         """
         Return ScanStreaks class obect of detected lines
 
         scan - rotational scan
         exp_set - FrameSetup class object
-        d_tau - tangent detection error [pixels]
-        d_n - radial detection error [pixels]
+        width - line width [pixels]
         """
-        return ScanStreaks.import_series([self.det_frame(frame, exp_set, d_tau, d_n) for frame in data])
+        return ScanStreaks.import_series([self.det_frame(frame, exp_set, width) for frame in data])
 
 class HoughLineDetector(LineDetector):
     """
@@ -150,7 +145,7 @@ class HoughLineDetector(LineDetector):
     line_gap - maximal line gap to consider two lines as one
     dth - angle parameter spacing
     """
-    def __init__(self, threshold, line_length, line_gap, dth):
+    def __init__(self, threshold=10, line_length=15, line_gap=3, dth=np.pi/500):
         self.threshold, self.line_length, self.line_gap = threshold, line_length, line_gap
         self.thetas = np.linspace(-np.pi / 2, np.pi / 2, int(np.pi / dth), endpoint=True)
 

@@ -99,90 +99,84 @@ def make_grid(float_t[:, ::1] points, float_t[::1] values, int_t size):
         grid[ii, jj, kk] = values[i]
     return np.array(grid)
 
-def hl_refiner(float_t[:, :, ::1] lines, float_t[:, ::1] taus, float_t d_tau, float_t d_n):
+def hl_refiner(float_t[:, :, ::1] lines, float_t w):
     cdef:
-        int a = lines.shape[0], count = 0, i, j
+        int a = lines.shape[0], ii = 0, i, j
         uint8_t[::1] mask = np.zeros(a, dtype=np.uint8)
-        float_t[:, :, ::1] hl_lines = np.empty((a, 2, 2), dtype=np.float64)
-        int_t[::1] min_idx = np.empty((2,), dtype=np.int64)
-        int_t[::1] max_idx = np.empty((2,), dtype=np.int64)
-        float_t proj_00, proj_01, proj_10, proj_11,temp
-        float_t dist_x, dist_y, tau_dist, n_dist
+        float_t[:, :, ::1] hl = np.empty((a, 2, 2), dtype=np.float64)
+        float_t p_00, p_01, p_10, p_11, temp
+        float_t dist_0, tau_x, tau_y, dist_x, dist_y, dist_t, dist_n
     for i in range(a):
         if not mask[i]:
-            proj_00 = lines[i, 0, 0] * taus[i, 0] + lines[i, 0, 1] * taus[i, 1]
-            proj_01 = lines[i, 1, 0] * taus[i, 0] + lines[i, 1, 1] * taus[i, 1]
-            if proj_00 < proj_01:
-                min_idx[0] = i; min_idx[1] = 0
-                max_idx[0] = i; max_idx[1] = 1
-            else:
-                min_idx[0] = i; min_idx[1] = 1
-                max_idx[0] = i; max_idx[1] = 0
-                temp = proj_00; proj_00 = proj_01; proj_01 = temp
+            hl[ii] = lines[i]
+            dist_0 = sqrt((hl[ii, 1, 0] - hl[ii, 0, 0])**2 + (hl[ii, 1, 1] - hl[ii, 0, 1])**2)
+            tau_x = (hl[ii, 1, 0] - hl[ii, 0, 0]) / dist_0
+            tau_y = (hl[ii, 1, 1] - hl[ii, 0, 1]) / dist_0
+            p_00 = hl[ii, 0, 0] * tau_x + hl[ii, 0, 1] * tau_y
+            p_01 = hl[ii, 1, 0] * tau_x + hl[ii, 1, 1] * tau_y
             for j in range(a):
-                if i == j:
-                    continue
-                dist_x = (lines[i, 0, 0] - lines[j, 0, 0] + lines[i, 1, 0] - lines[j, 1, 0]) / 2
-                dist_y = (lines[i, 0, 1] - lines[j, 0, 1] + lines[i, 1, 1] - lines[j, 1, 1]) / 2
-                tau_dist = abs(dist_x * taus[i, 0] + dist_y * taus[i, 1])
-                n_dist = sqrt((dist_x - tau_dist * taus[i, 0])**2 + (dist_y - tau_dist * taus[i, 1])**2)
-                if tau_dist < d_tau and n_dist < d_n:
-                    mask[j] = 1
-                    proj_10 = lines[j, 0, 0] * taus[i, 0] + lines[j, 0, 1] * taus[i, 1]
-                    proj_11 = lines[j, 1, 0] * taus[i, 0] + lines[j, 1, 1] * taus[i, 1]
-                    if proj_10 < proj_00:
-                        min_idx[0] = j; min_idx[1] = 0
-                    if proj_10 > proj_10:
-                        max_idx[0] = j; max_idx[1] = 0
-                    if proj_11 < proj_00:
-                        min_idx[0] = j; min_idx[1] = 1
-                    if proj_11 > proj_10:
-                        max_idx[0] = j; max_idx[1] = 1
-            hl_lines[count, 0] = lines[min_idx[0], min_idx[1]]
-            hl_lines[count, 1] = lines[max_idx[0], max_idx[1]]
-            count += 1
-    return np.array(hl_lines)[:count]
+                if not mask[j] and j != i:
+                    dist_x = (lines[i, 0, 0] - lines[j, 0, 0] + lines[i, 1, 0] - lines[j, 1, 0]) / 2
+                    dist_y = (lines[i, 0, 1] - lines[j, 0, 1] + lines[i, 1, 1] - lines[j, 1, 1]) / 2
+                    dist_t = dist_x * tau_x + dist_y * tau_y
+                    dist_n = sqrt((dist_x - dist_t * tau_x)**2 + (dist_y - dist_t * tau_y)**2)
+                    if abs(dist_t) < dist_0 / 2 and dist_n < w:
+                        mask[j] = 1
+                        p_10 = lines[j, 0, 0] * tau_x + lines[j, 0, 1] * tau_y
+                        p_11 = lines[j, 1, 0] * tau_x + lines[j, 1, 1] * tau_y
+                        if p_11 < p_10:
+                            temp = lines[j, 1, 0]; lines[j, 1, 0] = lines[j, 0, 0]; lines[j, 0, 0] = temp
+                            temp = lines[j, 1, 1]; lines[j, 1, 1] = lines[j, 0, 1]; lines[j, 0, 1] = temp
+                            temp = p_11; p_11 = p_10; p_10 = temp
+                        if p_10 < p_00:
+                            hl[ii, 0] = lines[j, 0]
+                        if p_11 > p_01:
+                            hl[ii, 1] = lines[j, 1]
+                        dist_0 = sqrt((hl[ii, 1, 0] - hl[ii, 0, 0])**2 + (hl[ii, 1, 1] - hl[ii, 0, 1])**2)
+                        tau_x = (hl[ii, 1, 0] - hl[ii, 0, 0]) / dist_0
+                        tau_y = (hl[ii, 1, 1] - hl[ii, 0, 1]) / dist_0
+                        p_00 = hl[ii, 0, 0] * tau_x + hl[ii, 0, 1] * tau_y
+                        p_01 = hl[ii, 1, 0] * tau_x + hl[ii, 1, 1] * tau_y
+            ii += 1
+    return np.array(hl)[:ii]
 
-def lsd_refiner(float_t[:, :, ::1] lines, float_t[:, ::1] taus, float_t d_tau, float_t d_n):
+def lsd_refiner(float_t[:, :, ::1] lines, float_t w):
     cdef:
-        int a = lines.shape[0], count = 0, i, j
+        int a = lines.shape[0], ii = 0, i, j
         uint8_t[::1] mask = np.zeros(a, dtype=np.uint8)
-        float_t[:, :, ::1] lsd_lines = np.empty((a, 2, 2), dtype=np.float64)
-        float_t proj_00, proj_01, proj_10, proj_11
-        float_t dist_x, dist_y, tau_dist, n_dist
+        float_t[:, :, ::1] ll = np.empty((a, 2, 2), dtype=np.float64)
+        float_t dist_0, tau_x, tau_y, dist_x, dist_y, dist_t, dist_n, prod, dist_1
     for i in range(a):
         if not mask[i]:
-            proj_00 = lines[i, 0, 0] * taus[i, 0] + lines[i, 0, 1] * taus[i, 1]
-            proj_01 = lines[i, 1, 0] * taus[i, 0] + lines[i, 1, 1] * taus[i, 1]
-            if proj_00 < proj_01:
-                lsd_lines[count, 0] = lines[i, 0]
-                lsd_lines[count, 1] = lines[i, 1]
-            else:
-                lsd_lines[count, 0] = lines[i, 1]
-                lsd_lines[count, 1] = lines[i, 0]
+            ll[ii] = lines[i]
+            dist_0 = sqrt((ll[ii, 1, 0] - ll[ii, 0, 0])**2 + (ll[ii, 1, 1] - ll[ii, 0, 1])**2)
+            tau_x = (ll[ii, 1, 0] - ll[ii, 0, 0]) / dist_0
+            tau_y = (ll[ii, 1, 1] - ll[ii, 0, 1]) / dist_0
             for j in range(a):
-                if i == j:
-                    continue
-                dist_x = (lines[i, 0, 0] - lines[j, 0, 0] + lines[i, 1, 0] - lines[j, 1, 0]) / 2
-                dist_y = (lines[i, 0, 1] - lines[j, 0, 1] + lines[i, 1, 1] - lines[j, 1, 1]) / 2
-                tau_dist = abs(dist_x * taus[i, 0] + dist_y * taus[i, 1])
-                n_dist = sqrt((dist_x - tau_dist * taus[i, 0])**2 + (dist_y - tau_dist * taus[i, 1])**2)
-                if tau_dist < d_tau and n_dist < d_n:
-                    mask[j] = 1
-                    proj_10 = lines[j, 0, 0] * taus[i, 0] + lines[j, 0, 1] * taus[i, 1]
-                    proj_11 = lines[j, 1, 0] * taus[i, 0] + lines[j, 1, 1] * taus[i, 1]
-                    if proj_10 < proj_11:
-                        lsd_lines[count, 0, 0] = (lsd_lines[count, 0, 0] + lines[j, 0, 0]) / 2
-                        lsd_lines[count, 0, 1] = (lsd_lines[count, 0, 1] + lines[j, 0, 1]) / 2
-                        lsd_lines[count, 1, 0] = (lsd_lines[count, 1, 0] + lines[j, 1, 0]) / 2
-                        lsd_lines[count, 1, 1] = (lsd_lines[count, 1, 1] + lines[j, 1, 1]) / 2
-                    else:
-                        lsd_lines[count, 0, 0] = (lsd_lines[count, 0, 0] + lines[j, 1, 0]) / 2
-                        lsd_lines[count, 0, 1] = (lsd_lines[count, 0, 1] + lines[j, 1, 1]) / 2
-                        lsd_lines[count, 1, 0] = (lsd_lines[count, 1, 0] + lines[j, 0, 0]) / 2
-                        lsd_lines[count, 1, 1] = (lsd_lines[count, 1, 1] + lines[j, 0, 1]) / 2
-            count += 1
-    return np.array(lsd_lines)[:count]
+                if not mask[j] and j != i:
+                    dist_x = (ll[ii, 0, 0] - lines[j, 0, 0] + ll[ii, 1, 0] - lines[j, 1, 0]) / 2
+                    dist_y = (ll[ii, 0, 1] - lines[j, 0, 1] + ll[ii, 1, 1] - lines[j, 1, 1]) / 2
+                    dist_t = dist_x * tau_x + dist_y * tau_y
+                    dist_n = sqrt((dist_x - dist_t * tau_x)**2 + (dist_y - dist_t * tau_y)**2)
+                    if abs(dist_t) < dist_0 / 2 and dist_n < w:
+                        mask[j] = 1
+                        prod = tau_x * (lines[j, 1, 0] - lines[j, 0, 0]) + tau_y * (lines[j, 1, 1] - lines[j, 0, 1])
+                        dist_1 = sqrt((lines[j, 1, 0] - lines[j, 0, 0])**2 + (lines[j, 1, 1] - lines[j, 0, 1])**2)
+                        if prod >= 0:
+                            ll[ii, 0, 0] += dist_1 / (dist_0 + dist_1) * (lines[j, 0, 0] - ll[ii, 0, 0])
+                            ll[ii, 0, 1] += dist_1 / (dist_0 + dist_1) * (lines[j, 0, 1] - ll[ii, 0, 1])
+                            ll[ii, 1, 0] += dist_1 / (dist_0 + dist_1) * (lines[j, 1, 0] - ll[ii, 1, 0])
+                            ll[ii, 1, 1] += dist_1 / (dist_0 + dist_1) * (lines[j, 1, 1] - ll[ii, 1, 1])
+                        else:
+                            ll[ii, 0, 0] += dist_1 / (dist_0 + dist_1) * (lines[j, 1, 0] - ll[ii, 0, 0])
+                            ll[ii, 0, 1] += dist_1 / (dist_0 + dist_1) * (lines[j, 1, 1] - ll[ii, 0, 1])
+                            ll[ii, 1, 0] += dist_1 / (dist_0 + dist_1) * (lines[j, 0, 0] - ll[ii, 1, 0])
+                            ll[ii, 1, 1] += dist_1 / (dist_0 + dist_1) * (lines[j, 0, 1] - ll[ii, 1, 1])
+                        dist_0 = sqrt((ll[ii, 1, 0] - ll[ii, 0, 0])**2 + (ll[ii, 1, 1] - ll[ii, 0, 1])**2)
+                        tau_x = (ll[ii, 1, 0] - ll[ii, 0, 0]) / dist_0
+                        tau_y = (ll[ii, 1, 1] - ll[ii, 0, 1]) / dist_0
+            ii += 1
+    return np.array(ll)[:ii]
 
 def source_index(float_t[:, :, ::1] rec_vec):
     """

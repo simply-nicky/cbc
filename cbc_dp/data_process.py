@@ -258,7 +258,7 @@ class Scan1D(ABCScan, metaclass=ABCMeta):
         cordata.save(outfile)
         outfile.close()
 
-    def save_streaks(self, exp_set, d_tau=1.8, d_n=1.4, mask=None):
+    def save_streaks(self, exp_set, width=10, mask=None):
         """
         Save the raw CBC data, correct the data, detect streaks,
         and save the data to an HDF5 file
@@ -274,7 +274,7 @@ class Scan1D(ABCScan, metaclass=ABCMeta):
         cor_data = self.corrected_data(mask)
         cor_data.save(out_file)
         norm_data = cor_data.normalize_data()
-        det_scan = norm_data.detect(exp_set, d_tau, d_n)
+        det_scan = norm_data.detect(exp_set, width)
         det_scan.save(out_file)
         out_file.close()
 
@@ -506,7 +506,7 @@ class NormalizedData(object):
                               float, None, True)
         self.norm_data = self.norm_data.reshape(self.cor_data.shape)
 
-    def detect(self, exp_set, d_tau=1.8, d_n=1.4):
+    def detect(self, exp_set, width=10):
         """
         Detect detect streaks in diffraction data
 
@@ -514,4 +514,4 @@ class NormalizedData(object):
         d_tau - tangent detection error [pixels]
         d_n - radial detection error [pixels]
         """
-        return self.line_detector.det_scan(self.norm_data, exp_set, d_tau=d_tau, d_n=d_n)
+        return self.line_detector.det_scan(self.norm_data, exp_set, width)
