@@ -483,7 +483,7 @@ class NormalizedData(object):
     streaks_mask - streaks mask
     """
     threshold = 3.2
-    line_detector = LineSegmentDetector(scale=0.6)
+    line_detector = LineSegmentDetector(scale=0.6, sigma_scale=0.4)
 
     def __init__(self, cor_data, streaks_mask):
         self.cor_data, self.mask = cor_data, streaks_mask
