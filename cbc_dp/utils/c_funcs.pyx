@@ -251,13 +251,19 @@ def model_source_lines(float_t[:, ::1] source, float_t[:, ::1] rec_vec, float_t 
             gamma = coeff1**2 - rec_vec[i, 2]**2 * (1 - bounds[k]**2)
             delta = betta**2 - alpha * gamma
             sol_1 = (betta + sqrt(delta)) / alpha
+            prod_1 = (sol_1 * rec_vec[i, (3 - k) // 2] +
+                      bounds[k] * rec_vec[i, k // 2] +
+                      sqrt(1 - bounds[k]**2 - sol_1**2) * rec_vec[i, 2]) - source_prd
             sol_2 = (betta - sqrt(delta)) / alpha
-            if abs(sol_1) < abs(bounds[3 - k]):
+            prod_2 = (sol_2 * rec_vec[i, (3 - k) // 2] +
+                      bounds[k] * rec_vec[i, k // 2] +
+                      sqrt(1 - bounds[k]**2 - sol_2**2) * rec_vec[i, 2]) - source_prd
+            if abs(prod_1) < 1e-11 and abs(sol_1) < abs(bounds[3 - k]):
                 source_lines[ii, jj, k // 2] = bounds[k]
                 source_lines[ii, jj, (3 - k) // 2] = sol_1
                 source_lines[ii, jj, 2] = sqrt(1 - bounds[k]**2 - sol_1**2)
                 jj += 1
-            if delta != 0 and abs(sol_2) < abs(bounds[3 - k]):
+            if delta > 0 and abs(prod_2) < 1e-11 and abs(sol_2) < abs(bounds[3 - k]):
                 source_lines[ii, jj, k // 2] = bounds[k]
                 source_lines[ii, jj, (3 - k) // 2] = sol_2
                 source_lines[ii, jj, 2] = sqrt(1 - bounds[k]**2 - sol_2**2)
