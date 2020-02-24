@@ -100,6 +100,12 @@ def make_grid(float_t[:, ::1] points, float_t[::1] values, int_t size):
     return np.array(grid)
 
 def hl_refiner(float_t[:, :, ::1] lines, float_t w):
+    """
+    Group and refine HL detected lines
+
+    lines - HL detected lines [pixels]
+    w - line grouping zone width [pixels]
+    """
     cdef:
         int a = lines.shape[0], ii = 0, i, j
         uint8_t[::1] mask = np.zeros(a, dtype=np.uint8)
@@ -141,6 +147,12 @@ def hl_refiner(float_t[:, :, ::1] lines, float_t w):
     return np.array(hl)[:ii]
 
 def lsd_refiner(float_t[:, :, ::1] lines, float_t w):
+    """
+    Group and refine LSD detected lines
+
+    lines - LSD detected lines [pixels]
+    w - line grouping zone width [pixels]
+    """
     cdef:
         int a = lines.shape[0], ii = 0, i, j
         uint8_t[::1] mask = np.zeros(a, dtype=np.uint8)
@@ -178,31 +190,6 @@ def lsd_refiner(float_t[:, :, ::1] lines, float_t w):
             ii += 1
     return np.array(ll)[:ii]
 
-def source_index(float_t[:, :, ::1] rec_vec):
-    """
-    Return reciprocal vector angles and source line origin points for an IndexLattice class object
-
-    rec_vec - array of reciprocal vectors
-    """
-    cdef:
-        int a = rec_vec.shape[0], b = rec_vec.shape[1]
-        int i, j
-        float_t source_th
-        float_t[:, ::1] rec_abs = np.empty((a, b), dtype=np.float64)
-        float_t[:, ::1] rec_th = np.empty((a, b), dtype=np.float64)
-        float_t[:, ::1] rec_phi = np.empty((a, b), dtype=np.float64)
-        float_t[:, :, ::1] source = np.empty((a, b, 3), dtype=np.float64)
-    for i in range(a):
-        for j in range(b):
-            rec_abs[i, j] = sqrt(rec_vec[i, j, 0]**2 + rec_vec[i, j, 1]**2 + rec_vec[i, j, 2]**2)
-            rec_th[i, j] = acos(-rec_vec[i, j, 2] / rec_abs[i, j])
-            rec_phi[i, j] = atan2(rec_vec[i, j, 1], rec_vec[i, j, 0])
-            source_th = rec_th[i, j] - acos(rec_abs[i, j] / 2)
-            source[i, j, 0] = -sin(source_th) * cos(rec_phi[i, j])
-            source[i, j, 1] = -sin(source_th) * sin(rec_phi[i, j])
-            source[i, j, 2] =  cos(source_th)
-    return np.asarray(rec_abs), np.asarray(rec_th), np.asarray(rec_phi), np.asarray(source)
-
 def init_source(float_t[:, ::1] rec_vec):
     """
     Return reciprocal vector angles and source line origin points for an BallLattice class object
@@ -237,7 +224,7 @@ def model_source_lines(float_t[:, ::1] source, float_t[:, ::1] rec_vec, float_t 
     cdef:
         int a = rec_vec.shape[0], ii = 0, jj, i, k
         uint8_t[::1] mask = np.zeros(a, dtype=np.uint8)
-        float_t source_prd, coeff1, coeff2, alpha, betta, gamma, delta, sol_1, sol_2
+        float_t source_prd, coeff1, coeff2, alpha, betta, gamma, delta, sol_1, sol_2, prod_1, prod_2
         float_t[::1] bounds = np.array([num_ap_x, -num_ap_x, num_ap_y, -num_ap_y], dtype=np.float64)
         float_t[:, :, ::1] source_lines = np.empty((a, 2, 3), dtype=np.float64)
     for i in range(a):
