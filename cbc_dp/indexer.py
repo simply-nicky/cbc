@@ -128,13 +128,13 @@ class FCBI(AbcCBI):
                                       reciprocal basis matrix tolerances [0.0 - 1.0]
     pen_coeff                       - fitness penalty coefficient
     """
-    def __init__(self, lines, exp_set, num_ap, rec_basis, tol=(0.1, 0.05), pen_coeff=10):
+    def __init__(self, lines, exp_set, num_ap, rec_basis, tol=([0.03, 0.03, 0.075], 0.12), pen_coeff=10):
         super(FCBI, self).__init__(lines, exp_set, num_ap, rec_basis.ravel(), tol, pen_coeff)
 
     def _init_bounds(self, rec_basis, tol):
         rb_bounds = np.stack(((1 - tol[1]) * rec_basis, (1 + tol[1]) * rec_basis))
-        self.lower_b = np.concatenate((-tol[0] * np.ones(3), rb_bounds.min(axis=0)))
-        self.upper_b = np.concatenate((tol[0] * np.ones(3), rb_bounds.max(axis=0)))
+        self.lower_b = np.concatenate((-np.array(tol[0]), rb_bounds.min(axis=0)))
+        self.upper_b = np.concatenate((np.array(tol[0]), rb_bounds.max(axis=0)))
 
     def rec_basis(self, vec):
         """
@@ -161,14 +161,14 @@ class RCBI(AbcCBI):
                                           and orientation matrix angles tolerances [0.0 - 1.0]
     pen_coeff                           - fitness penalty coefficient
     """
-    def __init__(self, lines, exp_set, num_ap, rec_basis, tol=(0.05, 0.1, np.radians(5)), pen_coeff=10):
+    def __init__(self, lines, exp_set, num_ap, rec_basis, tol=([0.03, 0.03, 0.075], 0.1, np.radians(5)), pen_coeff=10):
         super(RCBI, self).__init__(lines, exp_set, num_ap, rec_basis, tol, pen_coeff)
 
     def _init_bounds(self, rec_basis, tol):
         self.rec_sizes = np.sqrt((rec_basis**2).sum(axis=-1))
         self.or_mat = rec_basis / self.rec_sizes[:, None]
-        self.lower_b = np.concatenate((-tol[0] * np.ones(3), (1 - tol[1]) * self.rec_sizes, -tol[2] * np.ones(3)))
-        self.upper_b = np.concatenate((tol[0] * np.ones(3), (1 + tol[1]) * self.rec_sizes, tol[2] * np.ones(3)))
+        self.lower_b = np.concatenate((-np.array(tol[0]), (1 - tol[1]) * self.rec_sizes, -tol[2] * np.ones(3)))
+        self.upper_b = np.concatenate((np.array(tol[0]), (1 + tol[1]) * self.rec_sizes, tol[2] * np.ones(3)))
 
     def rec_basis(self, vec):
         """
