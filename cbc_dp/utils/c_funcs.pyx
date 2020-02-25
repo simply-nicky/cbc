@@ -5,6 +5,7 @@ cimport numpy as cnp
 
 ctypedef cnp.float64_t float_t
 ctypedef cnp.int64_t int_t
+ctypedef cnp.uint64_t uint_t
 ctypedef cnp.uint8_t uint8_t
 
 def binary_search(float_t[::1] values, int l, int r, float_t x):
@@ -27,6 +28,56 @@ def searchsorted(float_t[::1] values, float_t x):
         return r
     else:
         return binary_search(values, 0, r, x)
+
+cdef uint_t wirthselect(uint_t[::1] array, int k) nogil:
+    """
+    Nikolaus Wirth's selection algorithm to find the kth smallest element
+    """
+    cdef:
+        int_t l = 0, m = array.shape[0] - 1, i, j
+        uint_t x, tmp 
+    while l < m: 
+        x = array[k] 
+        i = l; j = m 
+        while 1: 
+            while array[i] < x: i += 1 
+            while x < array[j]: j -= 1 
+            if i <= j: 
+                tmp = array[i]; array[i] = array[j]; array[j] = tmp
+                i += 1; j -= 1 
+            if i > j: break 
+        if j < k: l = i 
+        if k < i: m = j 
+    return array[k]
+
+def background_filter(uint_t[:, ::1] data, uint_t[::1] bgd, int_t ksize, float_t sigma):
+    """
+    Generate refined background with experimentally measured one using median filtering
+
+    data - diffraction data
+    bgd - experimentally measured background
+    ksize - median filtering kernel size
+    sigma - filtering threshold
+    """
+    cdef:
+        int_t a = data.shape[0], b = data.shape[1], count, i, j, k, i0, i1
+        uint_t[:, ::1] res = np.empty((a, b), dtype=np.uint64)
+        uint_t[::1] array = np.empty(ksize, dtype=np.uint64)
+    for i in range(a):
+        i0 = i - ksize // 2
+        i1 = i + ksize // 2
+        for j in range(b):
+            count = 0
+            for k in range(i0, i1):
+                if k < 0: k = -k
+                if k > a: j = a - (k - a)
+                if data[k, j] < (1 + sigma) * bgd[j] and data[k, j] > (1 - sigma) * bgd[j]:
+                    array[count] = data[k, j]; count += 1
+            if count:
+                res[i, j] = wirthselect(array[:count], count // 2)
+            else:
+                res[i, j] = bgd[j]
+    return np.asarray(res)
 
 def streaks_mask(float_t[:, :, ::1] lines, uint8_t[:, ::1] structure, int_t width, int_t shape_x, int_t shape_y):
     """
