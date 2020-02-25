@@ -4,7 +4,7 @@ wrapper.py - Eiger 4M detector data processing from Petra P06 beamline module
 import os
 import concurrent.futures
 from abc import ABCMeta, abstractmethod, abstractproperty
-from scipy.ndimage import median_filter, binary_dilation, binary_fill_holes, label, labeled_comprehension
+from scipy.ndimage import median_filter, binary_fill_holes, label, labeled_comprehension
 from scipy import constants
 import numpy as np
 import h5py
@@ -411,6 +411,11 @@ class CorrectedData(object):
     """
     bgd_kernel = (11, 1)
     line_detector = LineSegmentDetector(scale=0.6, sigma_scale=0.4)
+    structure = np.array([[0, 0, 1, 0, 0],
+                          [0, 1, 1, 1, 0],
+                          [1, 1, 1, 1, 1],
+                          [0, 1, 1, 1, 0],
+                          [0, 0, 1, 0, 0]], dtype=np.uint8)
 
     def __init__(self, data, mask=None):
         self.data = data
@@ -449,11 +454,10 @@ class CorrectedData(object):
     @classmethod
     def _mask_worker(cls, frame_data):
         streaks = cls.line_detector.det_frame_raw(median_filter(frame_data, 3))
-        streaks_mask = utils.draw_lines_aa(lines=streaks.astype(np.int64),
-                                         w=1,
-                                         shape_x=frame_data.shape[0],
-                                         shape_y=frame_data.shape[1])
-        streaks_mask = binary_dilation(streaks_mask, iterations=3)
+        streaks_mask = utils.streaks_mask(lines=streaks, width=3,
+                                          structure=cls.structure,
+                                          shape_x=frame_data.shape[0],
+                                          shape_y=frame_data.shape[1])
         streaks_mask = binary_fill_holes(streaks_mask)
         return streaks_mask
 

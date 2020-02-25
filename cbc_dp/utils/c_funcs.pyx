@@ -28,53 +28,51 @@ def searchsorted(float_t[::1] values, float_t x):
     else:
         return binary_search(values, 0, r, x)
 
-def draw_lines_aa(int_t[:, :, ::1] lines, float_t w, int_t shape_x, int_t shape_y):
+def streaks_mask(float_t[:, :, ::1] lines, uint8_t[:, ::1] structure, int_t width, int_t shape_x, int_t shape_y):
     """
-    Generate mask with anti-aliased lines with given thickness drawn
+    Generate a streaks mask with the given line width and binary dilated with the given structure
 
     lines - lines coordinates (x0, y0, x1, y1)
-    w - line thickness
+    structure - binary structure
+    width - line thickness
     shape = (shape_x, shape_y) - mask shape
     """
     cdef:
-        float_t slope, thickness, val
-        int_t a = lines.shape[0], R0, C0, R1 , C1, temp, i, j, k, k_max, ind, y, xx, yy
-        float_t[:, ::1] mask = np.zeros((shape_x, shape_y), dtype=np.float64)
+        float_t slope, thickness, R0, C0, R1 , C1, temp
+        int_t a = lines.shape[0], r_max = structure.shape[0], c_max = structure.shape[1]
+        int_t k_max = width // 2, i, j, k, y, xx, yy, r, c
+        uint8_t[:, ::1] mask = np.zeros((shape_x, shape_y), dtype=np.uint8)
     for i in range(a):
         if abs(lines[i, 0, 0] - lines[i, 1, 0]) < abs(lines[i, 0, 1] - lines[i, 1, 1]):
             R0 = lines[i, 0, 0]; C0 = lines[i, 0, 1]; R1 = lines[i, 1, 0]; C1 = lines[i, 1, 1]
             if C0 > C1:
                 temp = R0; R0 = R1; R1 = temp
                 temp = C0; C0 = C1; C1 = temp
-            slope = (float(R1) - float(R0)) / (float(C1) - float(C0))
-            thickness = w * sqrt(1 + abs(slope)) / 2
-            k_max = int(ceil(thickness / 2)) + 1
-            for j in range(C0, C1 + 1):
-                y = int(floor(j * slope + (C1 * R0 - C0 * R1) / (C1 - C0)))
+            slope = (R1 - R0) / (C1 - C0)
+            for j in range(int(C0), int(C1) + 1):
+                y = int(j * slope + (C1 * R0 - C0 * R1) / (C1 - C0))
                 for k in range(-k_max, k_max + 1):
-                    xx = j
-                    if y + k >= 0 and y + k < shape_y:
-                        yy = y + k
-                        val = min(yy + 1 + w / 2 - y, -yy + 1 + w / 2 + y)
-                        if val > 0:
-                            mask[xx, yy] = min(val, 1.)
+                    for r in range(r_max):
+                        for c in range(c_max):
+                            xx = j + r - r_max // 2
+                            yy = y + k + c - c_max // 2
+                            if yy >= 0 and yy < shape_y and xx >= 0 and xx < shape_x and structure[r, c]:
+                                mask[xx, yy] = 1
         else:
             R0 = lines[i, 0, 1]; C0 = lines[i, 0, 0]; R1 = lines[i, 1, 1]; C1 = lines[i, 1, 0]
             if C0 > C1:
                 temp = R0; R0 = R1; R1 = temp
                 temp = C0; C0 = C1; C1 = temp
-            slope = (float(R1) - float(R0)) / (float(C1) - float(C0))
-            thickness = w * sqrt(1 + abs(slope)) / 2
-            k_max = int(ceil(thickness / 2)) + 1
-            for j in range(C0, C1 + 1):
-                y = int(floor(j * slope + (C1 * R0 - C0 * R1) / (C1 - C0)))
+            slope = (R1 - R0) / (C1 - C0)
+            for j in range(int(C0), int(C1) + 1):
+                y = int(j * slope + (C1 * R0 - C0 * R1) / (C1 - C0))
                 for k in range(-k_max, k_max + 1):
-                    yy = j
-                    if y + k >= 0 and y + k < shape_x:
-                        xx = y + k
-                        val = min(xx + 1 + w / 2 - y, -xx + 1 + w / 2 + y)
-                        if val > 0:
-                            mask[xx, yy] = min(val, 1.)
+                    for r in range(r_max):
+                        for c in range(c_max):
+                            xx = y + k + c - c_max // 2
+                            yy = j + r - r_max // 2
+                            if yy >= 0 and yy < shape_y and xx >= 0 and xx < shape_x and structure[r, c]:
+                                mask[xx, yy] = 1
     return np.asarray(mask)
 
 def make_grid(float_t[:, ::1] points, float_t[::1] values, int_t size):
