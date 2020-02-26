@@ -404,20 +404,22 @@ class ScanST(ABCScan):
         outfile.create_dataset('entry_1/sample_3/geometry/translation', data=self.translation())
         self._save_data(outfile)
 
-class CorrectedData(object):
+class CorrectedData():
     """
     CBC data correction class. Calculate background, content and streaks mask.
 
     data - raw data
     mask - bad pixels mask
     """
-    bgd_ksize, bgd_sigma, det_thr = 15, 1., 3
-    line_detector = LineSegmentDetector(scale=0.6, sigma_scale=0.4)
+    bgd_kmax, bgd_sigma = 11, 1.
+    det_thr, streak_width = 3, 7
+    line_detector = LineSegmentDetector(scale=0.5, sigma_scale=0.5)
     structure = np.array([[0, 0, 1, 0, 0],
                           [0, 1, 1, 1, 0],
                           [1, 1, 1, 1, 1],
                           [0, 1, 1, 1, 0],
                           [0, 0, 1, 0, 0]], dtype=np.uint8)
+    thread_max = 2**6
 
     def __init__(self, data, bgd, bad_mask=None):
         self.data, self.bgd = data, bgd
@@ -430,19 +432,18 @@ class CorrectedData(object):
         self._mask_data()
 
     def _init_background(self):
-        idxs = np.where(self.bad_mask == 0)
-        data = self.data[:, idxs[0], idxs[1]]
-        bgd_data = self.bgd[idxs[0], idxs[1]]
         futures = []
         with concurrent.futures.ProcessPoolExecutor() as executor:
-            for data_chunk, bgd_chunk in zip(np.array_split(data, utils.CPU_COUNT, axis=1),
-                                             np.array_split(bgd_data, utils.CPU_COUNT, axis=0)):
-                futures.append(executor.submit(CorrectedData._background_worker, data_chunk, bgd_chunk))
-        self.background = np.copy(self.data)
-        self.cor_data = np.zeros(self.data.shape, dtype=np.int64)
-        filt_data = np.concatenate([future.result() for future in futures], axis=1)
-        self.background[:, idxs[0], idxs[1]] = filt_data
-        self.cor_data[:, idxs[0], idxs[1]] = data - filt_data
+            data_list = np.array_split(self.data, self.thread_max, axis=-1)
+            bgd_list = np.array_split(self.bgd, self.thread_max, axis=-1)
+            mask_list = np.array_split(self.bad_mask, self.thread_max, axis=-1)
+            for data_chunk, bgd_chunk, mask_chunk in zip(data_list, bgd_list, mask_list):
+                futures.append(executor.submit(CorrectedData._background_worker,
+                                               data_chunk,
+                                               bgd_chunk,
+                                               mask_chunk))
+        self.background = np.concatenate([future.result() for future in futures], axis=-1)
+        self.cor_data = (self.data - self.background).astype(np.int)
 
     def _mask_data(self):
         futures = []
@@ -452,17 +453,16 @@ class CorrectedData(object):
         self.streaks_mask = np.stack([future.result() for future in futures], axis=0)
 
     @classmethod
-    def _background_worker(cls, data, bgd):
-        return utils.background_filter(data=np.ascontiguousarray(data),
-                                       bgd=np.ascontiguousarray(bgd),
-                                       ksize=cls.bgd_ksize, sigma=cls.bgd_sigma)
+    def _background_worker(cls, data, bgd, bad_mask):
+        return utils.background_filter(data=data, bgd=bgd, bad_mask=bad_mask,
+                                       k_max=cls.bgd_kmax, sigma=cls.bgd_sigma)
 
     @classmethod
     def _mask_worker(cls, frame_data):
         frame = median_filter(frame_data, 3)
         frame = np.clip(frame, cls.det_thr, frame.max())
         streaks = cls.line_detector.det_frame_raw(frame)
-        streaks_mask = utils.streaks_mask(lines=streaks, width=3,
+        streaks_mask = utils.streaks_mask(lines=streaks, width=cls.streak_width,
                                           structure=cls.structure,
                                           shape_x=frame_data.shape[0],
                                           shape_y=frame_data.shape[1])
@@ -487,7 +487,7 @@ class CorrectedData(object):
         correct_group.create_dataset('bad_mask', data=self.bad_mask, compression='gzip')
         correct_group.create_dataset('background', data=self.background, compression='gzip')
 
-class NormalizedData(object):
+class NormalizedData():
     """
     CBC data normalization for streaks detection.
 
@@ -495,7 +495,7 @@ class NormalizedData(object):
     streaks_mask - streaks mask
     """
     norm_thr = 3.2
-    line_detector = LineSegmentDetector(scale=0.6, sigma_scale=0.4)
+    line_detector = LineSegmentDetector(scale=0.5, sigma_scale=0.5)
 
     def __init__(self, cor_data, streaks_mask):
         self.cor_data, self.mask = cor_data, streaks_mask
@@ -526,4 +526,6 @@ class NormalizedData(object):
         d_tau - tangent detection error [pixels]
         d_n - radial detection error [pixels]
         """
-        return self.line_detector.det_scan(self.norm_data, exp_set, width)
+        max_clip = self.norm_data.mean() + self.norm_thr * self.norm_data.std()
+        det_data = np.clip(self.norm_data, 0, max_clip)
+        return self.line_detector.det_scan(det_data, exp_set, width)

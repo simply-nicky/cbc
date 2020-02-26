@@ -50,33 +50,42 @@ cdef uint_t wirthselect(uint_t[::1] array, int k) nogil:
         if k < i: m = j 
     return array[k]
 
-def background_filter(uint_t[:, ::1] data, uint_t[::1] bgd, int_t ksize, float_t sigma):
+def background_filter(uint_t[:, :, ::1] data, uint_t[:, ::1] bgd, uint8_t[:, ::1] bad_mask,
+                      int_t k_max, float_t sigma):
     """
     Generate refined background with experimentally measured one using median filtering
 
     data - diffraction data
     bgd - experimentally measured background
-    ksize - median filtering kernel size
+    bad_mask - bad pixels mask
+    k_max - median filtering kernel size
     sigma - filtering threshold
     """
     cdef:
-        int_t a = data.shape[0], b = data.shape[1], count, i, j, k, i0, i1
-        uint_t[:, ::1] res = np.empty((a, b), dtype=np.uint64)
-        uint_t[::1] array = np.empty(ksize, dtype=np.uint64)
-    for i in range(a):
-        i0 = i - ksize // 2
-        i1 = i + ksize // 2
-        for j in range(b):
-            count = 0
-            for k in range(i0, i1):
-                if k < 0: k = -k
-                if k > a: j = a - (k - a)
-                if data[k, j] < (1 + sigma) * bgd[j] and data[k, j] > (1 - sigma) * bgd[j]:
-                    array[count] = data[k, j]; count += 1
-            if count:
-                res[i, j] = wirthselect(array[:count], count // 2)
+        int_t a = data.shape[0], b = data.shape[1], c = data.shape[2]
+        int_t count, i, j, k, l, m, n, k0, k1
+        uint_t[:, :, ::1] res = np.empty((a, b, c), dtype=np.uint64)
+        uint_t[::1] array = np.empty(k_max, dtype=np.uint64)
+    for i in range(b):
+        for j in range(c):
+            if bad_mask[i, j]:
+                for k in range(a):
+                    res[k, i, j] = data[k, i, j]
             else:
-                res[i, j] = bgd[j]
+                for k in range(a):
+                    k0 = k - k_max // 2
+                    k1 = k + k_max // 2
+                    count = 0
+                    for l in range(k0, k1):
+                        m = l % (a - 1)
+                        n = l // (a - 1) % 2
+                        l = n * (a - 1) + (1 - 2 * n) * m
+                        if data[l, i, j] < (1 + sigma) * bgd[i, j] and data[l, i, j] > (1 - sigma) * bgd[i, j]:
+                            array[count] = data[l, i, j]; count += 1
+                    if count:
+                        res[k, i, j] = wirthselect(array[:count], count // 2)
+                    else:
+                        res[k, i, j] = bgd[i, j]
     return np.asarray(res)
 
 def streaks_mask(float_t[:, :, ::1] lines, uint8_t[:, ::1] structure, int_t width, int_t shape_x, int_t shape_y):
