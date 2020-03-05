@@ -5,9 +5,7 @@ from abc import ABCMeta, abstractmethod
 import numpy as np
 import pygmo
 from skimage.transform import probabilistic_hough_line
-from skimage.draw import line_aa
-from scipy.ndimage.filters import gaussian_filter
-from scipy.ndimage.measurements import label, maximum_position
+from scipy.ndimage import gaussian_filter, label, maximum_position
 from cv2 import createLineSegmentDetector
 from . import utils
 from .grouper import TiltGroups
@@ -220,31 +218,24 @@ class FrameStreaks():
         products = self.lines[:, 0, 1] * self.taus[:, 0] - self.lines[:, 0, 0] * self.taus[:, 1]
         return np.stack((-self.taus[:, 1] * products, self.taus[:, 0] * products), axis=1)
 
-    def intensities(self, raw_data):
+    def i_sigma(self, hkl_idxs, cor_data, bgd):
         """
-        Return detected streaks intensities
+        Return detected streaks intensities (I) and Poisson noise (sigma)
 
-        raw_data - raw diffraction pattern
+        cor_data - background subtracted data
+        bgd - background data
+        hkl_idxs - hkl indices
         """
-        ints = []
-        for line in self.raw_lines.astype(np.int):
-            rows, columns, val = line_aa(line[0, 1], line[0, 0], line[1, 1], line[1, 0])
-            ints.append((raw_data[rows, columns] * val).sum())
-        return np.array(ints)
-
-    def snr(self, raw_data, background):
-        """
-        Return detected streaks signal to noise ratio
-
-        raw_data - raw diffraction pattern
-        background - noise background
-        """
-        signal = self.intensities(raw_data)
-        noise = []
-        for line in self.raw_lines.astype(np.int):
-            rows, columns, val = line_aa(line[0, 1], line[0, 0], line[1, 1], line[1, 0])
-            noise.append(np.abs(background[rows, columns] * val).sum())
-        return signal / np.array(noise)
+        hkl_uniq = np.unique(hkl_idxs, axis=0)
+        i_list, s_list = [], []
+        for hkl in hkl_uniq:
+            idxs = np.where((hkl_idxs == hkl).all(axis=1))
+            mask = utils.streaks_mask(lines=self.raw_lines[idxs], structure=utils.STRUCT,
+                                      width=3, shape_x=bgd.shape[0], shape_y=bgd.shape[1])
+            i_tot, sigma = utils.i_sigma(mask, cor_data, bgd)
+            i_list.append(i_tot)
+            s_list.append(sigma)
+        return hkl_uniq, np.array(i_list), np.array(s_list)
 
     def kout(self, theta):
         """
@@ -313,7 +304,7 @@ class ScanStreaks(FrameStreaks):
 
         strks_list - detected lines FrameStreaks class object list
         """
-        frame_idxs = np.concatenate([idx * np.ones(strks.size)
+        frame_idxs = np.concatenate([idx * np.ones(strks.size, dtype=np.int)
                                      for idx, strks in enumerate(strks_list)])
         raw_lines = np.concatenate([strks.raw_lines for strks in strks_list])
         return cls(raw_lines, strks_list[0].exp_set, frame_idxs)
@@ -340,30 +331,26 @@ class ScanStreaks(FrameStreaks):
             idxs = np.where(self.frame_idxs == frame_idx)
             yield FrameStreaks(self.raw_lines[idxs], self.exp_set)
 
-    def intensities(self, raw_data):
+    def i_sigma(self, hkl_idxs, cor_data, bgd):
         """
-        Return detected streaks intensities
+        Return detected streaks intensities (I) and Poisson noise (sigma)
 
-        data - raw diffraction patterns
+        cor_data - background subtracted data
+        bgd - background data
+        hkl_idxs - hkl indices
         """
-        ints = []
-        for frame_strks, frame in zip(iter(self), raw_data):
-            frame_ints = frame_strks.intensities(frame)
-            ints.append(frame_ints)
-        return np.concatenate(ints)
-
-    def snr(self, raw_data, background):
-        """
-        Return detected streaks signal to noise ratio
-
-        raw_data - raw diffraction pattern
-        background - noise backgrounds
-        """
-        snr_vals = []
-        for frame_strks, frame, bgd in zip(iter(self), raw_data, background):
-            frame_snr = frame_strks.snr(frame, bgd)
-            snr_vals.append(frame_snr)
-        return np.concatenate(snr_vals)
+        frame_idxs = np.unique(self.frame_idxs)
+        i_dict, s_dict, hkl_dict = {}, {}, {}
+        for frame_idx in frame_idxs:
+            idxs = np.where(self.frame_idxs == frame_idx)
+            streaks = FrameStreaks(self.raw_lines[idxs], self.exp_set)
+            hkl_arr, i_arr, s_arr = streaks.i_sigma(hkl_idxs=hkl_idxs[idxs],
+                                                    cor_data=cor_data[frame_idx],
+                                                    bgd=bgd[frame_idx])
+            hkl_dict[frame_idx] = hkl_arr
+            i_dict[frame_idx] = i_arr
+            s_dict[frame_idx] = s_arr
+        return hkl_dict, i_dict, s_dict
 
     def kout(self, theta):
         """

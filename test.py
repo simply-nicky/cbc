@@ -21,7 +21,7 @@ ROT_AX = np.array([0, 1, 0])
 
 B12_PREFIX = 'b12_2'
 B12_NUM = 135
-B12_DET_POS = np.array([115.29697554, 129.16733852, 99.88790367]) #mm
+B12_DET_POS = np.array([115.2017197, 129.0707665, 98.71582009]) #mm
 B12_EXP = cbc_dp.ScanSetup(rot_axis=ROT_AX,
                            pix_size=PIX_SIZE,
                            det_pos=B12_DET_POS)
@@ -68,7 +68,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Index b12 diffraction data')
     parser.add_argument('out_path', type=str, help='Output file path')
     parser.add_argument('--n_isl', type=int, default=20, help='Number of islands for one frame')
-    parser.add_argument('--tol', type=float, nargs=2, default=[[0.025, 0.025, 0.075], 0.12], help='Refinement tolerance: det_pos, rec_basis')
+    parser.add_argument('--tol', type=float, nargs=2, default=[[0.025, 0.025, 0.05], 0.12], help='Refinement tolerance: det_pos, rec_basis')
     parser.add_argument('--gen_num', type=int, default=3000, help='Generations number of the refinement algorithm')
     parser.add_argument('--pop_size', type=int, default=50, help='Population size of the refinement islands')
     args = parser.parse_args()

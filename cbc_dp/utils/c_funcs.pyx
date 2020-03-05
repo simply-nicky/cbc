@@ -248,6 +248,28 @@ def lsd_refiner(float_t[:, :, ::1] lines, float_t w):
             ii += 1
     return np.array(ll)[:ii]
 
+def i_sigma(uint8_t[:, ::1] streaks_mask, int_t[:, ::1] cor_data, uint_t[:, ::1] background):
+    """
+    Return streak's intensity and Poisson noise
+
+    streaks_mask - streak's mask
+    cor_data - background subtracted diffraction data
+    background - background
+    """
+    cdef:
+        int_t a = streaks_mask.shape[0], b = streaks_mask.shape[1], count = 0, I = 0, i, j
+        float_t bgd_mean = 0, bgd_var = 0, bgd_sigma, delta
+    for i in range(a):
+        for j in range(b):
+            if streaks_mask[i, j]:
+                count += 1
+                delta = background[i, j] - bgd_mean
+                bgd_mean += delta / count
+                bgd_var += (background[i, j] - bgd_mean) * delta
+                I += cor_data[i, j]
+    bgd_sigma = max(bgd_mean * count, bgd_var)
+    return I, sqrt(I + bgd_sigma)
+
 def init_source(float_t[:, ::1] rec_vec):
     """
     Return reciprocal vector angles and source line origin points for an BallLattice class object

@@ -30,6 +30,11 @@ COMMANDS = {'single_frame': ('cnt', 'ct'),
             'scan2d': ('dmesh', 'cmesh')}
 ORIGINS = {107: np.array([1480, 1155]), 135: np.array([1470, 1710])}
 DET_DIST = {'alignment': 0.9, 'imaging': 1.46}
+STRUCT = np.array([[0, 0, 1, 0, 0],
+                   [0, 1, 1, 1, 0],
+                   [1, 1, 1, 1, 1],
+                   [0, 1, 1, 1, 0],
+                   [0, 0, 1, 0, 0]], dtype=np.uint8)
 
 def scan_command(nxsfilepath):
     command = h5py.File(nxsfilepath, 'r')[NXS_PATH].attrs[COMMAND_PATH]

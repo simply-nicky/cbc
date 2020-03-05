@@ -4,7 +4,7 @@ wrapper.py - Eiger 4M detector data processing from Petra P06 beamline module
 import os
 import concurrent.futures
 from abc import ABCMeta, abstractmethod, abstractproperty
-from scipy.ndimage import median_filter, binary_fill_holes, label, labeled_comprehension
+from scipy.ndimage import median_filter, binary_closing, label, labeled_comprehension
 from scipy import constants
 import numpy as np
 import h5py
@@ -230,14 +230,14 @@ class Scan1D(ABCScan, metaclass=ABCMeta):
         else:
             return np.stack(data_list, axis=0)
 
-    def corrected_data(self, bgd, bad_mask=None):
+    def corrected_data(self, exp_bgd, bad_mask=None):
         """
         Perform CBC data correction
 
-        bgd - experimentaly measured background
+        exp_bgd - experimentaly measured background
         bad_mask - bad pixels mask
         """
-        return CorrectedData(self.data, bgd, bad_mask)
+        return CorrectedData(data=self.data, exp_bgd=exp_bgd, bad_mask=bad_mask)
 
     def _save_data(self, outfile):
         datagroup = outfile.create_group('data')
@@ -260,20 +260,20 @@ class Scan1D(ABCScan, metaclass=ABCMeta):
         cordata.save(outfile)
         outfile.close()
 
-    def save_streaks(self, exp_set, bgd, bad_mask=None, width=10):
+    def save_streaks(self, exp_set, exp_bgd, bad_mask=None, width=10):
         """
         Save the raw CBC data, correct the data, detect streaks,
         and save the data to an HDF5 file
 
         exp_set - FrameSetup class object
-        bgd - experimentaly measured background
+        exp_bgd - experimentaly measured background
         bad_mask - bad pixel mask
         width - diffraction streak width [pixels]
         """
         out_file = self._create_outfile(tag='streaks')
         self._save_parameters(out_file)
         self._save_data(out_file)
-        cor_data = self.corrected_data(bgd, bad_mask)
+        cor_data = self.corrected_data(exp_bgd=exp_bgd, bad_mask=bad_mask)
         cor_data.save(out_file)
         norm_data = cor_data.normalize_data()
         det_scan = norm_data.detect(exp_set, width)
@@ -408,21 +408,16 @@ class CorrectedData():
     """
     CBC data correction class. Calculate background, content and streaks mask.
 
-    data - raw data
-    mask - bad pixels mask
+    data - raw diffraction data
+    exp_bgd - experimentally measured background
+    bad_mask - bad pixels mask
     """
-    bgd_kmax, bgd_sigma = 11, 1.
-    det_thr, streak_width = 3, 7
+    bgd_kmax, bgd_sigma = 11, 0.4
+    det_thr, streak_width = 3, 11
     line_detector = LineSegmentDetector(scale=0.5, sigma_scale=0.5)
-    structure = np.array([[0, 0, 1, 0, 0],
-                          [0, 1, 1, 1, 0],
-                          [1, 1, 1, 1, 1],
-                          [0, 1, 1, 1, 0],
-                          [0, 0, 1, 0, 0]], dtype=np.uint8)
-    thread_max = 2**6
 
-    def __init__(self, data, bgd, bad_mask=None):
-        self.data, self.bgd = data, bgd
+    def __init__(self, data, exp_bgd, bad_mask=None):
+        self.data, self.exp_bgd = data, median_filter(exp_bgd, 3)
         if bad_mask is None:
             self.bad_mask = np.median((self.data > np.percentile(self.data, 99)).astype(np.uint8),
                                       axis=0)
@@ -434,9 +429,9 @@ class CorrectedData():
     def _init_background(self):
         futures = []
         with concurrent.futures.ProcessPoolExecutor() as executor:
-            data_list = np.array_split(self.data, self.thread_max, axis=-1)
-            bgd_list = np.array_split(self.bgd, self.thread_max, axis=-1)
-            mask_list = np.array_split(self.bad_mask, self.thread_max, axis=-1)
+            data_list = np.array_split(self.data, utils.CPU_COUNT, axis=-1)
+            bgd_list = np.array_split(self.exp_bgd, utils.CPU_COUNT, axis=-1)
+            mask_list = np.array_split(self.bad_mask, utils.CPU_COUNT, axis=-1)
             for data_chunk, bgd_chunk, mask_chunk in zip(data_list, bgd_list, mask_list):
                 futures.append(executor.submit(CorrectedData._background_worker,
                                                data_chunk,
@@ -463,10 +458,9 @@ class CorrectedData():
         frame = np.clip(frame, cls.det_thr, frame.max())
         streaks = cls.line_detector.det_frame_raw(frame)
         streaks_mask = utils.streaks_mask(lines=streaks, width=cls.streak_width,
-                                          structure=cls.structure,
+                                          structure=utils.STRUCT,
                                           shape_x=frame_data.shape[0],
                                           shape_y=frame_data.shape[1])
-        streaks_mask = binary_fill_holes(streaks_mask)
         return streaks_mask
 
     def normalize_data(self):
@@ -511,11 +505,14 @@ class NormalizedData():
             self.norm_data[pos] = self.norm_data[pos] / val.mean()
         else:
             self.norm_data[pos] = 0
+        return self.norm_data[pos].max()
 
     def _norm_data(self):
         self.norm_data = (self.cor_data * self.mask).ravel()
-        labeled_comprehension(self.cor_data, self.labels, self.n_labels, self._label_func,
-                              float, None, True)
+        thresholds = labeled_comprehension(self.cor_data, self.labels,
+                                           self.n_labels, self._label_func,
+                                           float, None, True)
+        self.threshold = np.median(thresholds)
         self.norm_data = self.norm_data.reshape(self.cor_data.shape)
 
     def detect(self, exp_set, width=10):
@@ -523,9 +520,7 @@ class NormalizedData():
         Detect detect streaks in diffraction data
 
         exp_set - FrameSetup class object
-        d_tau - tangent detection error [pixels]
-        d_n - radial detection error [pixels]
+        width - diffraction streak width [pixels]
         """
-        max_clip = self.norm_data.mean() + self.norm_thr * self.norm_data.std()
-        det_data = np.clip(self.norm_data, 0, max_clip)
+        det_data = np.clip(self.norm_data, 0, self.threshold)
         return self.line_detector.det_scan(det_data, exp_set, width)
