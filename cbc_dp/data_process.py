@@ -4,7 +4,7 @@ wrapper.py - Eiger 4M detector data processing from Petra P06 beamline module
 import os
 import concurrent.futures
 from abc import ABCMeta, abstractmethod, abstractproperty
-from scipy.ndimage import median_filter, binary_closing, label, labeled_comprehension
+from scipy.ndimage import median_filter, label
 from scipy import constants
 import numpy as np
 import h5py
@@ -413,7 +413,7 @@ class CorrectedData():
     bad_mask - bad pixels mask
     """
     bgd_kmax, bgd_sigma = 11, 0.4
-    det_thr, streak_width = 3, 11
+    det_thr, streak_width = 3, 13
     line_detector = LineSegmentDetector(scale=0.5, sigma_scale=0.5)
 
     def __init__(self, data, exp_bgd, bad_mask=None):
@@ -488,32 +488,34 @@ class NormalizedData():
     cor_data - corrected data
     streaks_mask - streaks mask
     """
-    norm_thr = 3.2
-    line_detector = LineSegmentDetector(scale=0.5, sigma_scale=0.5)
+    threshold = 3.2
+    line_detector = LineSegmentDetector(scale=0.4, sigma_scale=0.6)
+    struct = np.array([[0, 0, 0, 1, 0, 0, 0],
+                       [0, 0, 1, 1, 1, 0, 0],
+                       [0, 1, 1, 1, 1, 1, 0],
+                       [1, 1, 1, 1, 1, 1, 1],
+                       [0, 1, 1, 1, 1, 1, 0],
+                       [0, 0, 1, 1, 1, 0, 0],
+                       [0, 0, 0, 1, 0, 0, 0]], dtype=np.uint8)
 
     def __init__(self, cor_data, streaks_mask):
         self.cor_data, self.mask = cor_data, streaks_mask
-        self._label_streaks()
         self._norm_data()
 
-    def _label_streaks(self):
-        self.labels, lbl_num = label(self.mask)
-        self.n_labels = np.arange(1, lbl_num + 1)
-
-    def _label_func(self, val, pos):
-        if val.max() > val.mean() + self.norm_thr * val.std():
-            self.norm_data[pos] = self.norm_data[pos] / val.mean()
-        else:
-            self.norm_data[pos] = 0
-        return self.norm_data[pos].max()
+    @classmethod
+    def _norm_frame(cls, data, mask):
+        labels, lbl_num = label(mask)
+        norm_data = utils.normalize_frame(data=data, labels=labels, structure=cls.struct,
+                                          lbl_num=lbl_num, threshold=cls.threshold)
+        return median_filter(norm_data, 3)
 
     def _norm_data(self):
-        self.norm_data = (self.cor_data * self.mask).ravel()
-        thresholds = labeled_comprehension(self.cor_data, self.labels,
-                                           self.n_labels, self._label_func,
-                                           float, None, True)
-        self.threshold = np.median(thresholds)
-        self.norm_data = self.norm_data.reshape(self.cor_data.shape)
+        futures = []
+        with concurrent.futures.ProcessPoolExecutor() as executor:
+            for data, mask in zip(self.cor_data, self.mask):
+                futures.append(executor.submit(NormalizedData._norm_frame,
+                                               data, mask))
+        self.norm_data = np.stack([fut.result() for fut in futures])
 
     def detect(self, exp_set, width=10):
         """
@@ -522,5 +524,4 @@ class NormalizedData():
         exp_set - FrameSetup class object
         width - diffraction streak width [pixels]
         """
-        det_data = np.clip(self.norm_data, 0, self.threshold)
-        return self.line_detector.det_scan(det_data, exp_set, width)
+        return self.line_detector.det_scan(self.norm_data, exp_set, width)

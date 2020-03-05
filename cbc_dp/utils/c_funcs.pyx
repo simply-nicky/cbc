@@ -29,7 +29,7 @@ def searchsorted(float_t[::1] values, float_t x):
     else:
         return binary_search(values, 0, r, x)
 
-cdef uint_t wirthselect(uint_t[::1] array, int k) nogil:
+cdef uint_t wirthselect_uint(uint_t[::1] array, int k) nogil:
     """
     Nikolaus Wirth's selection algorithm to find the kth smallest element
     """
@@ -49,6 +49,47 @@ cdef uint_t wirthselect(uint_t[::1] array, int k) nogil:
         if j < k: l = i 
         if k < i: m = j 
     return array[k]
+
+cdef int_t wirthselect_int(int_t[::1] array, int k) nogil:
+    """
+    Nikolaus Wirth's selection algorithm to find the kth smallest element
+    """
+    cdef:
+        int_t l = 0, m = array.shape[0] - 1, i, j
+        int_t x, tmp 
+    while l < m: 
+        x = array[k] 
+        i = l; j = m 
+        while 1: 
+            while array[i] < x: i += 1 
+            while x < array[j]: j -= 1 
+            if i <= j: 
+                tmp = array[i]; array[i] = array[j]; array[j] = tmp
+                i += 1; j -= 1 
+            if i > j: break 
+        if j < k: l = i 
+        if k < i: m = j 
+    return array[k]
+
+cdef uint8_t[:, ::1] background_mask(uint8_t[:, ::1] mask, uint8_t[:, ::1] structure):
+    """
+    Generate background mask for a streak mask based on morphological erosion with a binary structure
+    """
+    cdef:
+        int_t a = mask.shape[0], b = mask.shape[1]
+        int_t ksize = structure.shape[0], i, j, ii, jj
+        uint8_t bgd
+        uint8_t[:, ::1] bgd_mask = np.zeros((a, b), dtype=np.uint8)
+    for i in range(a):
+        for j in range(b):
+            if mask[i, j]:
+                bgd = 1
+                for ii in range(ksize):
+                    for jj in range(ksize):
+                        if structure[ii, jj]:
+                            bgd *= mask[i - ksize//2 + ii, j - ksize//2 + jj]
+                bgd_mask[i, j] = mask[i, j] - bgd
+    return bgd_mask
 
 def background_filter(uint_t[:, :, ::1] data, uint_t[:, ::1] bgd, uint8_t[:, ::1] bad_mask,
                       int_t k_max, float_t sigma):
@@ -83,7 +124,7 @@ def background_filter(uint_t[:, :, ::1] data, uint_t[:, ::1] bgd, uint8_t[:, ::1
                         if data[l, i, j] < (1 + sigma) * bgd[i, j] and data[l, i, j] > (1 - sigma) * bgd[i, j]:
                             array[count] = data[l, i, j]; count += 1
                     if count:
-                        res[k, i, j] = wirthselect(array[:count], count // 2)
+                        res[k, i, j] = wirthselect_uint(array[:count], count // 2)
                     else:
                         res[k, i, j] = bgd[i, j]
     return np.asarray(res)
@@ -134,6 +175,52 @@ def streaks_mask(float_t[:, :, ::1] lines, uint8_t[:, ::1] structure, int_t widt
                             if yy >= 0 and yy < shape_y and xx >= 0 and xx < shape_x and structure[r, c]:
                                 mask[xx, yy] = 1
     return np.asarray(mask)
+
+def normalize_frame(int_t[:, ::1] data, int[:, ::1] labels, uint8_t[:, ::1] structure, int_t lbl_num, float_t threshold):
+    """
+    Normalize a diffraction pattern for better line detection
+
+    data - diffraction data
+    labels - mask with all the diffraction streaks labeled
+    lbl_num - number of labels
+    threshold - detection threshold
+    """
+    cdef:
+        uint8_t found
+        int_t a = data.shape[0], b = data.shape[1], cnt, bgd_cnt, i, j, max_val, bgd_median
+        float_t mean, var, delta
+        uint8_t[:, ::1] mask, bgd_mask
+        int_t[::1] bgd_arr = np.empty(a * b, dtype=np.int64)
+        float_t[:, ::1] norm_data = np.zeros((a, b), dtype=np.float64)
+    for lbl in range(1, 1 + lbl_num):
+        mask = np.zeros((a, b), dtype=np.uint8)
+        for i in range(a):
+            for j in range(b):
+                if labels[i, j] == lbl:
+                    mask[i, j] = 1
+        bgd_mask = background_mask(mask, structure)
+        found = 1; mean = 0; var = 0; cnt = 0; bgd_cnt = 0
+        for i in range(a):
+            for j in range(b):
+                if mask[i, j]:
+                    cnt += 1
+                    delta = float(data[i, j]) - mean
+                    mean += delta / cnt
+                    var += (data[i, j] - mean) * delta
+                    if bgd_mask[i, j]:
+                        bgd_arr[bgd_cnt] = data[i, j]; bgd_cnt += 1
+                    if found:
+                        max_val = data[i, j]; found = 0
+                    elif max_val < data[i, j]:
+                        max_val = data[i, j]
+        bgd_median = wirthselect_int(bgd_arr[:bgd_cnt], bgd_cnt // 2)
+        var = var / cnt
+        if max_val - bgd_median > threshold * sqrt(var):
+            for i in range(a):
+                for j in range(b):
+                    if mask[i, j] and not bgd_mask[i, j]:
+                        norm_data[i, j] = (float(data[i, j]) - float(bgd_median)) / (float(max_val) - float(bgd_median))
+    return np.asarray(norm_data)
 
 def make_grid(float_t[:, ::1] points, float_t[::1] values, int_t size):
     """
