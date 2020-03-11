@@ -9,7 +9,7 @@ from scipy.ndimage import gaussian_filter, label, maximum_position
 from cv2 import createLineSegmentDetector
 from . import utils
 from .grouper import TiltGroups
-from .indexer import FCBI
+from .indexer import FCBI, RCBI
 
 class FrameSetup():
     """
@@ -270,20 +270,38 @@ class FrameStreaks():
         kout = self.exp_set.kout_exp(index_pts)
         return RecVectors(kout=kout.dot(rot_m.T), kin=self.kin.dot(rot_m.T))
 
-    def index_refine(self, rec_basis, num_ap, tol=(0.05, 0.015)):
+    def full_index_refine(self, rec_basis, num_ap, pos_tol=(0.007, 0.014, 0.06), rb_tol=0.12):
         """
-        Return refinement problem population
+        Return a population of reciprocal lattice basis vectors matrix refinement problem
 
         rec_basis - reciprocal lattice basis vectors matrix
         num_ap = [num_ap_x, num_ap_y] - convergent beam numerical apertures in x- and y-axes
-        tol - tolerance defining refined solution bounds
+        pos_tol - relative sample position tolerance
+        rb_tol - lattice basis vectors matrix tolerance
         """
         full_tf = FCBI(lines=self.raw_lines,
                        exp_set=self.exp_set,
                        rec_basis=rec_basis,
                        num_ap=num_ap,
-                       tol=tol)
+                       tol=(pos_tol, rb_tol))
         return pygmo.problem(full_tf)
+
+    def rot_index_refine(self, rec_basis, num_ap, pos_tol=(0.007, 0.014, 0.06), size_tol=0.05, ang_tol=0.09):
+        """
+        Return a population of reciprocal lattice rotation refinement problem
+
+        rec_basis - reciprocal lattice basis vectors matrix
+        num_ap = [num_ap_x, num_ap_y] - convergent beam numerical apertures in x- and y-axes
+        pos_tol - relative sample position tolerance
+        size_tol - lattice basis vectors length tolerance
+        ang_tol - rotation anlges tolerance
+        """
+        rot_tf = RCBI(lines=self.raw_lines,
+                      exp_set=self.exp_set,
+                      rec_basis=rec_basis,
+                      num_ap=num_ap,
+                      tol=(pos_tol, size_tol, ang_tol))
+        return pygmo.problem(rot_tf)
 
 class ScanStreaks(FrameStreaks):
     """
@@ -413,22 +431,55 @@ class ScanStreaks(FrameStreaks):
         return RecVectors(kout=np.concatenate(kout_list),
                           kin=np.concatenate(kin_list))
 
-    def index_refine(self, theta, num_ap, n_isl=20, pop_size=50, gen_num=2000, tol=(0.05, 0.015)):
+    def full_index_refine(self, rec_basis, theta, num_ap, n_isl=20, pop_size=50,
+                          gen_num=2000, pos_tol=(0.007, 0.014, 0.06), rb_tol=0.12):
         """
         Return refinement problems archipelago
 
+        rec_basis - preliminary reciprocal lattice basis vectors matrix
+        theta - angles of rotation
         num_ap = [num_ap_x, num_ap_y] - convergent beam numerical apertures in x- and y-axes
         n_isl - number of islands of one frame
         pop_size - population size
-        tol - tolerance defining refined solution bounds
+        gen_num - maximum generations number of the refinement algorithm
+        pos_tol - relative sample position tolerance
+        rb_tol - lattice basis vectors matrix tolerance
         """
-        rec_basis = utils.rec_basis(self.kout_ref(theta=theta).index())
         archi = pygmo.archipelago()
         for frame_strks, theta_val in zip(iter(self), theta):
             frame_basis = rec_basis.dot(self.exp_set.rotation_matrix(-theta_val).T)
-            prob = frame_strks.index_refine(rec_basis=frame_basis,
-                                            num_ap=num_ap,
-                                            tol=tol)
+            prob = frame_strks.rot_index_refine(rec_basis=frame_basis,
+                                                num_ap=num_ap,
+                                                pos_tol=pos_tol,
+                                                rb_tol=rb_tol)
+            pops = [pygmo.population(size=pop_size, prob=prob, b=pygmo.mp_bfe()) for _ in range(n_isl)]
+            for pop in pops:
+                archi.push_back(algo=pygmo.de(gen_num), pop=pop)
+        return archi
+
+    def rot_index_refine(self, rec_basis, theta, num_ap, n_isl=20, pop_size=50, gen_num=2000,
+                         pos_tol=(0.007, 0.014, 0.06), size_tol=0.05, ang_tol=0.09):
+        """
+        Return refinement problems archipelago
+
+        rec_basis - preliminary reciprocal lattice basis vectors matrix
+        theta - angles of rotation
+        num_ap = [num_ap_x, num_ap_y] - convergent beam numerical apertures in x- and y-axes
+        n_isl - number of islands of one frame
+        pop_size - population size
+        gen_num - maximum generations number of the refinement algorithm
+        pos_tol - relative sample position tolerance
+        size_tol - lattice basis vectors length tolerance
+        ang_tol - rotation anlges tolerance
+        """
+        archi = pygmo.archipelago()
+        for frame_strks, theta_val in zip(iter(self), theta):
+            frame_basis = rec_basis.dot(self.exp_set.rotation_matrix(-theta_val).T)
+            prob = frame_strks.rot_index_refine(rec_basis=frame_basis,
+                                                num_ap=num_ap,
+                                                pos_tol=pos_tol,
+                                                size_tol=size_tol,
+                                                ang_tol=ang_tol)
             pops = [pygmo.population(size=pop_size, prob=prob, b=pygmo.mp_bfe()) for _ in range(n_isl)]
             for pop in pops:
                 archi.push_back(algo=pygmo.de(gen_num), pop=pop)

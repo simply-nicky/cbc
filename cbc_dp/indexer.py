@@ -158,7 +158,7 @@ class RCBI(AbcCBI):
     num_ap = [num_ap_x, num_ap_y]       - convergent beam numerical apertures in x- and y-axis
     rec_basis                           - Reciprocal lattice basis vectors matrix
     tol = (pos_tol, size_tol, ang_tol)  - relative detector position, basis vector lengths,
-                                          and orientation matrix angles tolerances [0.0 - 1.0]
+                                          and rotation angles tolerances [0.0 - 1.0]
     pen_coeff                           - fitness penalty coefficient
     """
     def __init__(self, lines, exp_set, num_ap, rec_basis, tol=([0.03, 0.03, 0.075], 0.1, np.radians(5)), pen_coeff=10):

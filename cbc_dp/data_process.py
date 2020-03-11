@@ -488,8 +488,8 @@ class NormalizedData():
     cor_data - corrected data
     streaks_mask - streaks mask
     """
-    threshold = 3.2
-    line_detector = LineSegmentDetector(scale=0.4, sigma_scale=0.6)
+    threshold = 2.
+    line_detector = LineSegmentDetector(scale=0.5, sigma_scale=0.5)
     struct = np.array([[0, 0, 0, 1, 0, 0, 0],
                        [0, 0, 1, 1, 1, 0, 0],
                        [0, 1, 1, 1, 1, 1, 0],
