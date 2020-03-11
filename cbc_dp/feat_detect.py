@@ -193,7 +193,7 @@ class FrameStreaks():
 
     @property
     def kin(self):
-        return np.tile(np.array([0, 0, 1]), (self.size, 1))
+        return np.tile(np.array([0., 0., 1.]), (self.size, 1))
 
     @property
     def size(self):
@@ -257,7 +257,7 @@ class FrameStreaks():
         rot_m = self.exp_set.rotation_matrix(theta)
         kout = self.exp_set.kout_exp(self.lines)
         return RecVectors(kout=kout.dot(rot_m.T),
-                          kin=np.tile(self.kin[:, None], (1, 2, 1)))
+                          kin=np.tile(self.kin[:, None], (1, 2, 1)).dot(rot_m.T))
 
     def kout_index(self, theta):
         """
