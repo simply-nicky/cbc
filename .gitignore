@@ -21,6 +21,8 @@ __pycache__/
 
 # C extensions
 *.so
+cbc_dp/utils/*.c
+cbc/utils/*.c
 
 # Distribution / packaging
 .Python

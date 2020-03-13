@@ -12,7 +12,7 @@ class AbcCBI(metaclass=ABCMeta):
 
     lines - detected diffraction streaks positions at the detector [pixels]
     exp_set - FrameSetup class object
-    num_ap = [num_ap_x, num_ap_y] - convergent beam numerical apertures in x- and y-axis
+    num_ap = [na_x, na_y] - convergent beam numerical apertures in x- and y-axis
     rec_basis - Reciprocal lattice basis vectors matrix
     tol - tolerance defining vector bounds
     pen_coeff - fitness penalty coefficient
@@ -20,8 +20,9 @@ class AbcCBI(metaclass=ABCMeta):
     mat_shape = (3, 3)
     lower_b, upper_b = None, None
 
-    def __init__(self, lines, exp_set, num_ap, rec_basis, tol, pen_coeff):
-        self.lines, self.exp_set, self.num_ap, self.pen_coeff = lines, exp_set, num_ap, pen_coeff
+    def __init__(self, frame_lines, num_ap, rec_basis, tol, pen_coeff):
+        self.lines, self.exp_set = frame_lines.raw_lines * frame_lines.exp_set.pix_size, frame_lines.exp_set
+        self.num_ap, self.pen_coeff = num_ap, pen_coeff
         self._init_bounds(rec_basis, tol)
 
     @abstractmethod
@@ -36,46 +37,39 @@ class AbcCBI(metaclass=ABCMeta):
         """
         Generate the experimentally measured deiffraction streaks outcoming wavevectors
         """
-        return utils.kout(self.lines * self.exp_set.pix_size, self.exp_set.det_pos, vec)
+        return utils.kout_frame(lines=self.lines, x0=vec[0], y0=vec[1], z0=vec[2])
 
     def det_pts(self, kout, vec):
         """
         Return diffraction streaks locations at the detector plane
         """
         theta, phi = np.arccos(kout[..., 2]), np.arctan2(kout[..., 1], kout[..., 0])
-        det_x = self.exp_set.det_pos[2] * (1 + vec[2]) * np.tan(theta) * np.cos(phi)
-        det_y = self.exp_set.det_pos[2] * (1 + vec[2]) * np.tan(theta) * np.sin(phi)
-        return (np.stack((det_x, det_y), axis=-1) + self.exp_set.det_pos[:2] * (1 + vec[:2])) / self.exp_set.pix_size
+        det_x = vec[2] * np.tan(theta) * np.cos(phi)
+        det_y = vec[2] * np.tan(theta) * np.sin(phi)
+        return (np.stack((det_x, det_y), axis=-1) + vec[:2]) / self.exp_set.pix_size
 
     def voting_vectors(self, vec, kout_exp):
         """
         Return the reciprocal lattice voting points for the given experimental outcoming
         wavevectors kout_exp
         """
-        return utils.voting_vectors(kout_exp=kout_exp.mean(axis=1),
-                                    rec_basis=self.rec_basis(vec),
-                                    num_ap_x=self.num_ap[0],
-                                    num_ap_y=self.num_ap[1])
+        return utils.voting_vectors(kout_exp=kout_exp.mean(axis=1), rec_basis=self.rec_basis(vec),
+                                    na_x=self.num_ap[0], na_y=self.num_ap[1])
 
     def voting_hkl(self, vec, kout_exp):
         """
         Return the reciprocal lattice voting hkl indices for the given experimental outcoming
         wavevectors kout_exp
         """
-        return utils.voting_idxs(kout_exp=kout_exp.mean(axis=1),
-                                 rec_basis=self.rec_basis(vec),
-                                 num_ap_x=self.num_ap[0],
-                                 num_ap_y=self.num_ap[1])
+        return utils.voting_idxs(kout_exp=kout_exp.mean(axis=1), rec_basis=self.rec_basis(vec),
+                                 na_x=self.num_ap[0], na_y=self.num_ap[1])
 
     def idxs(self, vot_vec, kout_exp):
         """
         Return the indices of the optimal reciprocal lattice voting vectors
         """
-        return utils.fitness_idxs(vot_vec=vot_vec,
-                                  kout_exp=kout_exp,
-                                  num_ap_x=self.num_ap[0],
-                                  num_ap_y=self.num_ap[1],
-                                  pen_coeff=self.pen_coeff)
+        return utils.fitness_idxs(vot_vec=vot_vec, kout_exp=kout_exp, na_x=self.num_ap[0],
+                                  na_y=self.num_ap[1], pen_coeff=self.pen_coeff)
 
     def get_bounds(self):
         """
@@ -89,11 +83,8 @@ class AbcCBI(metaclass=ABCMeta):
         """
         kout_exp = self.kout_exp(vec)
         vot_vec = self.voting_vectors(vec, kout_exp)
-        return [utils.fitness(vot_vec=vot_vec,
-                              kout_exp=kout_exp,
-                              num_ap_x=self.num_ap[0],
-                              num_ap_y=self.num_ap[1],
-                              pen_coeff=self.pen_coeff)]
+        return [utils.fitness(vot_vec=vot_vec, kout_exp=kout_exp, na_x=self.num_ap[0],
+                              na_y=self.num_ap[1], pen_coeff=self.pen_coeff)]
 
     def hkl_idxs(self, vec):
         """
@@ -122,7 +113,7 @@ class FCBI(AbcCBI):
     lines                           - detected diffraction streaks positions at the detector
                                       [mm]
     exp_set                         - FrameSetup class object
-    num_ap = [num_ap_x, num_ap_y]   - convergent beam numerical apertures in x- and y-axis
+    num_ap = [na_x, na_y]           - convergent beam numerical apertures in x- and y-axis
     rec_basis                       - Reciprocal lattice basis vectors matrix
     tol = (pos_tol, rb_tol)         - relative detector position and
                                       reciprocal basis matrix tolerances [0.0 - 1.0]
@@ -133,8 +124,8 @@ class FCBI(AbcCBI):
 
     def _init_bounds(self, rec_basis, tol):
         rb_bounds = np.stack(((1 - tol[1]) * rec_basis, (1 + tol[1]) * rec_basis))
-        self.lower_b = np.concatenate((-np.array(tol[0]), rb_bounds.min(axis=0)))
-        self.upper_b = np.concatenate((np.array(tol[0]), rb_bounds.max(axis=0)))
+        self.lower_b = np.concatenate(((1 - np.array(tol[0])) * self.exp_set.det_pos, rb_bounds.min(axis=0)))
+        self.upper_b = np.concatenate(((1 + np.array(tol[0])) * self.exp_set.det_pos, rb_bounds.max(axis=0)))
 
     def rec_basis(self, vec):
         """
@@ -155,7 +146,7 @@ class RCBI(AbcCBI):
     lines                               - detected diffraction streaks positions at the detector
                                           [mm]
     exp_set                             - FrameSetup class object
-    num_ap = [num_ap_x, num_ap_y]       - convergent beam numerical apertures in x- and y-axis
+    num_ap = [na_x, na_y]               - convergent beam numerical apertures in x- and y-axis
     rec_basis                           - Reciprocal lattice basis vectors matrix
     tol = (pos_tol, size_tol, ang_tol)  - relative detector position, basis vector lengths,
                                           and rotation angles tolerances [0.0 - 1.0]
@@ -167,8 +158,8 @@ class RCBI(AbcCBI):
     def _init_bounds(self, rec_basis, tol):
         self.rec_sizes = np.sqrt((rec_basis**2).sum(axis=-1))
         self.or_mat = rec_basis / self.rec_sizes[:, None]
-        self.lower_b = np.concatenate((-np.array(tol[0]), (1 - tol[1]) * self.rec_sizes, -tol[2] * np.ones(3)))
-        self.upper_b = np.concatenate((np.array(tol[0]), (1 + tol[1]) * self.rec_sizes, tol[2] * np.ones(3)))
+        self.lower_b = np.concatenate(((1 - np.array(tol[0])) * self.exp_set.det_pos, (1 - tol[1]) * self.rec_sizes, -tol[2] * np.ones(3)))
+        self.upper_b = np.concatenate(((1 + np.array(tol[0])) * self.exp_set.det_pos, (1 + tol[1]) * self.rec_sizes, tol[2] * np.ones(3)))
 
     def rec_basis(self, vec):
         """
