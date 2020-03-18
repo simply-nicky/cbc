@@ -136,10 +136,10 @@ def model_source_lines(float_t[:, ::1] source, float_t[:, ::1] rec_vec, float_t 
 
 def kout_frame(float_t[:, :, ::1] lines, float_t x0, float_t y0, float_t z0):
     """
-    Return outcoming wavevectors array based on a target function point
+    Return outcoming wavevectors of a pattern
     
     lines - detected diffraction streaks lines at the detector [mm]
-    x0, y0, z0 - sample position relative to the detector
+    x0, y0, z0 - sample position relative to the detector [mm]
     """
     cdef:
         int_t a = lines.shape[0], i, j
@@ -156,9 +156,34 @@ def kout_frame(float_t[:, :, ::1] lines, float_t x0, float_t y0, float_t z0):
             kout[i, j, 2] = cos(theta)
     return np.asarray(kout)
 
-def voting_vectors(float_t[:, ::1] kout_exp, float_t[:, ::1] rec_basis, float_t na_x, float_t na_y):
+def kout_scan(float_t[:, :, ::1] lines, int_t[::1] frame_idxs, float_t[::1] x0,
+              float_t[::1] y0, float_t[::1] z0):
     """
-    Return reciprocal lattice voting points for the given experiment outcoming wavevectors kout_exp
+    Return outcoming wavevectors of a scan
+    
+    lines - detected diffraction streaks lines at the detector [mm]
+    frame_idxs - frame indices
+    x0, y0, z0 - sample position relative to the detector [mm]
+    """
+    cdef:
+        int_t a = lines.shape[0], i, idx
+        float_t dx, dy, phi, theta
+        float_t[:, :, ::1] kout = np.empty((a, 2, 3), dtype=np.float64)
+    for i in range(a):
+        idx = frame_idxs[i]
+        for j in range(2):
+            dx = lines[i, j, 0] - x0[idx]
+            dy = lines[i, j, 1] - y0[idx]
+            phi = atan2(dy, dx)
+            theta = atan(sqrt(dx**2 + dy**2) / z0[idx])
+            kout[i, j, 0] = sin(theta) * cos(phi)
+            kout[i, j, 1] = sin(theta) * sin(phi)
+            kout[i, j, 2] = cos(theta)
+    return np.asarray(kout)
+
+def voting_vectors_f(float_t[:, ::1] kout_exp, float_t[:, ::1] rec_basis, float_t na_x, float_t na_y):
+    """
+    Return reciprocal lattice voting points of a pattern
 
     kout_exp - experimental outcoming wavevectors
     rec_basis - reciprocal lattice basis vectors
@@ -196,9 +221,9 @@ def voting_vectors(float_t[:, ::1] kout_exp, float_t[:, ::1] rec_basis, float_t 
                     vot_vec[i, ind, 2] = h_ind * rec_basis[0, 2] + k_ind * rec_basis[1, 2] + l_ind * rec_basis[2, 2]
     return np.array(vot_vec)
 
-def voting_idxs(float_t[:, ::1] kout_exp, float_t[:, ::1] rec_basis, float_t na_x, float_t na_y):
+def voting_idxs_f(float_t[:, ::1] kout_exp, float_t[:, ::1] rec_basis, float_t na_x, float_t na_y):
     """
-    Return voting points hkl indices for the given experiment outcoming wavevectors kout_exp
+    Return voting points hkl indices of a pattern
 
     kout_exp - experimental outcoming wavevectors
     rec_basis - reciprocal lattice basis vectors
@@ -224,6 +249,105 @@ def voting_idxs(float_t[:, ::1] kout_exp, float_t[:, ::1] rec_basis, float_t na_
         l_orig = int(floor(kout_exp[i, 0] * inv_basis[0, 2] +
                       kout_exp[i, 1] * inv_basis[1, 2] +
                       (kout_exp[i, 2] - 1) * inv_basis[2, 2]))
+        for ii in range(2 * h_size):
+            for jj in range(2 * k_size):
+                for kk in range(2 * l_size):
+                    ind = 4 * k_size * l_size * ii + 2 * l_size * jj + kk
+                    vot_idxs[i, ind, 0] = h_orig + ii - h_size + 1
+                    vot_idxs[i, ind, 1] = k_orig + jj - k_size + 1
+                    vot_idxs[i, ind, 2] = l_orig + kk - l_size + 1
+    return np.array(vot_idxs)
+
+def voting_vectors_s(float_t[:, ::1] kout_exp, float_t[:, ::1] rec_basis, float_t[::1] thetas,
+                     int_t[::1] frame_idxs, float_t alpha, float_t betta, float_t na_x, float_t na_y):
+    """
+    Return reciprocal lattice voting points of a scan
+
+    kout_exp - experimental outcoming wavevectors
+    rec_basis - reciprocal lattice basis vectors
+    thetas - tilt angles
+    frame_idxs - frame indices
+    alpha, betta - spherical angles of axis of rotation
+    na_x, na_y - numerical apertires in x- and y-axes
+    """
+    cdef:
+        int_t a = kout_exp.shape[0], idx = frame_idxs[0], i, ii, jj, kk
+        int_t h_orig, k_orig, l_orig, h_ind, k_ind, l_ind, ind, h_size, k_size, l_size
+        float_t max_na = max(na_x, na_y)**2 / 2, rec_x, rec_y, rec_z, rec_abs, source_th, source_phi
+        float_t[:, ::1] frame_basis = np.empty((3, 3), dtype=np.float64)
+        float_t[:, ::1] inv_basis = np.empty((3, 3), dtype=np.float64)
+        float_t[:, :, :] vot_vec
+    rotate_matrix(rec_basis, frame_basis, alpha, betta, thetas[idx])
+    inverse_matrix(frame_basis, inv_basis)
+    h_size = int(ceil(abs(na_x * inv_basis[0, 0] + na_y * inv_basis[1, 0] + max_na * inv_basis[2, 0])))
+    k_size = int(ceil(abs(na_x * inv_basis[0, 1] + na_y * inv_basis[1, 1] + max_na * inv_basis[2, 1])))
+    l_size = int(ceil(abs(na_x * inv_basis[0, 2] + na_y * inv_basis[1, 2] + max_na * inv_basis[2, 2])))
+    vot_vec = np.empty((a, 8 * h_size * k_size * l_size, 3), dtype=np.float64)
+    for i in range(a):
+        if idx != frame_idxs[i]:
+            idx = frame_idxs[i]
+            rotate_matrix(rec_basis, frame_basis, alpha, betta, thetas[idx])
+            inverse_matrix(frame_basis, inv_basis)
+        h_orig = int(floor(kout_exp[i, 0] * inv_basis[0, 0] +
+                           kout_exp[i, 1] * inv_basis[1, 0] +
+                           (kout_exp[i, 2] - 1) * inv_basis[2, 0]))
+        k_orig = int(floor(kout_exp[i, 0] * inv_basis[0, 1] +
+                           kout_exp[i, 1] * inv_basis[1, 1] +
+                           (kout_exp[i, 2] - 1) * inv_basis[2, 1]))
+        l_orig = int(floor(kout_exp[i, 0] * inv_basis[0, 2] +
+                           kout_exp[i, 1] * inv_basis[1, 2] +
+                           (kout_exp[i, 2] - 1) * inv_basis[2, 2]))
+        for ii in range(2 * h_size):
+            for jj in range(2 * k_size):
+                for kk in range(2 * l_size):
+                    ind = 4 * k_size * l_size * ii + 2 * l_size * jj + kk
+                    h_ind = h_orig + ii - h_size + 1
+                    k_ind = k_orig + jj - k_size + 1
+                    l_ind = l_orig + kk - l_size + 1
+                    vot_vec[i, ind, 0] = h_ind * frame_basis[0, 0] + k_ind * frame_basis[1, 0] + l_ind * frame_basis[2, 0]
+                    vot_vec[i, ind, 1] = h_ind * frame_basis[0, 1] + k_ind * frame_basis[1, 1] + l_ind * frame_basis[2, 1]
+                    vot_vec[i, ind, 2] = h_ind * frame_basis[0, 2] + k_ind * frame_basis[1, 2] + l_ind * frame_basis[2, 2]
+    return np.asarray(vot_vec)
+
+def voting_idxs_s(float_t[:, ::1] kout_exp, float_t[:, ::1] rec_basis, float_t[::1] thetas,
+                int_t[::1] frame_idxs, float_t alpha, float_t betta, float_t na_x, float_t na_y):
+    """
+    Return voting points hkl indices of a scan
+
+    kout_exp - experimental outcoming wavevectors
+    rec_basis - reciprocal lattice basis vectors
+    thetas - tilt angles
+    frame_idxs - frame indices
+    alpha, betta - spherical angles of axis of rotation
+    na_x, na_y - numerical apertires in x- and y-axes
+    """
+    cdef:
+        int_t a = kout_exp.shape[0], idx = frame_idxs[0], i, ii, jj, kk
+        int_t h_orig, k_orig, l_orig, h_ind, k_ind, l_ind, ind, h_size, k_size, l_size
+        float_t  max_na = max(na_x, na_y)**2 / 2, rec_x, rec_y, rec_z, rec_abs, source_th, source_phi
+        float_t[:, ::1] frame_basis = np.empty((3, 3), dtype=np.float64)
+        float_t[:, ::1] inv_basis = np.empty((3, 3), dtype=np.float64)
+        int_t[:, :, ::1] vot_idxs
+    rotate_matrix(rec_basis, frame_basis, alpha, betta, thetas[idx])
+    inverse_matrix(frame_basis, inv_basis)
+    h_size = int(ceil(abs(na_x * inv_basis[0, 0] + na_y * inv_basis[1, 0] + max_na * inv_basis[2, 0])))
+    k_size = int(ceil(abs(na_x * inv_basis[0, 1] + na_y * inv_basis[1, 1] + max_na * inv_basis[2, 1])))
+    l_size = int(ceil(abs(na_x * inv_basis[0, 2] + na_y * inv_basis[1, 2] + max_na * inv_basis[2, 2])))
+    vot_idxs = np.empty((a, 8 * h_size * k_size * l_size, 3), dtype=np.int64)
+    for i in range(a):
+        if idx != frame_idxs[i]:
+            idx = frame_idxs[i]
+            rotate_matrix(rec_basis, frame_basis, alpha, betta, thetas[idx])
+            inverse_matrix(frame_basis, inv_basis)
+        h_orig = int(floor(kout_exp[i, 0] * inv_basis[0, 0] +
+                           kout_exp[i, 1] * inv_basis[1, 0] +
+                           (kout_exp[i, 2] - 1) * inv_basis[2, 0]))
+        k_orig = int(floor(kout_exp[i, 0] * inv_basis[0, 1] +
+                           kout_exp[i, 1] * inv_basis[1, 1] +
+                           (kout_exp[i, 2] - 1) * inv_basis[2, 1]))
+        l_orig = int(floor(kout_exp[i, 0] * inv_basis[0, 2] +
+                           kout_exp[i, 1] * inv_basis[1, 2] +
+                           (kout_exp[i, 2] - 1) * inv_basis[2, 2]))
         for ii in range(2 * h_size):
             for jj in range(2 * k_size):
                 for kk in range(2 * l_size):

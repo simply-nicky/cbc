@@ -279,8 +279,7 @@ class FrameStreaks():
         pos_tol - relative sample position tolerance
         rb_tol - lattice basis vectors matrix tolerance
         """
-        full_tf = FCBI(lines=self.raw_lines,
-                       exp_set=self.exp_set,
+        full_tf = FCBI(streaks=self,
                        rec_basis=rec_basis,
                        num_ap=num_ap,
                        tol=(pos_tol, rb_tol))
@@ -296,8 +295,7 @@ class FrameStreaks():
         size_tol - lattice basis vectors length tolerance
         ang_tol - rotation anlges tolerance
         """
-        rot_tf = RCBI(lines=self.raw_lines,
-                      exp_set=self.exp_set,
+        rot_tf = RCBI(streaks=self,
                       rec_basis=rec_basis,
                       num_ap=num_ap,
                       tol=(pos_tol, size_tol, ang_tol))
