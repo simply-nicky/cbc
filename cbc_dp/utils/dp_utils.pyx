@@ -351,14 +351,16 @@ def lsd_refiner(float_t[:, :, ::1] lines, float_t w):
     return np.array(ll)[:ii]
 
 def i_sigma_frame(float_t[:, :, ::1] streaks, float_t[:, :, ::1] source_streaks, int_t[:, ::1] cor_data,
-                  uint_t[:, ::1] background, uint8_t[:, ::1] structure, float_t[:, ::1] pupil_frame,
-                  int_t width):
+                  uint_t[:, ::1] background, uint8_t[:, ::1] structure, int_t width):
     """
-    Return streak's intensity and Poisson noise
+    Return diffraction reflection's intensity and Poisson noise of a frame
 
-    streaks_mask - streak's mask
-    cor_data - background subtracted diffraction data
-    background - background
+    streaks - detected diffraction streaks at the detector plane
+    source_streaks - source streaks at the detector plane
+    cor_data - background subtracted diffraction pattern image
+    background - background image
+    structure - binary structure for binary dilation
+    width - diffraction streaks width
     """
     cdef:
         int_t aa = streaks.shape[0], a = cor_data.shape[0], b = cor_data.shape[1]

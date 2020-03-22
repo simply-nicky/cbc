@@ -47,25 +47,6 @@ class FrameStreaks():
         products = self.lines[:, 0, 1] * self.taus[:, 0] - self.lines[:, 0, 0] * self.taus[:, 1]
         return np.stack((-self.taus[:, 1] * products, self.taus[:, 0] * products), axis=1)
 
-    def i_sigma(self, hkl_idxs, cor_data, bgd):
-        """
-        Return detected streaks intensities (I) and Poisson noise (sigma)
-
-        cor_data - background subtracted data
-        bgd - background data
-        hkl_idxs - hkl indices
-        """
-        hkl_uniq = np.unique(hkl_idxs, axis=0)
-        i_list, s_list = [], []
-        for hkl in hkl_uniq:
-            idxs = np.where((hkl_idxs == hkl).all(axis=1))
-            mask = utils.streaks_mask(lines=self.raw_lines[idxs], structure=utils.STRUCT,
-                                      width=3, shape_x=bgd.shape[0], shape_y=bgd.shape[1])
-            i_tot, sigma = utils.i_sigma(mask, cor_data, bgd)
-            i_list.append(i_tot)
-            s_list.append(sigma)
-        return hkl_uniq, np.array(i_list), np.array(s_list)
-
     def kout(self, theta):
         """
         Return reciprocal vectors of detected diffraction streaks.
@@ -175,27 +156,6 @@ class ScanStreaks(FrameStreaks):
         for frame_idx in uniq_idxs:
             idxs = np.where(self.frame_idxs == frame_idx)
             yield FrameStreaks(self.raw_lines[idxs], self.exp_set)
-
-    def i_sigma(self, hkl_idxs, cor_data, bgd):
-        """
-        Return detected streaks intensities (I) and Poisson noise (sigma)
-
-        cor_data - background subtracted data
-        bgd - background data
-        hkl_idxs - hkl indices
-        """
-        frame_idxs = np.unique(self.frame_idxs)
-        i_dict, s_dict, hkl_dict = {}, {}, {}
-        for frame_idx in frame_idxs:
-            idxs = np.where(self.frame_idxs == frame_idx)
-            streaks = FrameStreaks(self.raw_lines[idxs], self.exp_set)
-            hkl_arr, i_arr, s_arr = streaks.i_sigma(hkl_idxs=hkl_idxs[idxs],
-                                                    cor_data=cor_data[frame_idx],
-                                                    bgd=bgd[frame_idx])
-            hkl_dict[frame_idx] = hkl_arr
-            i_dict[frame_idx] = i_arr
-            s_dict[frame_idx] = s_arr
-        return hkl_dict, i_dict, s_dict
 
     def kout(self, theta):
         """
@@ -323,19 +283,6 @@ class ScanStreaks(FrameStreaks):
         streaks_group.create_dataset('lines', data=self.raw_lines)
         self.exp_set.save(out_file)
 
-    # def save_intensities(self, out_file, raw_data, background):
-    #     """
-    #     Save detected diffraction streaks and intensities to an HDF5 file
-
-    #     out_file - h5py file object
-    #     raw_data - raw diffraction patterns
-    #     backgroun - background noises
-    #     """
-    #     self.save(out_file)
-    #     data_group = out_file.create_group('streaks_data')
-    #     data_group.create_dataset('intensities', data=self.intensities(raw_data))
-    #     data_group.create_dataset('snr', data=self.snr(raw_data, background))
-
 class RecVectors():
     """
     Diffraction peaks in reciprocal space class
@@ -421,8 +368,6 @@ class AbcCBI(metaclass=ABCMeta):
     def __init__(self, streaks, num_ap, pen_coeff):
         self.lines, self.exp_set = streaks.raw_lines * streaks.exp_set.pix_size, streaks.exp_set
         self.num_ap, self.pen_coeff = num_ap, pen_coeff
-        self.pupil = np.array([[-num_ap[0], -num_ap[1], np.sqrt(1 - num_ap[0]**2 - num_ap[1]**2)],
-                               [num_ap[0], num_ap[1], np.sqrt(1 - num_ap[0]**2 - num_ap[1]**2)]])
 
     @abstractmethod
     def rec_basis(self, vec):
@@ -442,20 +387,14 @@ class AbcCBI(metaclass=ABCMeta):
     def voting_vectors(self, vec, kout_exp):
         pass
 
-    def det_pts(self, kout, vec):
+    def det_pts(self, kout_x, kout_y, vec):
         """
         Return diffraction streaks locations at the detector plane
         """
-        theta, phi = np.arccos(kout[..., 2]), np.arctan2(kout[..., 1], kout[..., 0])
+        theta, phi = np.arccos(np.sqrt(1 - kout_x**2 - kout_y**2)), np.arctan2(kout_y, kout_x)
         det_x = vec[2] * np.tan(theta) * np.cos(phi)
         det_y = vec[2] * np.tan(theta) * np.sin(phi)
         return (np.stack((det_x, det_y), axis=-1) + vec[:2]) / self.exp_set.pix_size
-
-    def det_pupil(self, vec):
-        """
-        Return pupil bounds at the detector plane
-        """
-        return self.det_pts(self.pupil, vec)
 
     def idxs(self, vot_vec, kout_exp):
         """
@@ -488,16 +427,11 @@ class AbcCBI(metaclass=ABCMeta):
         hkl_idxs = self.voting_hkl(vec, kout_exp)
         return hkl_idxs[self.idxs(vot_vec, kout_exp)]
 
-    def get_streaks(self, vec, na_ext=None):
+    def rec_vectors(self, vec):
         """
-        Return good streaks lying inside extended pupil bounds na_ext
+        Return optimal reciprocal lattice vectors
         """
-        if na_ext is None:
-            na_ext = 1.25 * self.num_ap
-        idxs = utils.reduce_streaks(kout_exp=self.kout_exp(vec), hkl_idxs=self.hkl_idxs(vec),
-                                    rec_basis=self.rec_basis(vec), na_x=self.num_ap[0], na_y=self.num_ap[1],
-                                    na_ext_x=na_ext[0], na_ext_y=na_ext[1], pen_coeff=self.pen_coeff)
-        return FrameStreaks(lines=self.lines[idxs], exp_set=self.exp_set)
+        return self.hkl_idxs(vec).dot(self.rec_basis(vec))
 
     def gradient(self, d_vec):
         """
@@ -547,6 +481,31 @@ class FrameCBI(AbcCBI):
         """
         return utils.voting_idxs_f(kout_exp=kout_exp.mean(axis=1), rec_basis=self.rec_basis(vec),
                                    na_x=self.num_ap[0], na_y=self.num_ap[1])
+
+    def good_idxs(self, vec, na_ext):
+        """
+        Return indices of good streaks lying inside extended pupil bounds na_ext
+        """
+        return utils.reduce_streaks(kout_exp=self.kout_exp(vec), hkl_idxs=self.hkl_idxs(vec),
+                                    rec_basis=self.rec_basis(vec), na_x=self.num_ap[0], na_y=self.num_ap[1],
+                                    na_ext_x=na_ext[0], na_ext_y=na_ext[1], pen_coeff=self.pen_coeff)
+
+    def i_sigma(self, vec, cor_data, background, structure, width, na_ext):
+        """
+        Return good streaks intensities and Poisson noise
+
+        vec - refinement vector
+        cor_data - background subtracted diffraction pattern image
+        background - background image
+        structure - binary structure for binary dilation
+        width - diffraction streaks width
+        """
+        kin = self.kout_exp(vec) - self.rec_vectors(vec)[:, None]
+        source_streaks = self.det_pts(kin[..., 0], kin[..., 1], vec)
+        idxs = self.good_idxs(vec, na_ext)
+        return utils.i_sigma_frame(streaks=self.lines[idxs], source_streaks=source_streaks[idxs], cor_data=cor_data,
+                                   background=background, structure=structure, width=width)
+
 
 class ScanCBI(AbcCBI):
     """
