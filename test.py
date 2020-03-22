@@ -25,7 +25,7 @@ B12_DET_POS = np.array([115.27911592, 128.57856985, 100.41825068]) #mm
 B12_EXP = cbc_dp.ScanSetup(rot_axis=ROT_AX,
                            pix_size=PIX_SIZE,
                            det_pos=B12_DET_POS)
-B12_PUPIL = np.radians([0.65, 1.05])
+B12_PUPIL = np.radians([0.75, 1.25])
 REC_BASIS = np.array([[0.00906475, -0.04583905, -0.00082416],
                       [0.03227241, 0.00576972, 0.00194436],
                       [0.0016247, 0.00172209, -0.02941539]])
