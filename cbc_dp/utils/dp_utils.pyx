@@ -131,6 +131,50 @@ def background_filter(uint_t[:, :, ::1] data, uint_t[:, ::1] bgd, uint8_t[:, ::1
                         res[k, i, j] = bgd[i, j]
     return np.asarray(res)
 
+cdef void streak_mask(float_t[:, ::1] streak, uint8_t[:, ::1] structure, int_t width, uint8_t[:, ::1] mask):
+    """
+    Generate a streak mask with the given line width and binary dilated with the given structure
+
+    streak - streak's coordinates (x0, y0, x1, y1)
+    structure - binary structure
+    width - line thickness
+    mask - output mask
+    """
+    cdef:
+        float_t slope, thickness, R0, C0, R1 , C1, temp
+        int_t r_max = structure.shape[0], c_max = structure.shape[1], i, j, k, y, xx, yy, r, c
+        int_t shape_x = mask.shape[0], shape_y = mask.shape[1], k_max = width // 2
+    if abs(streak[0, 0] - streak[1, 0]) < abs(streak[0, 1] - streak[1, 1]):
+        R0 = streak[0, 0]; C0 = streak[0, 1]; R1 = streak[1, 0]; C1 = streak[1, 1]
+        if C0 > C1:
+            temp = R0; R0 = R1; R1 = temp
+            temp = C0; C0 = C1; C1 = temp
+        slope = (R1 - R0) / (C1 - C0)
+        for j in range(int(C0), int(C1) + 1):
+            y = int(j * slope + (C1 * R0 - C0 * R1) / (C1 - C0))
+            for k in range(-k_max, k_max + 1):
+                for r in range(r_max):
+                    for c in range(c_max):
+                        xx = j + r - r_max // 2
+                        yy = y + k + c - c_max // 2
+                        if yy >= 0 and yy < shape_y and xx >= 0 and xx < shape_x and structure[r, c]:
+                            mask[xx, yy] = 1
+    else:
+        R0 = streak[0, 1]; C0 = streak[0, 0]; R1 = streak[1, 1]; C1 = streak[1, 0]
+        if C0 > C1:
+            temp = R0; R0 = R1; R1 = temp
+            temp = C0; C0 = C1; C1 = temp
+        slope = (R1 - R0) / (C1 - C0)
+        for j in range(int(C0), int(C1) + 1):
+            y = int(j * slope + (C1 * R0 - C0 * R1) / (C1 - C0))
+            for k in range(-k_max, k_max + 1):
+                for r in range(r_max):
+                    for c in range(c_max):
+                        xx = y + k + c - c_max // 2
+                        yy = j + r - r_max // 2
+                        if yy >= 0 and yy < shape_y and xx >= 0 and xx < shape_x and structure[r, c]:
+                            mask[xx, yy] = 1
+
 def streaks_mask(float_t[:, :, ::1] lines, uint8_t[:, ::1] structure, int_t width, int_t shape_x, int_t shape_y):
     """
     Generate a streaks mask with the given line width and binary dilated with the given structure
@@ -141,41 +185,10 @@ def streaks_mask(float_t[:, :, ::1] lines, uint8_t[:, ::1] structure, int_t widt
     shape = (shape_x, shape_y) - mask shape
     """
     cdef:
-        float_t slope, thickness, R0, C0, R1 , C1, temp
-        int_t a = lines.shape[0], r_max = structure.shape[0], c_max = structure.shape[1]
-        int_t k_max = width // 2, i, j, k, y, xx, yy, r, c
+        int_t a = lines.shape[0], i
         uint8_t[:, ::1] mask = np.zeros((shape_x, shape_y), dtype=np.uint8)
     for i in range(a):
-        if abs(lines[i, 0, 0] - lines[i, 1, 0]) < abs(lines[i, 0, 1] - lines[i, 1, 1]):
-            R0 = lines[i, 0, 0]; C0 = lines[i, 0, 1]; R1 = lines[i, 1, 0]; C1 = lines[i, 1, 1]
-            if C0 > C1:
-                temp = R0; R0 = R1; R1 = temp
-                temp = C0; C0 = C1; C1 = temp
-            slope = (R1 - R0) / (C1 - C0)
-            for j in range(int(C0), int(C1) + 1):
-                y = int(j * slope + (C1 * R0 - C0 * R1) / (C1 - C0))
-                for k in range(-k_max, k_max + 1):
-                    for r in range(r_max):
-                        for c in range(c_max):
-                            xx = j + r - r_max // 2
-                            yy = y + k + c - c_max // 2
-                            if yy >= 0 and yy < shape_y and xx >= 0 and xx < shape_x and structure[r, c]:
-                                mask[xx, yy] = 1
-        else:
-            R0 = lines[i, 0, 1]; C0 = lines[i, 0, 0]; R1 = lines[i, 1, 1]; C1 = lines[i, 1, 0]
-            if C0 > C1:
-                temp = R0; R0 = R1; R1 = temp
-                temp = C0; C0 = C1; C1 = temp
-            slope = (R1 - R0) / (C1 - C0)
-            for j in range(int(C0), int(C1) + 1):
-                y = int(j * slope + (C1 * R0 - C0 * R1) / (C1 - C0))
-                for k in range(-k_max, k_max + 1):
-                    for r in range(r_max):
-                        for c in range(c_max):
-                            xx = y + k + c - c_max // 2
-                            yy = j + r - r_max // 2
-                            if yy >= 0 and yy < shape_y and xx >= 0 and xx < shape_x and structure[r, c]:
-                                mask[xx, yy] = 1
+        streak_mask(lines[i], structure, width, mask)
     return np.asarray(mask)
 
 def normalize_frame(int_t[:, ::1] data, int[:, ::1] labels, uint8_t[:, ::1] structure, int_t lbl_num, float_t threshold):
@@ -337,7 +350,9 @@ def lsd_refiner(float_t[:, :, ::1] lines, float_t w):
             ii += 1
     return np.array(ll)[:ii]
 
-def i_sigma(uint8_t[:, ::1] streaks_mask, int_t[:, ::1] cor_data, uint_t[:, ::1] background):
+def i_sigma_frame(float_t[:, :, ::1] streaks, float_t[:, :, ::1] source_streaks, int_t[:, ::1] cor_data,
+                  uint_t[:, ::1] background, uint8_t[:, ::1] structure, float_t[:, ::1] pupil_frame,
+                  int_t width):
     """
     Return streak's intensity and Poisson noise
 
@@ -346,15 +361,32 @@ def i_sigma(uint8_t[:, ::1] streaks_mask, int_t[:, ::1] cor_data, uint_t[:, ::1]
     background - background
     """
     cdef:
-        int_t a = streaks_mask.shape[0], b = streaks_mask.shape[1], count = 0, I = 0, i, j
-        float_t bgd_mean = 0, bgd_var = 0, bgd_sigma, delta
-    for i in range(a):
-        for j in range(b):
-            if streaks_mask[i, j]:
-                count += 1
-                delta = background[i, j] - bgd_mean
-                bgd_mean += delta / count
-                bgd_var += (background[i, j] - bgd_mean) * delta
-                I += cor_data[i, j]
-    bgd_sigma = max(bgd_mean * count, bgd_var)
-    return I, sqrt(I + bgd_sigma)
+        int_t aa = streaks.shape[0], a = cor_data.shape[0], b = cor_data.shape[1]
+        int_t cnt = 0, s_cnt = 0, ii, i, j
+        float_t bgd_mean, bgd_var, s_mean, s_var, I, bgd_sigma, delta
+        uint8_t[:, ::1] mask = np.empty((a, b), dtype=np.uint8)
+        uint8_t[:, ::1] s_mask = np.empty((a, b), dtype=np.uint8)
+        float_t[:, ::1] i_sigma = np.empty((aa, 2), dtype=np.float64)
+    for ii in range(aa):
+        mask[...] = 0; s_mask[...] = 0
+        streak_mask(streaks[ii], structure, width, mask)
+        streak_mask(source_streaks[ii], structure, width, s_mask)
+        cnt = 0; s_cnt = 0
+        bgd_mean = 0; bgd_var = 0; I = 0; s_mean = 0; s_var = 0
+        for i in range(a):
+            for j in range(b):
+                if mask[i, j]:
+                    cnt += 1
+                    delta = (background[i, j] - bgd_mean)
+                    bgd_mean += delta / cnt
+                    bgd_var += (background[i, j] - bgd_mean) * delta
+                    I += cor_data[i, j]
+                if s_mask[i, j]:
+                    s_cnt += 1
+                    delta = (background[i, j] - s_mean)
+                    s_mean += delta / s_cnt
+                    s_var += (background[i, j] - s_mean) * delta
+        bgd_sigma = max(bgd_mean * cnt, bgd_var)
+        i_sigma[ii, 0] = I / (s_mean * s_cnt)
+        i_sigma[ii, 1] = sqrt(I + bgd_sigma + s_var)
+    return np.asarray(i_sigma)

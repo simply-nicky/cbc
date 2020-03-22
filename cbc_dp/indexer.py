@@ -5,6 +5,7 @@ from abc import ABCMeta, abstractmethod
 import numpy as np
 import pygmo
 from . import utils
+from .feat_detect import FrameStreaks
 
 class AbcCBI(metaclass=ABCMeta):
     """
@@ -23,6 +24,8 @@ class AbcCBI(metaclass=ABCMeta):
     def __init__(self, streaks, num_ap, pen_coeff):
         self.lines, self.exp_set = streaks.raw_lines * streaks.exp_set.pix_size, streaks.exp_set
         self.num_ap, self.pen_coeff = num_ap, pen_coeff
+        self.pupil = np.array([[-num_ap[0], -num_ap[1], np.sqrt(1 - num_ap[0]**2 - num_ap[1]**2)],
+                               [num_ap[0], num_ap[1], np.sqrt(1 - num_ap[0]**2 - num_ap[1]**2)]])
 
     @abstractmethod
     def rec_basis(self, vec):
@@ -50,6 +53,12 @@ class AbcCBI(metaclass=ABCMeta):
         det_x = vec[2] * np.tan(theta) * np.cos(phi)
         det_y = vec[2] * np.tan(theta) * np.sin(phi)
         return (np.stack((det_x, det_y), axis=-1) + vec[:2]) / self.exp_set.pix_size
+
+    def det_pupil(self, vec):
+        """
+        Return pupil bounds at the detector plane
+        """
+        return self.det_pts(self.pupil, vec)
 
     def idxs(self, vot_vec, kout_exp):
         """
@@ -81,6 +90,17 @@ class AbcCBI(metaclass=ABCMeta):
         vot_vec = self.voting_vectors(vec, kout_exp)
         hkl_idxs = self.voting_hkl(vec, kout_exp)
         return hkl_idxs[self.idxs(vot_vec, kout_exp)]
+
+    def get_streaks(self, vec, na_ext=None):
+        """
+        Return good streaks lying inside extended pupil bounds na_ext
+        """
+        if na_ext is None:
+            na_ext = 1.25 * self.num_ap
+        idxs = utils.reduce_streaks(kout_exp=self.kout_exp(vec), hkl_idxs=self.hkl_idxs(vec),
+                                    rec_basis=self.rec_basis(vec), na_x=self.num_ap[0], na_y=self.num_ap[1],
+                                    na_ext_x=na_ext[0], na_ext_y=na_ext[1], pen_coeff=self.pen_coeff)
+        return FrameStreaks(lines=self.lines[idxs], exp_set=self.exp_set)
 
     def gradient(self, d_vec):
         """
