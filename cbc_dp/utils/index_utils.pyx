@@ -134,6 +134,19 @@ def model_source_lines(float_t[:, ::1] source, float_t[:, ::1] rec_vec, float_t 
                 break
     return np.asarray(source_lines[:ii]), np.asarray(mask).astype(bool)
 
+cdef void kout_line(float_t[:, ::1] line, float_t x0, float_t y0, float_t z0, float_t[:, ::1] kout) nogil:
+    cdef:
+        int_t j
+        float_t dx, dy, phi, theta
+    for j in range(2):
+        dx = line[j, 0] - x0
+        dy = line[j, 1] - y0
+        phi = atan2(dy, dx)
+        theta = atan(sqrt(dx**2 + dy**2) / z0)
+        kout[j, 0] = sin(theta) * cos(phi)
+        kout[j, 1] = sin(theta) * sin(phi)
+        kout[j, 2] = cos(theta)
+
 def kout_frame(float_t[:, :, ::1] lines, float_t x0, float_t y0, float_t z0):
     """
     Return outcoming wavevectors of a pattern
@@ -142,18 +155,10 @@ def kout_frame(float_t[:, :, ::1] lines, float_t x0, float_t y0, float_t z0):
     x0, y0, z0 - sample position relative to the detector [mm]
     """
     cdef:
-        int_t a = lines.shape[0], i, j
+        int_t a = lines.shape[0], i
         float_t[:, :, ::1] kout = np.empty((a, 2, 3), dtype=np.float64)
-        float_t x, y, phi, theta
     for i in range(a):
-        for j in range(2):
-            dx = lines[i, j, 0] - x0
-            dy = lines[i, j, 1] - y0
-            phi = atan2(dy, dx)
-            theta = atan(sqrt(dx**2 + dy**2) / z0)
-            kout[i, j, 0] = sin(theta) * cos(phi)
-            kout[i, j, 1] = sin(theta) * sin(phi)
-            kout[i, j, 2] = cos(theta)
+        kout_line(lines[i], x0, y0, z0, kout[i])
     return np.asarray(kout)
 
 def kout_scan(float_t[:, :, ::1] lines, int_t[::1] frame_idxs, float_t[::1] x0,
@@ -167,18 +172,10 @@ def kout_scan(float_t[:, :, ::1] lines, int_t[::1] frame_idxs, float_t[::1] x0,
     """
     cdef:
         int_t a = lines.shape[0], i, idx
-        float_t dx, dy, phi, theta
         float_t[:, :, ::1] kout = np.empty((a, 2, 3), dtype=np.float64)
     for i in range(a):
         idx = frame_idxs[i]
-        for j in range(2):
-            dx = lines[i, j, 0] - x0[idx]
-            dy = lines[i, j, 1] - y0[idx]
-            phi = atan2(dy, dx)
-            theta = atan(sqrt(dx**2 + dy**2) / z0[idx])
-            kout[i, j, 0] = sin(theta) * cos(phi)
-            kout[i, j, 1] = sin(theta) * sin(phi)
-            kout[i, j, 2] = cos(theta)
+        kout_line(lines[i], x0[idx], y0[idx], z0[idx], kout[i])
     return np.asarray(kout)
 
 def voting_vectors_f(float_t[:, ::1] kout_exp, float_t[:, ::1] rec_basis, float_t na_x, float_t na_y):

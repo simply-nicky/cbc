@@ -373,11 +373,9 @@ class AbcCBI(metaclass=ABCMeta):
     def rec_basis(self, vec):
         pass
 
+    @abstractmethod
     def kout_exp(self, vec):
-        """
-        Generate the experimentally measured deiffraction streaks outcoming wavevectors
-        """
-        return utils.kout_frame(lines=self.lines, x0=vec[0], y0=vec[1], z0=vec[2])
+        pass
 
     @abstractmethod
     def voting_hkl(self, vec, kout_exp):
@@ -505,7 +503,6 @@ class FrameCBI(AbcCBI):
         idxs = self.good_idxs(vec, na_ext)
         return utils.i_sigma_frame(streaks=self.lines[idxs], source_streaks=source_streaks[idxs], cor_data=cor_data,
                                    background=background, structure=structure, width=width)
-
 
 class ScanCBI(AbcCBI):
     """
