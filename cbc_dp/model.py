@@ -84,15 +84,13 @@ class ABCModel():
     """
     Abstract convergent beam diffraction pattern generator class
 
-    rec_basis - reciprocal lattice basis vectors
-    num_ap - convergent beam numerical aperture
-    q_max - maximax scattering vector norm value
+    rec_lat - RecLattice class object
     """
     mask = None
     masked_attrs = ['rec_vec', 'hkl_idxs', 'rec_abs', 'rec_phi', 'rec_th', 'source']
 
-    def __init__(self, rec_lat, num_ap):
-        self.rec_lat, self.num_ap = rec_lat, num_ap
+    def __init__(self, rec_lat):
+        self.rec_lat = rec_lat
         self._init_mask()
 
     @abstractmethod
@@ -139,10 +137,13 @@ class CircModel(ABCModel):
     """
     Circular aperture convergent beam diffraction pattern generator class
 
-    rec_basis - reciprocal lattice basis vectors
+    rec_lat - RecLattice class object
     num_ap - convergent beam numerical aperture
-    q_max - maximax scattering vector norm value
     """
+    def __init__(self, rec_lat, num_ap):
+        self.num_ap = num_ap
+        super(CircModel, self).__init__(rec_lat)
+
     def _init_mask(self):
         self.mask = (np.abs(np.sin(self.rec_lat.rec_th - np.arccos(self.rec_lat.rec_abs / 2))) < self.num_ap)
 
@@ -164,15 +165,17 @@ class RectModel(ABCModel):
     """
     Rectangular aperture convergent beam diffraction pattern generator class
 
-    rec_basis - reciprocal lattice basis vectors
-    num_ap = [num_ap_x, num_ap_y] - convergent beam numerical apertures in x- and y-axis
-    q_max - maximax scattering vector norm value
+    rec_lat - RecLattice class object
+    kin = [[th_x_min, th_y_min], [th_x_max, th_y_max]] - angular span of the lens' pupil
     """
+    def __init__(self, rec_lat, kin):
+        self.kin = kin
+        super(RectModel, self).__init__(rec_lat)
+
     def _init_mask(self):
-        self._source_lines, self.mask = utils.model_source_lines(self.rec_lat.source,
-                                                                 self.rec_lat.rec_vec,
-                                                                 self.num_ap[0],
-                                                                 self.num_ap[1])
+        self._source_lines, self.mask = utils.model_source_lines(source=self.rec_lat.source,
+                                                                 rec_vec=self.rec_lat.rec_vec,
+                                                                 kin=self.kin)
 
     def source_lines(self):
         """

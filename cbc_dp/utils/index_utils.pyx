@@ -87,47 +87,46 @@ def init_source(float_t[:, ::1] rec_vec):
         source[i, 2] =  cos(source_th)
     return np.asarray(rec_abs), np.asarray(rec_th), np.asarray(rec_phi), np.asarray(source)
 
-def model_source_lines(float_t[:, ::1] source, float_t[:, ::1] rec_vec, float_t na_x, float_t na_y):
+def model_source_lines(float_t[:, ::1] source, float_t[:, ::1] rec_vec, float_t[:, ::1] kin):
     """
     Return source lines coordinates for a diffraction streaks model
 
     source - source line origins
     rec_vec - reciprocal vectors
-    na_x, na_y - x- and y-coordinates of the incoming beam numerical aperture 
+    kin = [[th_x_min, th_y_min], [th_x_max, th_y_max]] - angular span of the lens' pupil
     """
     cdef:
         int a = rec_vec.shape[0], ii = 0, jj, i, k
         uint8_t[::1] mask = np.zeros(a, dtype=np.uint8)
         float_t source_prd, coeff1, coeff2, alpha, betta, gamma, delta, sol_1, sol_2, prod_1, prod_2
-        float_t[::1] bounds = np.array([na_x, -na_x, na_y, -na_y], dtype=np.float64)
         float_t[:, :, ::1] source_lines = np.empty((a, 2, 3), dtype=np.float64)
     for i in range(a):
         source_prd = source[i, 0] * rec_vec[i, 0] + source[i, 1] * rec_vec[i, 1] + source[i, 2] * rec_vec[i, 2]
         jj = 0
         for k in range(4):
-            coeff1 = source_prd - bounds[k] * rec_vec[i, k // 2]
+            coeff1 = source_prd - kin[k // 2, k % 2] * rec_vec[i, k // 2]
             coeff2 = rec_vec[i, (3 - k) // 2]
             alpha = coeff2**2 + rec_vec[i, 2]**2
             betta = coeff2 * coeff1
-            gamma = coeff1**2 - rec_vec[i, 2]**2 * (1 - bounds[k]**2)
+            gamma = coeff1**2 - rec_vec[i, 2]**2 * (1 - kin[k // 2, k % 2])
             delta = betta**2 - alpha * gamma
             sol_1 = (betta + sqrt(delta)) / alpha
             prod_1 = (sol_1 * rec_vec[i, (3 - k) // 2] +
-                      bounds[k] * rec_vec[i, k // 2] +
-                      sqrt(1 - bounds[k]**2 - sol_1**2) * rec_vec[i, 2]) - source_prd
+                      kin[k // 2, k % 2] * rec_vec[i, k // 2] +
+                      sqrt(1 - kin[k // 2, k % 2]**2 - sol_1**2) * rec_vec[i, 2]) - source_prd
             sol_2 = (betta - sqrt(delta)) / alpha
             prod_2 = (sol_2 * rec_vec[i, (3 - k) // 2] +
-                      bounds[k] * rec_vec[i, k // 2] +
-                      sqrt(1 - bounds[k]**2 - sol_2**2) * rec_vec[i, 2]) - source_prd
+                      kin[k // 2, k % 2] * rec_vec[i, k // 2] +
+                      sqrt(1 - kin[k // 2, k % 2]**2 - sol_2**2) * rec_vec[i, 2]) - source_prd
             if abs(prod_1) < 1e-11 and abs(sol_1) < abs(bounds[3 - k]):
-                source_lines[ii, jj, k // 2] = bounds[k]
+                source_lines[ii, jj, k // 2] = kin[k // 2, k % 2]
                 source_lines[ii, jj, (3 - k) // 2] = sol_1
-                source_lines[ii, jj, 2] = sqrt(1 - bounds[k]**2 - sol_1**2)
+                source_lines[ii, jj, 2] = sqrt(1 - kin[k // 2, k % 2]**2 - sol_1**2)
                 jj += 1
             if delta > 0 and abs(prod_2) < 1e-11 and abs(sol_2) < abs(bounds[3 - k]):
-                source_lines[ii, jj, k // 2] = bounds[k]
+                source_lines[ii, jj, k // 2] = kin[k // 2, k % 2]
                 source_lines[ii, jj, (3 - k) // 2] = sol_2
-                source_lines[ii, jj, 2] = sqrt(1 - bounds[k]**2 - sol_2**2)
+                source_lines[ii, jj, 2] = sqrt(1 - kin[k // 2, k % 2]**2 - sol_2**2)
                 jj += 1
             if jj == 2:
                 mask[i] = 1; ii += 1
