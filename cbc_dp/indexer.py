@@ -47,38 +47,27 @@ class FrameStreaks():
         products = self.lines[:, 0, 1] * self.taus[:, 0] - self.lines[:, 0, 0] * self.taus[:, 1]
         return np.stack((-self.taus[:, 1] * products, self.taus[:, 0] * products), axis=1)
 
-    def kout(self, theta):
+    def kout(self):
         """
         Return reciprocal vectors of detected diffraction streaks.
-
-        theta - angle of rotation
         """
-        rot_m = self.exp_set.rotation_matrix(theta)
         kout = self.exp_set.kout_exp(self.lines.mean(axis=1))
-        return RecVectors(kout=kout.dot(rot_m.T),
-                          kin=self.kin.dot(rot_m.T))
+        return RecVectors(kout=kout, kin=self.kin)
 
-    def kout_streaks(self, theta):
+    def kout_streaks(self):
         """
         Return reciprocal vectors of detected diffraction streaks.
-
-        theta - angle of rotation
         """
-        rot_m = self.exp_set.rotation_matrix(theta)
         kout = self.exp_set.kout_exp(self.lines)
-        return RecVectors(kout=kout.dot(rot_m.T),
-                          kin=np.tile(self.kin[:, None], (1, 2, 1)).dot(rot_m.T))
+        return RecVectors(kout=kout, kin=np.tile(self.kin[:, None], (1, 2, 1)))
 
-    def kout_index(self, theta):
+    def kout_index(self):
         """
         Return reciprocal points of indexing points.
-
-        theta - angle of rotation
         """
         index_pts = self.index_pts()
-        rot_m = self.exp_set.rotation_matrix(theta)
         kout = self.exp_set.kout_exp(index_pts)
-        return RecVectors(kout=kout.dot(rot_m.T), kin=self.kin.dot(rot_m.T))
+        return RecVectors(kout=kout, kin=self.kin)
 
     def full_index_refine(self, rec_basis, num_ap, pos_tol=(0.007, 0.014, 0.06), rb_tol=0.12):
         """
@@ -157,32 +146,33 @@ class ScanStreaks(FrameStreaks):
             idxs = np.where(self.frame_idxs == frame_idx)
             yield FrameStreaks(self.raw_lines[idxs], self.exp_set)
 
-    def kout(self, theta):
+    def kout(self):
         """
         Return reciprocal vectors of detected diffraction streaks in rotational scan.
 
         theta - angles of rotation
         """
         kout_list, kin_list = [], []
-        for frame_strks, theta_val in zip(iter(self), theta):
-            rec_vec = frame_strks.kout(theta=theta_val)
-            kout_list.append(rec_vec.kout)
-            kin_list.append(rec_vec.kin)
+        for frame_idx, frame_strks in enumerate(iter(self)):
+            rot_m = self.exp_set.rotation_matrix(frame_idx)
+            rec_vec = frame_strks.kout()
+            kout_list.append(rec_vec.kout.dot(rot_m.T))
+            kin_list.append(rec_vec.kin.dot(rot_m.T))
         return RecVectors(kout=np.concatenate(kout_list),
                           kin=np.concatenate(kin_list))
 
-    def kout_ref(self, theta, pixels=25):
+    def kout_ref(self, pixels=25):
         """
         Return refined reciprocal vectors of detected diffraction streaks in rotational scan.
 
-        thetas - angles of rotation
         pixels - pixel distance between two adjacent streaks considered to be collapsed
         """
         kout_list, kin_list = [], []
-        for frame_strks, theta_val in zip(iter(self), theta):
-            rec_vec = frame_strks.kout(theta=theta_val)
-            kout_list.append(rec_vec.kout)
-            kin_list.append(rec_vec.kin)
+        for frame_idx, frame_strks in enumerate(iter(self)):
+            rot_m = self.exp_set.rotation_matrix(frame_idx)
+            rec_vec = frame_strks.kout()
+            kout_list.append(rec_vec.kout.dot(rot_m.T))
+            kin_list.append(rec_vec.kin.dot(rot_m.T))
         groups = TiltGroups(kout=kout_list,
                             kin=kin_list,
                             threshold=self.exp_set.pixtoq(pixels))
@@ -190,41 +180,38 @@ class ScanStreaks(FrameStreaks):
         return RecVectors(kout=np.concatenate(kout_list),
                           kin=np.concatenate(ref_kin))
 
-    def kout_streaks(self, theta):
+    def kout_streaks(self):
         """
         Return reciprocal streaks of detected diffraction streaks in rotational scan.
-
-        thetas - angles of rotation
         """
         kout_list, kin_list = [], []
-        for frame_strks, theta_val in zip(iter(self), theta):
-            rec_vec = frame_strks.kout_streaks(theta=theta_val)
-            kout_list.append(rec_vec.kout)
-            kin_list.append(rec_vec.kin)
+        for frame_idx, frame_strks in enumerate(iter(self)):
+            rot_m = self.exp_set.rotation_matrix(frame_idx)
+            rec_vec = frame_strks.kout_streaks()
+            kout_list.append(rec_vec.kout.dot(rot_m.T))
+            kin_list.append(rec_vec.kin.dot(rot_m.T))
         return RecVectors(kout=np.concatenate(kout_list),
                           kin=np.concatenate(kin_list))
 
-    def kout_index(self, theta):
+    def kout_index(self):
         """
         Return reciprocal vectors of indexing points in rotational scan.
-
-        thetas - angles of rotation
         """
         kout_list, kin_list = [], []
-        for frame_strks, theta_val in zip(iter(self), theta):
-            rec_vec = frame_strks.kout_index(theta=theta_val)
-            kout_list.append(rec_vec.kout)
-            kin_list.append(rec_vec.kin)
+        for frame_idx, frame_strks in enumerate(iter(self)):
+            rot_m = self.exp_set.rotation_matrix(frame_idx)
+            rec_vec = frame_strks.kout_index()
+            kout_list.append(rec_vec.kout.dot(rot_m.T))
+            kin_list.append(rec_vec.kin.dot(rot_m.T))
         return RecVectors(kout=np.concatenate(kout_list),
                           kin=np.concatenate(kin_list))
 
-    def full_index_refine(self, rec_basis, theta, num_ap, n_isl=20, pop_size=50,
+    def full_index_refine(self, rec_basis, num_ap, n_isl=20, pop_size=50,
                           gen_num=2000, pos_tol=(0.007, 0.014, 0.06), rb_tol=0.12):
         """
         Return refinement problems archipelago
 
         rec_basis - preliminary reciprocal lattice basis vectors matrix
-        theta - angles of rotation
         num_ap = [num_ap_x, num_ap_y] - convergent beam numerical apertures in x- and y-axes
         n_isl - number of islands of one frame
         pop_size - population size
@@ -233,8 +220,8 @@ class ScanStreaks(FrameStreaks):
         rb_tol - lattice basis vectors matrix tolerance
         """
         archi = pygmo.archipelago()
-        for frame_strks, theta_val in zip(iter(self), theta):
-            frame_basis = rec_basis.dot(self.exp_set.rotation_matrix(-theta_val).T)
+        for frame_idx, frame_strks in enumerate(iter(self)):
+            frame_basis = rec_basis.dot(self.exp_set.rotation_matrix(frame_idx))
             prob = frame_strks.rot_index_refine(rec_basis=frame_basis,
                                                 num_ap=num_ap,
                                                 pos_tol=pos_tol,
@@ -244,13 +231,12 @@ class ScanStreaks(FrameStreaks):
                 archi.push_back(algo=pygmo.de(gen_num), pop=pop)
         return archi
 
-    def rot_index_refine(self, rec_basis, theta, num_ap, n_isl=20, pop_size=50, gen_num=2000,
+    def rot_index_refine(self, rec_basis, num_ap, n_isl=20, pop_size=50, gen_num=2000,
                          pos_tol=(0.007, 0.014, 0.06), size_tol=0.05, ang_tol=0.09):
         """
         Return refinement problems archipelago
 
         rec_basis - preliminary reciprocal lattice basis vectors matrix
-        theta - angles of rotation
         num_ap = [num_ap_x, num_ap_y] - convergent beam numerical apertures in x- and y-axes
         n_isl - number of islands of one frame
         pop_size - population size
@@ -260,8 +246,8 @@ class ScanStreaks(FrameStreaks):
         ang_tol - rotation anlges tolerance
         """
         archi = pygmo.archipelago()
-        for frame_strks, theta_val in zip(iter(self), theta):
-            frame_basis = rec_basis.dot(self.exp_set.rotation_matrix(-theta_val).T)
+        for frame_idx, frame_strks in enumerate(iter(self)):
+            frame_basis = rec_basis.dot(self.exp_set.rotation_matrix(frame_idx))
             prob = frame_strks.rot_index_refine(rec_basis=frame_basis,
                                                 num_ap=num_ap,
                                                 pos_tol=pos_tol,
@@ -511,19 +497,18 @@ class ScanCBI(AbcCBI):
     streaks - ScanStreaks class object
     num_ap = [na_x, na_y] - convergent beam numerical apertures in x- and y-axis
     rec_basis - Reciprocal lattice basis vectors matrix
-    thetas - angles of rotation
     tol = [pos_tol, th_tol, rot_tol, rb_tol] - tolerance defining vector bounds
     pen_coeff - fitness penalty coefficient
     """
-    def __init__(self, streaks, num_ap, rec_basis, thetas, tol, pen_coeff=10):
+    def __init__(self, streaks, num_ap, rec_basis, tol, pen_coeff=10):
         super(ScanCBI, self).__init__(streaks, num_ap, pen_coeff)
-        self.frame_idxs, self.thetas, self.size = streaks.frame_idxs, thetas, thetas.size
-        self._init_bounds(rec_basis.ravel(), thetas, tol)
+        self.frame_idxs = streaks.frame_idxs
+        self._init_bounds(rec_basis.ravel(), tol)
 
-    def _init_bounds(self, rec_basis, thetas, tol):
-        pt0_lb = np.repeat((1 - np.array(tol[0])) * self.exp_set.det_pos, self.size)
-        pt0_ub = np.repeat((1 + np.array(tol[0])) * self.exp_set.det_pos, self.size)
-        th_lb, th_ub = thetas - tol[1], thetas + tol[1]
+    def _init_bounds(self, rec_basis, tol):
+        pt0_lb = np.repeat((1 - np.array(tol[0])) * self.exp_set.det_pos, self.exp_set.scan_size)
+        pt0_ub = np.repeat((1 + np.array(tol[0])) * self.exp_set.det_pos, self.exp_set.scan_size)
+        th_lb, th_ub = self.exp_set.thetas - tol[1], self.exp_set.thetas + tol[1]
         rot_lb, rot_ub = np.pi / 2 - tol[2] * np.ones(2), np.pi / 2 + tol[2] * np.ones(2)
         rb_bounds = np.stack(((1 - tol[1]) * rec_basis, (1 + tol[1]) * rec_basis))
         self.lower_b = np.concatenate((pt0_lb, th_lb, rot_lb, rb_bounds.min(axis=0)))
@@ -533,13 +518,16 @@ class ScanCBI(AbcCBI):
         """
         Return rectangular lattice basis vectors for a vector
         """
-        return vec[4 * self.size + 2:].reshape(self.mat_shape)
+        return vec[4 * self.exp_set.scan_size + 2:].reshape(self.mat_shape)
 
     def kout_exp(self, vec):
         """
         Generate the experimentally measured diffraction streaks outcoming wavevectors of a scan
         """
-        return utils.kout_scan(lines=self.lines, frame_idxs=self.frame_idxs, x0=vec[0:self.size], y0=vec[self.size:2*self.size], z0=vec[2*self.size:3*self.size])
+        return utils.kout_scan(lines=self.lines, frame_idxs=self.frame_idxs,
+                               x0=vec[0:self.exp_set.scan_size],
+                               y0=vec[self.exp_set.scan_size:2*self.exp_set.scan_size],
+                               z0=vec[2*self.exp_set.scan_size:3*self.exp_set.scan_size])
 
     def voting_vectors(self, vec, kout_exp):
         """
@@ -547,9 +535,10 @@ class ScanCBI(AbcCBI):
         wavevectors kout_exp
         """
         return utils.voting_vectors_s(kout_exp=kout_exp.mean(axis=1), rec_basis=self.rec_basis(vec),
-                                      thetas=vec[3*self.size:4*self.size], frame_idxs=self.frame_idxs,
-                                      alpha=vec[4*self.size], betta=vec[4*self.size+1],
-                                      na_x=self.num_ap[0], na_y=self.num_ap[1])
+                                      thetas=vec[3*self.exp_set.scan_size:4*self.exp_set.scan_size],
+                                      frame_idxs=self.frame_idxs, alpha=vec[4*self.exp_set.scan_size],
+                                      betta=vec[4*self.exp_set.scan_size+1], na_x=self.num_ap[0],
+                                      na_y=self.num_ap[1])
 
     def voting_hkl(self, vec, kout_exp):
         """
@@ -557,9 +546,10 @@ class ScanCBI(AbcCBI):
         wavevectors kout_exp
         """
         return utils.voting_idxs_s(kout_exp=kout_exp.mean(axis=1), rec_basis=self.rec_basis(vec),
-                                   thetas=vec[3*self.size:4*self.size], frame_idxs=self.frame_idxs,
-                                   alpha=vec[4*self.size], betta=vec[4*self.size+1],
-                                   na_x=self.num_ap[0], na_y=self.num_ap[1])
+                                   thetas=vec[3*self.exp_set.scan_size:4*self.exp_set.scan_size],
+                                   frame_idxs=self.frame_idxs, alpha=vec[4*self.exp_set.scan_size],
+                                   betta=vec[4*self.exp_set.scan_size+1], na_x=self.num_ap[0],
+                                   na_y=self.num_ap[1])
 
 class FCBI(FrameCBI):
     """

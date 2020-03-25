@@ -14,26 +14,33 @@ class FrameSetup():
 
     pix_size - detector pixel size
     det_pos - detector position in respect to the sample [mm]
+    z_f - distance between the focus and the detector [mm]
+    pupil - pupil outline at the detector plane [pixels]
+    beam_pos - unfocussed beam position at the detector plane [pixels]
     """
-    def __init__(self, pix_size, det_pos):
-        self.pix_size, self.det_pos = pix_size, det_pos
+    def __init__(self, pix_size, smp_pos, z_f, pupil, beam_pos):
+        self.pix_size, self.smp_pos = pix_size, smp_pos
+        self.z_f, self.pupil, self.beam_pos = z_f, pupil * pix_size, beam_pos * pix_size
+        self.kin = (self.pupil - self.beam_pos) / self.z_f
 
     def pixtoq(self, pixels):
         """
         Convert detector distance in pixels to distance in reciprocal space
         """
-        return pixels * self.pix_size / self.det_pos[2]
+        return pixels * self.pix_size / self.smp_pos[2]
 
-    def kout_exp(self, det_pts):
+    def kout_exp(self, streaks):
         """
         Project detected diffraction streaks to reciprocal space vectors in [a.u.]
 
-        det_pts - detector points [mm]
+        streaks - detector points [pixels]
         """
-        angles = np.arctan2(det_pts[..., 1], det_pts[..., 0])
-        thetas = np.arctan(np.sqrt(det_pts[..., 0]**2 + det_pts[..., 1]**2) / self.det_pos[2])
-        return np.stack((np.sin(thetas) * np.cos(angles),
-                         np.sin(thetas) * np.sin(angles),
+        dx = streaks[..., 0] * self.pix_size - self.smp_pos[0]
+        dy = streaks[..., 1] * self.pix_size - self.smp_pos[1]
+        phis = np.arctan2(dy, dx)
+        thetas = np.arctan(np.sqrt(dx**2 + dy**2) / self.smp_pos[2])
+        return np.stack((np.sin(thetas) * np.cos(phis),
+                         np.sin(thetas) * np.sin(phis),
                          np.cos(thetas)), axis=-1)
 
     def det_pts(self, k_out):
@@ -43,9 +50,9 @@ class FrameSetup():
         k_out - outcoming wavevectors
         """
         theta, phi = np.arccos(k_out[..., 2]), np.arctan2(k_out[..., 1], k_out[..., 0])
-        det_x = self.det_pos[2] * np.tan(theta) * np.cos(phi)
-        det_y = self.det_pos[2] * np.tan(theta) * np.sin(phi)
-        return (np.stack((det_x, det_y), axis=-1) + self.det_pos[:2]) / self.pix_size
+        det_x = self.smp_pos[2] * np.tan(theta) * np.cos(phi)
+        det_y = self.smp_pos[2] * np.tan(theta) * np.sin(phi)
+        return (np.stack((det_x, det_y), axis=-1) + self.smp_pos[:2]) / self.pix_size
 
     def save(self, out_file):
         """
@@ -55,7 +62,7 @@ class FrameSetup():
         """
         out_group = out_file.create_group("experiment_settings")
         out_group.create_dataset('pix_size', data=self.pix_size)
-        out_group.create_dataset('det_pos', data=self.det_pos)
+        out_group.create_dataset('sample_pos', data=self.smp_pos)
 
 class ScanSetup(FrameSetup):
     """
@@ -64,16 +71,21 @@ class ScanSetup(FrameSetup):
     pix_size - detector pixel size
     det_pos - detector position in respect to the sample [mm]
     rot_axis - axis of rotation
+    thetas - angles of rotation
     """
-    def __init__(self, pix_size, det_pos, rot_axis):
+    def __init__(self, pix_size, det_pos, rot_axis, thetas):
         super(ScanSetup, self).__init__(pix_size, det_pos)
-        self.axis = rot_axis
+        self.axis, self.thetas = rot_axis, thetas
 
-    def rotation_matrix(self, theta):
+    @property
+    def scan_size(self):
+        return self.thetas.size
+
+    def rotation_matrix(self, frame_idx):
         """
-        Return roational matrix for a given angle of rotation
+        Return roational matrix for a given frame index
         """
-        return utils.rotation_matrix(self.axis, theta)
+        return utils.rotation_matrix(self.axis, self.thetas[frame_idx])
 
     def save(self, out_file):
         """
@@ -83,8 +95,9 @@ class ScanSetup(FrameSetup):
         """
         out_group = out_file.create_group("experiment_settings")
         out_group.create_dataset('pix_size', data=self.pix_size)
-        out_group.create_dataset('det_pos', data=self.det_pos)
+        out_group.create_dataset('sample_pos', data=self.smp_pos)
         out_group.create_dataset('rot_axis', data=self.axis)
+        out_group.create_dataset('thetas', data=self.thetas)
 
 class LineDetector(metaclass=ABCMeta):
     """
