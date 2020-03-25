@@ -18,7 +18,7 @@ class FrameStreaks():
     """
     def __init__(self, lines, exp_set):
         self.raw_lines, self.exp_set = lines, exp_set
-        self.lines = self.raw_lines * self.exp_set.pix_size - self.exp_set.det_pos[:2]
+        self.lines = self.raw_lines * self.exp_set.pix_size - self.exp_set.smp_pos[:2]
 
     @property
     def kin(self):
@@ -506,8 +506,8 @@ class ScanCBI(AbcCBI):
         self._init_bounds(rec_basis.ravel(), tol)
 
     def _init_bounds(self, rec_basis, tol):
-        pt0_lb = np.repeat((1 - np.array(tol[0])) * self.exp_set.det_pos, self.exp_set.scan_size)
-        pt0_ub = np.repeat((1 + np.array(tol[0])) * self.exp_set.det_pos, self.exp_set.scan_size)
+        pt0_lb = np.repeat((1 - np.array(tol[0])) * self.exp_set.smp_pos, self.exp_set.scan_size)
+        pt0_ub = np.repeat((1 + np.array(tol[0])) * self.exp_set.smp_pos, self.exp_set.scan_size)
         th_lb, th_ub = self.exp_set.thetas - tol[1], self.exp_set.thetas + tol[1]
         rot_lb, rot_ub = np.pi / 2 - tol[2] * np.ones(2), np.pi / 2 + tol[2] * np.ones(2)
         rb_bounds = np.stack(((1 - tol[1]) * rec_basis, (1 + tol[1]) * rec_basis))
@@ -571,8 +571,8 @@ class FCBI(FrameCBI):
 
     def _init_bounds(self, rec_basis, tol):
         rb_bounds = np.stack(((1 - tol[1]) * rec_basis, (1 + tol[1]) * rec_basis))
-        self.lower_b = np.concatenate(((1 - np.array(tol[0])) * self.exp_set.det_pos, rb_bounds.min(axis=0)))
-        self.upper_b = np.concatenate(((1 + np.array(tol[0])) * self.exp_set.det_pos, rb_bounds.max(axis=0)))
+        self.lower_b = np.concatenate(((1 - np.array(tol[0])) * self.exp_set.smp_pos, rb_bounds.min(axis=0)))
+        self.upper_b = np.concatenate(((1 + np.array(tol[0])) * self.exp_set.smp_pos, rb_bounds.max(axis=0)))
 
     def rec_basis(self, vec):
         """
@@ -605,8 +605,8 @@ class RCBI(FrameCBI):
     def _init_bounds(self, rec_basis, tol):
         self.rec_sizes = np.sqrt((rec_basis**2).sum(axis=-1))
         self.or_mat = rec_basis / self.rec_sizes[:, None]
-        self.lower_b = np.concatenate(((1 - np.array(tol[0])) * self.exp_set.det_pos, (1 - tol[1]) * self.rec_sizes, -tol[2] * np.ones(3)))
-        self.upper_b = np.concatenate(((1 + np.array(tol[0])) * self.exp_set.det_pos, (1 + tol[1]) * self.rec_sizes, tol[2] * np.ones(3)))
+        self.lower_b = np.concatenate(((1 - np.array(tol[0])) * self.exp_set.smp_pos, (1 - tol[1]) * self.rec_sizes, -tol[2] * np.ones(3)))
+        self.upper_b = np.concatenate(((1 + np.array(tol[0])) * self.exp_set.smp_pos, (1 + tol[1]) * self.rec_sizes, tol[2] * np.ones(3)))
 
     def rec_basis(self, vec):
         """
