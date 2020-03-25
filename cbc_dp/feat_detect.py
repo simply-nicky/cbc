@@ -12,8 +12,8 @@ class FrameSetup():
     """
     Detector frame experimental setup class
 
-    pix_size - detector pixel size
-    det_pos - detector position in respect to the sample [mm]
+    pix_size - detector pixel size [mm]
+    smp_pos - sample position relative to the detector [mm]
     z_f - distance between the focus and the detector [mm]
     pupil - pupil outline at the detector plane [pixels]
     beam_pos - unfocussed beam position at the detector plane [pixels]
@@ -63,19 +63,37 @@ class FrameSetup():
         out_group = out_file.create_group("experiment_settings")
         out_group.create_dataset('pix_size', data=self.pix_size)
         out_group.create_dataset('sample_pos', data=self.smp_pos)
+        out_group.create_dataset('z_f', data=self.z_f)
+        out_group.create_dataset('pupil', data=self.pupil)
+        out_group.create_dataset('beam_pos', data=self.beam_pos)
 
 class ScanSetup(FrameSetup):
     """
     Detector tilt scan experimental setup class
 
-    pix_size - detector pixel size
-    det_pos - detector position in respect to the sample [mm]
+    pix_size - detector pixel size [mm]
+    smp_pos - sample position relative to the detector [mm]
+    z_f - distance between the focus and the detector [mm]
+    pupil - pupil outline at the detector plane [pixels]
+    beam_pos - unfocussed beam position at the detector plane [pixels]
     rot_axis - axis of rotation
     thetas - angles of rotation
     """
-    def __init__(self, pix_size, det_pos, rot_axis, thetas):
-        super(ScanSetup, self).__init__(pix_size, det_pos)
+    def __init__(self, pix_size, smp_pos, z_f, pupil, beam_pos, rot_axis, thetas):
+        super(ScanSetup, self).__init__(pix_size, smp_pos, z_f, pupil, beam_pos)
         self.axis, self.thetas = rot_axis, thetas
+
+    @classmethod
+    def from_frame_setup(cls, frame_setup, rot_axis, thetas):
+        """
+        Return ScanSetup object initialized with a FrameSetup object
+
+        frame_setup - FrameSetup object
+        rot_axis - axis of rotation
+        thetas - angles of rotation
+        """
+        return cls(frame_setup.pix_size, frame_setup.smp_pos, frame_setup.z_f,
+                   frame_setup.pupil, frame_setup.beam_pos, rot_axis, thetas)
 
     @property
     def scan_size(self):
@@ -96,6 +114,9 @@ class ScanSetup(FrameSetup):
         out_group = out_file.create_group("experiment_settings")
         out_group.create_dataset('pix_size', data=self.pix_size)
         out_group.create_dataset('sample_pos', data=self.smp_pos)
+        out_group.create_dataset('z_f', data=self.z_f)
+        out_group.create_dataset('pupil', data=self.pupil)
+        out_group.create_dataset('beam_pos', data=self.beam_pos)
         out_group.create_dataset('rot_axis', data=self.axis)
         out_group.create_dataset('thetas', data=self.thetas)
 
