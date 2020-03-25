@@ -118,12 +118,12 @@ def model_source_lines(float_t[:, ::1] source, float_t[:, ::1] rec_vec, float_t[
             prod_2 = (sol_2 * rec_vec[i, (3 - k) // 2] +
                       kin[k // 2, k % 2] * rec_vec[i, k // 2] +
                       sqrt(1 - kin[k // 2, k % 2]**2 - sol_2**2) * rec_vec[i, 2]) - source_prd
-            if abs(prod_1) < 1e-11 and abs(sol_1) < abs(bounds[3 - k]):
+            if abs(prod_1) < 1e-11 and sol_1 < kin[1, (k + 1) % 2] and sol_1 > kin[0, (k + 1) % 2]:
                 source_lines[ii, jj, k // 2] = kin[k // 2, k % 2]
                 source_lines[ii, jj, (3 - k) // 2] = sol_1
                 source_lines[ii, jj, 2] = sqrt(1 - kin[k // 2, k % 2]**2 - sol_1**2)
                 jj += 1
-            if delta > 0 and abs(prod_2) < 1e-11 and abs(sol_2) < abs(bounds[3 - k]):
+            if delta > 0 and abs(prod_2) < 1e-11 and sol_2 < kin[1, (k + 1) % 2] and sol_2 > kin[0, (k + 1) % 2]:
                 source_lines[ii, jj, k // 2] = kin[k // 2, k % 2]
                 source_lines[ii, jj, (3 - k) // 2] = sol_2
                 source_lines[ii, jj, 2] = sqrt(1 - kin[k // 2, k % 2]**2 - sol_2**2)
