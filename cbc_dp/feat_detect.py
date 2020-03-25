@@ -92,8 +92,9 @@ class ScanSetup(FrameSetup):
         rot_axis - axis of rotation
         thetas - angles of rotation
         """
-        return cls(frame_setup.pix_size, frame_setup.smp_pos, frame_setup.z_f,
-                   frame_setup.pupil, frame_setup.beam_pos, rot_axis, thetas)
+        return cls(pix_size=frame_setup.pix_size, smp_pos=frame_setup.smp_pos, thetas=thetas,
+                   z_f=frame_setup.z_f, pupil=frame_setup.pupil / frame_setup.pix_size,
+                   beam_pos=frame_setup.beam_pos / frame_setup.pix_size, rot_axis=rot_axis)
 
     @property
     def scan_size(self):
