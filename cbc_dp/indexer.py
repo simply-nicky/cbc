@@ -18,7 +18,6 @@ class FrameStreaks():
     """
     def __init__(self, lines, exp_set):
         self.raw_lines, self.exp_set = lines, exp_set
-        self.lines = self.raw_lines * self.exp_set.pix_size - self.exp_set.smp_pos[:2]
 
     @property
     def kin(self):
@@ -26,12 +25,7 @@ class FrameStreaks():
 
     @property
     def size(self):
-        return self.lines.shape[0]
-
-    @property
-    def taus(self):
-        taus = (self.lines[:, 1] - self.lines[:, 0])
-        return taus / np.sqrt(taus[:, 0]**2 + taus[:, 1]**2)[:, np.newaxis]
+        return self.raw_lines.shape[0]
 
     def __iter__(self):
         for line in self.raw_lines:
@@ -44,21 +38,24 @@ class FrameStreaks():
         """
         Return indexing points
         """
-        products = self.lines[:, 0, 1] * self.taus[:, 0] - self.lines[:, 0, 0] * self.taus[:, 1]
-        return np.stack((-self.taus[:, 1] * products, self.taus[:, 0] * products), axis=1)
+        lines = self.raw_lines * self.exp_set.pix_size - self.exp_set.smp_pos[:2]
+        taus = lines[:, 1] - lines[:, 0]
+        taus = taus / np.sqrt(taus[:, 0]**2 + taus[:, 1]**2)[:, np.newaxis]
+        products = lines[:, 0, 1] * taus[:, 0] - lines[:, 0, 0] * taus[:, 1]
+        return np.stack((-taus[:, 1] * products, taus[:, 0] * products), axis=1)
 
     def kout(self):
         """
         Return reciprocal vectors of detected diffraction streaks.
         """
-        kout = self.exp_set.kout_exp(self.lines.mean(axis=1))
+        kout = self.exp_set.kout_exp(self.raw_lines.mean(axis=1))
         return RecVectors(kout=kout, kin=self.kin)
 
     def kout_streaks(self):
         """
         Return reciprocal vectors of detected diffraction streaks.
         """
-        kout = self.exp_set.kout_exp(self.lines)
+        kout = self.exp_set.kout_exp(self.raw_lines)
         return RecVectors(kout=kout, kin=np.tile(self.kin[:, None], (1, 2, 1)))
 
     def kout_index(self):
