@@ -166,20 +166,19 @@ class RectModel(ABCModel):
     Rectangular aperture convergent beam diffraction pattern generator class
 
     rec_lat - RecLattice class object
-    num_ap = [na_x, na_y] - x- and y-coordinates of the incoming beam numerical aperture
+    kin = [[kin_x_min, kin_y_min], [kin_x_max, kin_y_max]] - lens' pupil bounds
     """
-    def __init__(self, rec_lat, num_ap):
-        self.num_ap = num_ap
+    def __init__(self, rec_lat, kin):
+        self.kin = kin
         super(RectModel, self).__init__(rec_lat)
 
     def _init_mask(self):
         self._source_lines, self.mask = utils.model_source_lines(source=self.rec_lat.source,
                                                                  rec_vec=self.rec_lat.rec_vec,
-                                                                 na_x=self.num_ap[0], na_y=self.num_ap[1])
+                                                                 kin=self.kin)
 
     def source_lines(self):
         """
         Return source lines of a rectangular aperture lens
         """
         return self._source_lines
-    

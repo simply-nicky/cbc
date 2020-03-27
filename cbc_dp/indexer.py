@@ -66,34 +66,30 @@ class FrameStreaks():
         kout = self.exp_set.kout_exp(index_pts)
         return RecVectors(kout=kout, kin=self.kin)
 
-    def full_index_refine(self, rec_basis, num_ap, pos_tol=(0.007, 0.014, 0.06), rb_tol=0.12):
+    def full_index_refine(self, rec_basis, pos_tol=(0.007, 0.014, 0.06), rb_tol=0.12):
         """
         Return a population of reciprocal lattice basis vectors matrix refinement problem
 
         rec_basis - reciprocal lattice basis vectors matrix
-        num_ap = [num_ap_x, num_ap_y] - convergent beam numerical apertures in x- and y-axes
         pos_tol - relative sample position tolerance
         rb_tol - lattice basis vectors matrix tolerance
         """
         full_tf = FCBI(streaks=self,
                        rec_basis=rec_basis,
-                       num_ap=num_ap,
                        tol=(pos_tol, rb_tol))
         return pygmo.problem(full_tf)
 
-    def rot_index_refine(self, rec_basis, num_ap, pos_tol=(0.007, 0.014, 0.06), size_tol=0.05, ang_tol=0.09):
+    def rot_index_refine(self, rec_basis, pos_tol=(0.007, 0.014, 0.06), size_tol=0.05, ang_tol=0.09):
         """
         Return a population of reciprocal lattice rotation refinement problem
 
         rec_basis - reciprocal lattice basis vectors matrix
-        num_ap = [num_ap_x, num_ap_y] - convergent beam numerical apertures in x- and y-axes
         pos_tol - relative sample position tolerance
         size_tol - lattice basis vectors length tolerance
         ang_tol - rotation anlges tolerance
         """
         rot_tf = RCBI(streaks=self,
                       rec_basis=rec_basis,
-                      num_ap=num_ap,
                       tol=(pos_tol, size_tol, ang_tol))
         return pygmo.problem(rot_tf)
 
@@ -203,13 +199,12 @@ class ScanStreaks(FrameStreaks):
         return RecVectors(kout=np.concatenate(kout_list),
                           kin=np.concatenate(kin_list))
 
-    def full_index_refine(self, rec_basis, num_ap, n_isl=20, pop_size=50,
-                          gen_num=2000, pos_tol=(0.007, 0.014, 0.06), rb_tol=0.12):
+    def full_index_refine(self, rec_basis, n_isl=20, pop_size=50, gen_num=2000,
+                          pos_tol=(0.007, 0.014, 0.06), rb_tol=0.12):
         """
         Return refinement problems archipelago
 
         rec_basis - preliminary reciprocal lattice basis vectors matrix
-        num_ap = [num_ap_x, num_ap_y] - convergent beam numerical apertures in x- and y-axes
         n_isl - number of islands of one frame
         pop_size - population size
         gen_num - maximum generations number of the refinement algorithm
@@ -220,7 +215,6 @@ class ScanStreaks(FrameStreaks):
         for frame_idx, frame_strks in enumerate(iter(self)):
             frame_basis = rec_basis.dot(self.exp_set.rotation_matrix(frame_idx))
             prob = frame_strks.rot_index_refine(rec_basis=frame_basis,
-                                                num_ap=num_ap,
                                                 pos_tol=pos_tol,
                                                 rb_tol=rb_tol)
             pops = [pygmo.population(size=pop_size, prob=prob, b=pygmo.mp_bfe()) for _ in range(n_isl)]
@@ -228,13 +222,12 @@ class ScanStreaks(FrameStreaks):
                 archi.push_back(algo=pygmo.de(gen_num), pop=pop)
         return archi
 
-    def rot_index_refine(self, rec_basis, num_ap, n_isl=20, pop_size=50, gen_num=2000,
+    def rot_index_refine(self, rec_basis, n_isl=20, pop_size=50, gen_num=2000,
                          pos_tol=(0.007, 0.014, 0.06), size_tol=0.05, ang_tol=0.09):
         """
         Return refinement problems archipelago
 
         rec_basis - preliminary reciprocal lattice basis vectors matrix
-        num_ap = [num_ap_x, num_ap_y] - convergent beam numerical apertures in x- and y-axes
         n_isl - number of islands of one frame
         pop_size - population size
         gen_num - maximum generations number of the refinement algorithm
@@ -246,7 +239,6 @@ class ScanStreaks(FrameStreaks):
         for frame_idx, frame_strks in enumerate(iter(self)):
             frame_basis = rec_basis.dot(self.exp_set.rotation_matrix(frame_idx))
             prob = frame_strks.rot_index_refine(rec_basis=frame_basis,
-                                                num_ap=num_ap,
                                                 pos_tol=pos_tol,
                                                 size_tol=size_tol,
                                                 ang_tol=ang_tol)
@@ -348,9 +340,9 @@ class AbcCBI(metaclass=ABCMeta):
     mat_shape = (3, 3)
     lower_b, upper_b = None, None
 
-    def __init__(self, streaks, num_ap, pen_coeff):
+    def __init__(self, streaks, pen_coeff):
         self.lines, self.exp_set = streaks.raw_lines * streaks.exp_set.pix_size, streaks.exp_set
-        self.num_ap, self.pen_coeff = num_ap, pen_coeff
+        self.pen_coeff = pen_coeff
 
     @abstractmethod
     def rec_basis(self, vec):
@@ -381,8 +373,8 @@ class AbcCBI(metaclass=ABCMeta):
         """
         Return the indices of the optimal reciprocal lattice voting vectors
         """
-        return utils.fitness_idxs(vot_vec=vot_vec, kout_exp=kout_exp, na_x=self.num_ap[0],
-                                  na_y=self.num_ap[1], pen_coeff=self.pen_coeff)
+        return utils.fitness_idxs(vot_vec=vot_vec, kout_exp=kout_exp, kin=self.exp_set.kin,
+                                  pen_coeff=self.pen_coeff)
 
     def get_bounds(self):
         """
@@ -396,8 +388,8 @@ class AbcCBI(metaclass=ABCMeta):
         """
         kout_exp = self.kout_exp(vec)
         vot_vec = self.voting_vectors(vec, kout_exp)
-        return [utils.fitness(vot_vec=vot_vec, kout_exp=kout_exp, na_x=self.num_ap[0],
-                              na_y=self.num_ap[1], pen_coeff=self.pen_coeff)]
+        return [utils.fitness(vot_vec=vot_vec, kout_exp=kout_exp, kin=self.exp_set.kin,
+                              pen_coeff=self.pen_coeff)]
 
     def hkl_idxs(self, vec):
         """
@@ -433,8 +425,8 @@ class FrameCBI(AbcCBI):
     tol - tolerance defining vector bounds
     pen_coeff - fitness penalty coefficient
     """
-    def __init__(self, streaks, num_ap, rec_basis, tol, pen_coeff):
-        super(FrameCBI, self).__init__(streaks, num_ap, pen_coeff)
+    def __init__(self, streaks, rec_basis, tol, pen_coeff):
+        super(FrameCBI, self).__init__(streaks, pen_coeff)
         self._init_bounds(rec_basis, tol)
 
     @abstractmethod
@@ -445,51 +437,51 @@ class FrameCBI(AbcCBI):
         """
         Generate the experimentally measured diffraction streaks outcoming wavevectors of a frame
         """
-        return utils.kout_frame(lines=self.lines, x0=vec[0], y0=vec[1], z0=vec[2])
+        return utils.kout_frame(streaks=self.lines, pt0=vec[:3])
 
     def voting_vectors(self, vec, kout_exp):
         """
         Return the reciprocal lattice voting points for the given experimental outcoming
         wavevectors kout_exp
         """
-        return utils.voting_vectors_f(kout_exp=kout_exp.mean(axis=1), rec_basis=self.rec_basis(vec),
-                                      na_x=self.num_ap[0], na_y=self.num_ap[1])
+        return utils.vot_vec_frame(kout_exp=kout_exp.mean(axis=1), rec_basis=self.rec_basis(vec),
+                                   kin=self.exp_set.kin)
 
     def voting_hkl(self, vec, kout_exp):
         """
         Return the reciprocal lattice voting hkl indices for the given experimental outcoming
         wavevectors kout_exp
         """
-        return utils.voting_idxs_f(kout_exp=kout_exp.mean(axis=1), rec_basis=self.rec_basis(vec),
-                                   na_x=self.num_ap[0], na_y=self.num_ap[1])
+        return utils.vot_idxs_frame(kout_exp=kout_exp.mean(axis=1), rec_basis=self.rec_basis(vec),
+                                    kin=self.exp_set.kin)
 
-    def good_idxs(self, vec, na_ext):
-        """
-        Return indices of good streaks lying inside extended pupil bounds na_ext
-        """
-        return utils.reduce_streaks(kout_exp=self.kout_exp(vec), hkl_idxs=self.hkl_idxs(vec),
-                                    rec_basis=self.rec_basis(vec), na_x=self.num_ap[0], na_y=self.num_ap[1],
-                                    na_ext_x=na_ext[0], na_ext_y=na_ext[1], pen_coeff=self.pen_coeff)
+    # def good_idxs(self, vec, na_ext):
+    #     """
+    #     Return indices of good streaks lying inside extended pupil bounds na_ext
+    #     """
+    #     return utils.reduce_streaks(kout_exp=self.kout_exp(vec), hkl_idxs=self.hkl_idxs(vec),
+    #                                 rec_basis=self.rec_basis(vec), na_x=self.num_ap[0], na_y=self.num_ap[1],
+    #                                 na_ext_x=na_ext[0], na_ext_y=na_ext[1], pen_coeff=self.pen_coeff)
 
-    def i_sigma(self, vec, cor_data, background, structure, width, na_ext):
-        """
-        Return good streaks intensities and Poisson noise
+    # def i_sigma(self, vec, cor_data, background, structure, width, na_ext):
+    #     """
+    #     Return good streaks intensities and Poisson noise
 
-        vec - refinement vector
-        cor_data - background subtracted diffraction pattern image
-        background - background image
-        structure - binary structure for binary dilation
-        width - diffraction streaks width
-        """
-        kin = self.kout_exp(vec) - self.rec_vectors(vec)[:, None]
-        source_streaks = self.det_pts(kin[..., 0], kin[..., 1], vec)
-        idxs = self.good_idxs(vec, na_ext)
-        return utils.i_sigma_frame(streaks=self.lines[idxs], source_streaks=source_streaks[idxs], cor_data=cor_data,
-                                   background=background, structure=structure, width=width)
+    #     vec - refinement vector
+    #     cor_data - background subtracted diffraction pattern image
+    #     background - background image
+    #     structure - binary structure for binary dilation
+    #     width - diffraction streaks width
+    #     """
+    #     kin = self.kout_exp(vec) - self.rec_vectors(vec)[:, None]
+    #     source_streaks = self.det_pts(kin[..., 0], kin[..., 1], vec)
+    #     idxs = self.good_idxs(vec, na_ext)
+    #     return utils.i_sigma_frame(streaks=self.lines[idxs], source_streaks=source_streaks[idxs], cor_data=cor_data,
+    #                                background=background, structure=structure, width=width)
 
 class ScanCBI(AbcCBI):
     """
-    Abstract scan refinement class
+    Abstract scan refinement class (incomplete)
 
     streaks - ScanStreaks class object
     num_ap = [na_x, na_y] - convergent beam numerical apertures in x- and y-axis
@@ -497,8 +489,8 @@ class ScanCBI(AbcCBI):
     tol = [pos_tol, th_tol, rot_tol, rb_tol] - tolerance defining vector bounds
     pen_coeff - fitness penalty coefficient
     """
-    def __init__(self, streaks, num_ap, rec_basis, tol, pen_coeff=10):
-        super(ScanCBI, self).__init__(streaks, num_ap, pen_coeff)
+    def __init__(self, streaks, rec_basis, tol, pen_coeff=10):
+        super(ScanCBI, self).__init__(streaks, pen_coeff)
         self.frame_idxs = streaks.frame_idxs
         self._init_bounds(rec_basis.ravel(), tol)
 
@@ -510,43 +502,6 @@ class ScanCBI(AbcCBI):
         rb_bounds = np.stack(((1 - tol[1]) * rec_basis, (1 + tol[1]) * rec_basis))
         self.lower_b = np.concatenate((pt0_lb, th_lb, rot_lb, rb_bounds.min(axis=0)))
         self.upper_b = np.concatenate((pt0_ub, th_ub, rot_ub, rb_bounds.max(axis=0)))
-
-    def rec_basis(self, vec):
-        """
-        Return rectangular lattice basis vectors for a vector
-        """
-        return vec[4 * self.exp_set.scan_size + 2:].reshape(self.mat_shape)
-
-    def kout_exp(self, vec):
-        """
-        Generate the experimentally measured diffraction streaks outcoming wavevectors of a scan
-        """
-        return utils.kout_scan(lines=self.lines, frame_idxs=self.frame_idxs,
-                               x0=vec[0:self.exp_set.scan_size],
-                               y0=vec[self.exp_set.scan_size:2*self.exp_set.scan_size],
-                               z0=vec[2*self.exp_set.scan_size:3*self.exp_set.scan_size])
-
-    def voting_vectors(self, vec, kout_exp):
-        """
-        Return the reciprocal lattice voting points for the given experimental outcoming
-        wavevectors kout_exp
-        """
-        return utils.voting_vectors_s(kout_exp=kout_exp.mean(axis=1), rec_basis=self.rec_basis(vec),
-                                      thetas=vec[3*self.exp_set.scan_size:4*self.exp_set.scan_size],
-                                      frame_idxs=self.frame_idxs, alpha=vec[4*self.exp_set.scan_size],
-                                      betta=vec[4*self.exp_set.scan_size+1], na_x=self.num_ap[0],
-                                      na_y=self.num_ap[1])
-
-    def voting_hkl(self, vec, kout_exp):
-        """
-        Return the reciprocal lattice voting hkl indices for the given experimental outcoming
-        wavevectors kout_exp
-        """
-        return utils.voting_idxs_s(kout_exp=kout_exp.mean(axis=1), rec_basis=self.rec_basis(vec),
-                                   thetas=vec[3*self.exp_set.scan_size:4*self.exp_set.scan_size],
-                                   frame_idxs=self.frame_idxs, alpha=vec[4*self.exp_set.scan_size],
-                                   betta=vec[4*self.exp_set.scan_size+1], na_x=self.num_ap[0],
-                                   na_y=self.num_ap[1])
 
 class FCBI(FrameCBI):
     """
@@ -563,8 +518,8 @@ class FCBI(FrameCBI):
                                       reciprocal basis matrix tolerances [0.0 - 1.0]
     pen_coeff                       - fitness penalty coefficient
     """
-    def __init__(self, streaks, num_ap, rec_basis, tol=([0.03, 0.03, 0.075], 0.12), pen_coeff=10):
-        super(FCBI, self).__init__(streaks, num_ap, rec_basis.ravel(), tol, pen_coeff)
+    def __init__(self, streaks, rec_basis, tol=([0.03, 0.03, 0.075], 0.12), pen_coeff=10):
+        super(FCBI, self).__init__(streaks, rec_basis.ravel(), tol, pen_coeff)
 
     def _init_bounds(self, rec_basis, tol):
         rb_bounds = np.stack(((1 - tol[1]) * rec_basis, (1 + tol[1]) * rec_basis))
@@ -596,8 +551,8 @@ class RCBI(FrameCBI):
                                           and rotation angles tolerances [0.0 - 1.0]
     pen_coeff                           - fitness penalty coefficient
     """
-    def __init__(self, streaks, num_ap, rec_basis, tol=([0.03, 0.03, 0.075], 0.1, np.radians(5)), pen_coeff=10):
-        super(RCBI, self).__init__(streaks, num_ap, rec_basis, tol, pen_coeff)
+    def __init__(self, streaks, rec_basis, tol=([0.03, 0.03, 0.075], 0.1, np.radians(5)), pen_coeff=10):
+        super(RCBI, self).__init__(streaks, rec_basis, tol, pen_coeff)
 
     def _init_bounds(self, rec_basis, tol):
         self.rec_sizes = np.sqrt((rec_basis**2).sum(axis=-1))

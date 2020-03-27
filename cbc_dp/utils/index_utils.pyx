@@ -87,124 +87,116 @@ def init_source(float_t[:, ::1] rec_vec):
         source[i, 2] =  cos(source_th)
     return np.asarray(rec_abs), np.asarray(rec_th), np.asarray(rec_phi), np.asarray(source)
 
-def model_source_lines(float_t[:, ::1] source, float_t[:, ::1] rec_vec, float_t na_x, float_t na_y):
+def model_source_lines(float_t[:, ::1] source, float_t[:, ::1] rec_vec, float_t[:, ::1] kin):
     """
     Return source lines coordinates for a diffraction streaks model
     source - source line origins
     rec_vec - reciprocal vectors
-    na_x, na_y - x- and y-coordinates of the incoming beam numerical aperture
+    kin = [[kin_x_min, kin_y_min], [kin_x_max, kin_y_max]] - lens' pupil bounds
     """
     cdef:
         int a = rec_vec.shape[0], ii = 0, jj, i, k
-        uint8_t[::1] mask = np.zeros(a, dtype=np.uint8)
         float_t source_prd, coeff1, coeff2, alpha, betta, gamma, delta, sol_1, sol_2, prod_1, prod_2
-        float_t[::1] bounds = np.array([na_x, -na_x, na_y, -na_y], dtype=np.float64)
+        uint8_t[::1] mask = np.zeros(a, dtype=np.uint8)
         float_t[:, :, ::1] source_lines = np.empty((a, 2, 3), dtype=np.float64)
     for i in range(a):
         source_prd = source[i, 0] * rec_vec[i, 0] + source[i, 1] * rec_vec[i, 1] + source[i, 2] * rec_vec[i, 2]
         jj = 0
         for k in range(4):
-            coeff1 = source_prd - bounds[k] * rec_vec[i, k // 2]
+            coeff1 = source_prd - kin[k % 2, k // 2] * rec_vec[i, k // 2]
             coeff2 = rec_vec[i, (3 - k) // 2]
             alpha = coeff2**2 + rec_vec[i, 2]**2
             betta = coeff2 * coeff1
-            gamma = coeff1**2 - rec_vec[i, 2]**2 * (1 - bounds[k]**2)
+            gamma = coeff1**2 - rec_vec[i, 2]**2 * (1 - kin[k % 2, k // 2]**2)
             delta = betta**2 - alpha * gamma
             sol_1 = (betta + sqrt(delta)) / alpha
             prod_1 = (sol_1 * rec_vec[i, (3 - k) // 2] +
-                      bounds[k] * rec_vec[i, k // 2] +
-                      sqrt(1 - bounds[k]**2 - sol_1**2) * rec_vec[i, 2]) - source_prd
+                      kin[k % 2, k // 2] * rec_vec[i, k // 2] +
+                      sqrt(1 - kin[k % 2, k // 2]**2 - sol_1**2) * rec_vec[i, 2]) - source_prd
             sol_2 = (betta - sqrt(delta)) / alpha
             prod_2 = (sol_2 * rec_vec[i, (3 - k) // 2] +
-                      bounds[k] * rec_vec[i, k // 2] +
-                      sqrt(1 - bounds[k]**2 - sol_2**2) * rec_vec[i, 2]) - source_prd
-            if abs(prod_1) < 1e-11 and abs(sol_1) < abs(bounds[3 - k]):
-                source_lines[ii, jj, k // 2] = bounds[k]
+                      kin[k % 2, k // 2] * rec_vec[i, k // 2] +
+                      sqrt(1 - kin[k % 2, k // 2]**2 - sol_2**2) * rec_vec[i, 2]) - source_prd
+            if abs(prod_1) < 1e-11 and sol_1 < kin[1, (3 - k) // 2] and sol_1 > kin[0, (3 - k) // 2]:
+                source_lines[ii, jj, k // 2] = kin[k % 2, k // 2]
                 source_lines[ii, jj, (3 - k) // 2] = sol_1
-                source_lines[ii, jj, 2] = sqrt(1 - bounds[k]**2 - sol_1**2)
+                source_lines[ii, jj, 2] = sqrt(1 - kin[k % 2, k // 2]**2 - sol_1**2)
                 jj += 1
-            if delta > 0 and abs(prod_2) < 1e-11 and abs(sol_2) < abs(bounds[3 - k]):
-                source_lines[ii, jj, k // 2] = bounds[k]
+            if delta > 0 and abs(prod_2) < 1e-11 and sol_2 < kin[1, (3 - k) // 2] and sol_2 > kin[0, (3 - k) // 2]:
+                source_lines[ii, jj, k // 2] = kin[k % 2, k // 2]
                 source_lines[ii, jj, (3 - k) // 2] = sol_2
-                source_lines[ii, jj, 2] = sqrt(1 - bounds[k]**2 - sol_2**2)
+                source_lines[ii, jj, 2] = sqrt(1 - kin[k % 2, k // 2]**2 - sol_2**2)
                 jj += 1
             if jj == 2:
                 mask[i] = 1; ii += 1
                 break
     return np.asarray(source_lines[:ii]), np.asarray(mask).astype(bool)
 
-cdef void kout_line(float_t[:, ::1] line, float_t x0, float_t y0, float_t z0, float_t[:, ::1] kout) nogil:
+cdef void kout_streak(float_t[:, ::1] streak, float_t[::1] pt0, float_t[:, ::1] kout) nogil:
+    """
+    Return outcoming wavevectors of a streak
+
+    streak - detected diffraction streak at the detector [mm]
+    pt = [x0, y0, z0] - sample position relative to the detector [mm]
+    """
     cdef:
         int_t j
         float_t dx, dy, phi, theta
     for j in range(2):
-        dx = line[j, 0] - x0
-        dy = line[j, 1] - y0
+        dx = streak[j, 0] - pt0[0]
+        dy = streak[j, 1] - pt0[1]
         phi = atan2(dy, dx)
-        theta = atan(sqrt(dx**2 + dy**2) / z0)
+        theta = atan(sqrt(dx**2 + dy**2) / pt0[2])
         kout[j, 0] = sin(theta) * cos(phi)
         kout[j, 1] = sin(theta) * sin(phi)
         kout[j, 2] = cos(theta)
 
-def kout_frame(float_t[:, :, ::1] lines, float_t x0, float_t y0, float_t z0):
+def kout_frame(float_t[:, :, ::1] streaks, float_t[::1] pt0):
     """
     Return outcoming wavevectors of a pattern
     
-    lines - detected diffraction streaks lines at the detector [mm]
-    x0, y0, z0 - sample position relative to the detector [mm]
+    streaks - detected diffraction streaks at the detector [mm]
+    pt0 = [x0, y0, z0] - sample position relative to the detector [mm]
     """
     cdef:
-        int_t a = lines.shape[0], i
+        int_t a = streaks.shape[0], i
         float_t[:, :, ::1] kout = np.empty((a, 2, 3), dtype=np.float64)
     for i in range(a):
-        kout_line(lines[i], x0, y0, z0, kout[i])
+        kout_streak(streaks[i], pt0, kout[i])
     return np.asarray(kout)
 
-def kout_scan(float_t[:, :, ::1] lines, int_t[::1] frame_idxs, float_t[::1] x0,
-              float_t[::1] y0, float_t[::1] z0):
+def vot_vec_frame(float_t[:, ::1] kout_exp, float_t[:, ::1] rec_basis, float_t[:, ::1] kin):
     """
-    Return outcoming wavevectors of a scan
-    
-    lines - detected diffraction streaks lines at the detector [mm]
-    frame_idxs - frame indices
-    x0, y0, z0 - sample position relative to the detector [mm]
-    """
-    cdef:
-        int_t a = lines.shape[0], i, idx
-        float_t[:, :, ::1] kout = np.empty((a, 2, 3), dtype=np.float64)
-    for i in range(a):
-        idx = frame_idxs[i]
-        kout_line(lines[i], x0[idx], y0[idx], z0[idx], kout[i])
-    return np.asarray(kout)
-
-def voting_vectors_f(float_t[:, ::1] kout_exp, float_t[:, ::1] rec_basis, float_t na_x, float_t na_y):
-    """
-    Return reciprocal lattice voting points of a pattern
+    Return reciprocal lattice voting points of a frame
 
     kout_exp - experimental outcoming wavevectors
     rec_basis - reciprocal lattice basis vectors
-    na_x, na_y - x- and y-coordinates of the incoming beam numerical aperture 
+    kin = [[kin_x_min, kin_y_min], [kin_x_max, kin_y_max]] - lens' pupil bounds
     """
     cdef:
-        int_t a = kout_exp.shape[0], i, ii, jj, kk, h_orig, k_orig, l_orig, h_ind, k_ind, l_ind, ind, h_size, k_size, l_size
-        float_t max_na = max(na_x, na_y)**2 / 2, rec_x, rec_y, rec_z, rec_abs, source_th, source_phi
+        int_t a = kout_exp.shape[0], i, ii, jj, kk, h_orig, k_orig, l_orig
+        int_t h_ind, k_ind, l_ind, ind, h_size, k_size, l_size
+        float_t na_x = (kin[1, 0] - kin[0, 0]) / 2, na_y = (kin[1, 1] - kin[0, 1]) / 2
+        float_t na_z = max(na_x, na_y)**2 / 2
+        float_t kin_x = (kin[1, 0] + kin[0, 0]) / 2, kin_y = (kin[1, 1] + kin[0, 1]) / 2
+        float_t kin_z = sqrt(1 - kin_x**2 - kin_y**2)
         float_t[:, ::1] inv_basis = np.empty((3, 3), dtype=np.float64)
         float_t[:, :, ::1] vot_vec
     inverse_matrix(rec_basis, inv_basis)
-    h_size = int(ceil(abs(na_x * inv_basis[0, 0] + na_y * inv_basis[1, 0] + max_na * inv_basis[2, 0])))
-    k_size = int(ceil(abs(na_x * inv_basis[0, 1] + na_y * inv_basis[1, 1] + max_na * inv_basis[2, 1])))
-    l_size = int(ceil(abs(na_x * inv_basis[0, 2] + na_y * inv_basis[1, 2] + max_na * inv_basis[2, 2])))
+    h_size = int(ceil(abs(na_x * inv_basis[0, 0] + na_y * inv_basis[1, 0] + na_z * inv_basis[2, 0])))
+    k_size = int(ceil(abs(na_x * inv_basis[0, 1] + na_y * inv_basis[1, 1] + na_z * inv_basis[2, 1])))
+    l_size = int(ceil(abs(na_x * inv_basis[0, 2] + na_y * inv_basis[1, 2] + na_z * inv_basis[2, 2])))
     vot_vec = np.empty((a, 8 * h_size * k_size * l_size, 3), dtype=np.float64)
     for i in range(a):
-        h_orig = int(floor(kout_exp[i, 0] * inv_basis[0, 0] +
-                      kout_exp[i, 1] * inv_basis[1, 0] +
-                      (kout_exp[i, 2] - 1) * inv_basis[2, 0]))
-        k_orig = int(floor(kout_exp[i, 0] * inv_basis[0, 1] +
-                      kout_exp[i, 1] * inv_basis[1, 1] +
-                      (kout_exp[i, 2] - 1) * inv_basis[2, 1]))
-        l_orig = int(floor(kout_exp[i, 0] * inv_basis[0, 2] +
-                      kout_exp[i, 1] * inv_basis[1, 2] +
-                      (kout_exp[i, 2] - 1) * inv_basis[2, 2]))
+        h_orig = int(floor((kout_exp[i, 0] - kin_x) * inv_basis[0, 0] +
+                           (kout_exp[i, 1] - kin_y) * inv_basis[1, 0] +
+                           (kout_exp[i, 2] - kin_z) * inv_basis[2, 0]))
+        k_orig = int(floor((kout_exp[i, 0] - kin_x) * inv_basis[0, 1] +
+                           (kout_exp[i, 1] - kin_y) * inv_basis[1, 1] +
+                           (kout_exp[i, 2] - kin_z) * inv_basis[2, 1]))
+        l_orig = int(floor((kout_exp[i, 0] - kin_x) * inv_basis[0, 2] +
+                           (kout_exp[i, 1] - kin_y) * inv_basis[1, 2] +
+                           (kout_exp[i, 2] - kin_z) * inv_basis[2, 2]))
         for ii in range(2 * h_size):
             for jj in range(2 * k_size):
                 for kk in range(2 * l_size):
@@ -217,34 +209,38 @@ def voting_vectors_f(float_t[:, ::1] kout_exp, float_t[:, ::1] rec_basis, float_
                     vot_vec[i, ind, 2] = h_ind * rec_basis[0, 2] + k_ind * rec_basis[1, 2] + l_ind * rec_basis[2, 2]
     return np.array(vot_vec)
 
-def voting_idxs_f(float_t[:, ::1] kout_exp, float_t[:, ::1] rec_basis, float_t na_x, float_t na_y):
+def vot_idxs_frame(float_t[:, ::1] kout_exp, float_t[:, ::1] rec_basis, float_t[:, ::1] kin):
     """
-    Return voting points hkl indices of a pattern
+    Return voting points hkl indices of a frame
 
     kout_exp - experimental outcoming wavevectors
     rec_basis - reciprocal lattice basis vectors
     na_x, na_y - x- and y-coordinates of the incoming beam numerical aperture 
     """
     cdef:
-        int_t a = kout_exp.shape[0], i, ii, jj, kk, h_orig, k_orig, l_orig, h_ind, k_ind, l_ind, ind, h_size, k_size, l_size
-        float_t max_na = max(na_x, na_y)**2 / 2, rec_x, rec_y, rec_z, rec_abs, source_th, source_phi
+        int_t a = kout_exp.shape[0], i, ii, jj, kk, h_orig, k_orig, l_orig
+        int_t h_ind, k_ind, l_ind, ind, h_size, k_size, l_size
+        float_t na_x = (kin[1, 0] - kin[0, 0]) / 2, na_y = (kin[1, 1] - kin[0, 1]) / 2
+        float_t na_z = max(na_x, na_y)**2 / 2
+        float_t kin_x = (kin[1, 0] + kin[0, 0]) / 2, kin_y = (kin[1, 1] + kin[0, 1]) / 2
+        float_t kin_z = sqrt(1 - kin_x**2 - kin_y**2)
         float_t[:, ::1] inv_basis = np.empty((3, 3), dtype=np.float64)
         int_t[:, :, ::1] vot_idxs
     inverse_matrix(rec_basis, inv_basis)
-    h_size = int(ceil(abs(na_x * inv_basis[0, 0] + na_y * inv_basis[1, 0] + max_na * inv_basis[2, 0])))
-    k_size = int(ceil(abs(na_x * inv_basis[0, 1] + na_y * inv_basis[1, 1] + max_na * inv_basis[2, 1])))
-    l_size = int(ceil(abs(na_x * inv_basis[0, 2] + na_y * inv_basis[1, 2] + max_na * inv_basis[2, 2])))
+    h_size = int(ceil(abs(na_x * inv_basis[0, 0] + na_y * inv_basis[1, 0] + na_z * inv_basis[2, 0])))
+    k_size = int(ceil(abs(na_x * inv_basis[0, 1] + na_y * inv_basis[1, 1] + na_z * inv_basis[2, 1])))
+    l_size = int(ceil(abs(na_x * inv_basis[0, 2] + na_y * inv_basis[1, 2] + na_z * inv_basis[2, 2])))
     vot_idxs = np.empty((a, 8 * h_size * k_size * l_size, 3), dtype=np.int64)
     for i in range(a):
-        h_orig = int(floor(kout_exp[i, 0] * inv_basis[0, 0] +
-                      kout_exp[i, 1] * inv_basis[1, 0] +
-                      (kout_exp[i, 2] - 1) * inv_basis[2, 0]))
-        k_orig = int(floor(kout_exp[i, 0] * inv_basis[0, 1] +
-                      kout_exp[i, 1] * inv_basis[1, 1] +
-                      (kout_exp[i, 2] - 1) * inv_basis[2, 1]))
-        l_orig = int(floor(kout_exp[i, 0] * inv_basis[0, 2] +
-                      kout_exp[i, 1] * inv_basis[1, 2] +
-                      (kout_exp[i, 2] - 1) * inv_basis[2, 2]))
+        h_orig = int(floor((kout_exp[i, 0] - kin_x) * inv_basis[0, 0] +
+                           (kout_exp[i, 1] - kin_y) * inv_basis[1, 0] +
+                           (kout_exp[i, 2] - kin_z) * inv_basis[2, 0]))
+        k_orig = int(floor((kout_exp[i, 0] - kin_x) * inv_basis[0, 1] +
+                           (kout_exp[i, 1] - kin_y) * inv_basis[1, 1] +
+                           (kout_exp[i, 2] - kin_z) * inv_basis[2, 1]))
+        l_orig = int(floor((kout_exp[i, 0] - kin_x) * inv_basis[0, 2] +
+                           (kout_exp[i, 1] - kin_y) * inv_basis[1, 2] +
+                           (kout_exp[i, 2] - kin_z) * inv_basis[2, 2]))
         for ii in range(2 * h_size):
             for jj in range(2 * k_size):
                 for kk in range(2 * l_size):
@@ -254,224 +250,98 @@ def voting_idxs_f(float_t[:, ::1] kout_exp, float_t[:, ::1] rec_basis, float_t n
                     vot_idxs[i, ind, 2] = l_orig + kk - l_size + 1
     return np.array(vot_idxs)
 
-def voting_vectors_s(float_t[:, ::1] kout_exp, float_t[:, ::1] rec_basis, float_t[::1] thetas,
-                     int_t[::1] frame_idxs, float_t alpha, float_t betta, float_t na_x, float_t na_y):
+cdef float_t frame_distance(float_t x, float_t y, float_t[:, ::1] frame) nogil:
     """
-    Return reciprocal lattice voting points of a scan
-
-    kout_exp - experimental outcoming wavevectors
-    rec_basis - reciprocal lattice basis vectors
-    thetas - tilt angles
-    frame_idxs - frame indices
-    alpha, betta - spherical angles of axis of rotation
-    na_x, na_y - x- and y-coordinates of the incoming beam numerical aperture 
+    Return distance to a frame for a point lying outside the frame
     """
     cdef:
-        int_t a = kout_exp.shape[0], idx = frame_idxs[0], i, ii, jj, kk
-        int_t h_orig, k_orig, l_orig, h_ind, k_ind, l_ind, ind, h_size, k_size, l_size
-        float_t max_na = max(na_x, na_y)**2 / 2, rec_x, rec_y, rec_z, rec_abs, source_th, source_phi
-        float_t[:, ::1] frame_basis = np.empty((3, 3), dtype=np.float64)
-        float_t[:, ::1] inv_basis = np.empty((3, 3), dtype=np.float64)
-        float_t[:, :, :] vot_vec
-    rotate_matrix(rec_basis, frame_basis, alpha, betta, thetas[idx])
-    inverse_matrix(frame_basis, inv_basis)
-    h_size = int(ceil(abs(na_x * inv_basis[0, 0] + na_y * inv_basis[1, 0] + max_na * inv_basis[2, 0])))
-    k_size = int(ceil(abs(na_x * inv_basis[0, 1] + na_y * inv_basis[1, 1] + max_na * inv_basis[2, 1])))
-    l_size = int(ceil(abs(na_x * inv_basis[0, 2] + na_y * inv_basis[1, 2] + max_na * inv_basis[2, 2])))
-    vot_vec = np.empty((a, 8 * h_size * k_size * l_size, 3), dtype=np.float64)
-    for i in range(a):
-        if idx != frame_idxs[i]:
-            idx = frame_idxs[i]
-            rotate_matrix(rec_basis, frame_basis, alpha, betta, thetas[idx])
-            inverse_matrix(frame_basis, inv_basis)
-        h_orig = int(floor(kout_exp[i, 0] * inv_basis[0, 0] +
-                           kout_exp[i, 1] * inv_basis[1, 0] +
-                           (kout_exp[i, 2] - 1) * inv_basis[2, 0]))
-        k_orig = int(floor(kout_exp[i, 0] * inv_basis[0, 1] +
-                           kout_exp[i, 1] * inv_basis[1, 1] +
-                           (kout_exp[i, 2] - 1) * inv_basis[2, 1]))
-        l_orig = int(floor(kout_exp[i, 0] * inv_basis[0, 2] +
-                           kout_exp[i, 1] * inv_basis[1, 2] +
-                           (kout_exp[i, 2] - 1) * inv_basis[2, 2]))
-        for ii in range(2 * h_size):
-            for jj in range(2 * k_size):
-                for kk in range(2 * l_size):
-                    ind = 4 * k_size * l_size * ii + 2 * l_size * jj + kk
-                    h_ind = h_orig + ii - h_size + 1
-                    k_ind = k_orig + jj - k_size + 1
-                    l_ind = l_orig + kk - l_size + 1
-                    vot_vec[i, ind, 0] = h_ind * frame_basis[0, 0] + k_ind * frame_basis[1, 0] + l_ind * frame_basis[2, 0]
-                    vot_vec[i, ind, 1] = h_ind * frame_basis[0, 1] + k_ind * frame_basis[1, 1] + l_ind * frame_basis[2, 1]
-                    vot_vec[i, ind, 2] = h_ind * frame_basis[0, 2] + k_ind * frame_basis[1, 2] + l_ind * frame_basis[2, 2]
-    return np.asarray(vot_vec)
+        float_t dx = 0, dy = 0
+    if x > frame[1, 0]:
+        dx += (x - frame[1, 0])
+    if y > frame[1, 1]:
+        dy += (y - frame[1, 1])
+    if x < frame[0, 0]:
+        dx += (frame[0, 0] - x)
+    if y < frame[0, 1]:
+        dy += (frame[0, 1] - y)
+    return sqrt(dx**2 + dy**2)
 
-def voting_idxs_s(float_t[:, ::1] kout_exp, float_t[:, ::1] rec_basis, float_t[::1] thetas,
-                int_t[::1] frame_idxs, float_t alpha, float_t betta, float_t na_x, float_t na_y):
+cdef float_t fit_streak(float_t[::1] vot_vec, float_t[:, ::1] kout_exp, float_t[:, ::1] kin,
+                        float_t tau_x, float_t tau_y, float_t pen_coeff):
     """
-    Return voting points hkl indices of a scan
-
-    kout_exp - experimental outcoming wavevectors
-    rec_basis - reciprocal lattice basis vectors
-    thetas - tilt angles
-    frame_idxs - frame indices
-    alpha, betta - spherical angles of axis of rotation
-    na_x, na_y - x- and y-coordinates of the incoming beam numerical aperture 
-    """
-    cdef:
-        int_t a = kout_exp.shape[0], idx = frame_idxs[0], i, ii, jj, kk
-        int_t h_orig, k_orig, l_orig, h_ind, k_ind, l_ind, ind, h_size, k_size, l_size
-        float_t  max_na = max(na_x, na_y)**2 / 2, rec_x, rec_y, rec_z, rec_abs, source_th, source_phi
-        float_t[:, ::1] frame_basis = np.empty((3, 3), dtype=np.float64)
-        float_t[:, ::1] inv_basis = np.empty((3, 3), dtype=np.float64)
-        int_t[:, :, ::1] vot_idxs
-    rotate_matrix(rec_basis, frame_basis, alpha, betta, thetas[idx])
-    inverse_matrix(frame_basis, inv_basis)
-    h_size = int(ceil(abs(na_x * inv_basis[0, 0] + na_y * inv_basis[1, 0] + max_na * inv_basis[2, 0])))
-    k_size = int(ceil(abs(na_x * inv_basis[0, 1] + na_y * inv_basis[1, 1] + max_na * inv_basis[2, 1])))
-    l_size = int(ceil(abs(na_x * inv_basis[0, 2] + na_y * inv_basis[1, 2] + max_na * inv_basis[2, 2])))
-    vot_idxs = np.empty((a, 8 * h_size * k_size * l_size, 3), dtype=np.int64)
-    for i in range(a):
-        if idx != frame_idxs[i]:
-            idx = frame_idxs[i]
-            rotate_matrix(rec_basis, frame_basis, alpha, betta, thetas[idx])
-            inverse_matrix(frame_basis, inv_basis)
-        h_orig = int(floor(kout_exp[i, 0] * inv_basis[0, 0] +
-                           kout_exp[i, 1] * inv_basis[1, 0] +
-                           (kout_exp[i, 2] - 1) * inv_basis[2, 0]))
-        k_orig = int(floor(kout_exp[i, 0] * inv_basis[0, 1] +
-                           kout_exp[i, 1] * inv_basis[1, 1] +
-                           (kout_exp[i, 2] - 1) * inv_basis[2, 1]))
-        l_orig = int(floor(kout_exp[i, 0] * inv_basis[0, 2] +
-                           kout_exp[i, 1] * inv_basis[1, 2] +
-                           (kout_exp[i, 2] - 1) * inv_basis[2, 2]))
-        for ii in range(2 * h_size):
-            for jj in range(2 * k_size):
-                for kk in range(2 * l_size):
-                    ind = 4 * k_size * l_size * ii + 2 * l_size * jj + kk
-                    vot_idxs[i, ind, 0] = h_orig + ii - h_size + 1
-                    vot_idxs[i, ind, 1] = k_orig + jj - k_size + 1
-                    vot_idxs[i, ind, 2] = l_orig + kk - l_size + 1
-    return np.array(vot_idxs)
-
-def fitness(float_t[:, :, ::1] vot_vec, float_t[:, :, ::1] kout_exp, float_t na_x, float_t na_y, float_t pen_coeff):
-    """
-    Return target function fitness value for a given point with the penalty added
+    Return fitness value for a streak
 
     vot_vec - voting reciprocal lattice vectors
     kout_exp - experimental outcoming wavevectors
-    na_x, na_y - x- and y-coordinates of the incoming beam numerical aperture 
+    kin = [[kin_x_min, kin_y_min], [kin_x_max, kin_y_max]] - lens' pupil bounds
+    [tau_x, tau_y] - diffraction streak orientation vector
+    pen_coeff - penalty coefficient
+    """
+    cdef:
+        float_t rec_abs, source_th, source_phi, source_x, source_y
+        float_t dk_x, dk_y, fit_x, fit_y, fit, d0, d1
+    rec_abs = sqrt(vot_vec[0]**2 + vot_vec[1]**2 + vot_vec[2]**2)
+    if rec_abs != 0:
+        source_th = acos(-vot_vec[2] / rec_abs) - acos(rec_abs / 2)
+        source_phi = atan2(vot_vec[1], vot_vec[0])
+        source_x = vot_vec[0] - sin(source_th) * cos(source_phi)
+        source_y = vot_vec[1] - sin(source_th) * sin(source_phi)
+        dk_x = source_x - (kout_exp[0, 0] + kout_exp[1, 0]) / 2
+        dk_y = source_y - (kout_exp[0, 1] + kout_exp[1, 1]) / 2
+        fit_x = (dk_x * tau_y**2 - dk_y * tau_y * tau_x) / (tau_x**2 + tau_y**2)
+        fit_y = (dk_y * tau_y**2 - dk_x * tau_x * tau_y) / (tau_x**2 + tau_y**2)
+        fit = sqrt(fit_x**2 + fit_y**2)
+    else:
+        fit = 0
+
+    d0 = frame_distance(kout_exp[0, 0] - vot_vec[0], kout_exp[0, 1] - vot_vec[1], kin)
+    d1 = frame_distance(kout_exp[1, 0] - vot_vec[0], kout_exp[1, 1] - vot_vec[1], kin)
+    fit += pen_coeff * (d0 + d1)
+    return fit
+
+def fitness(float_t[:, :, ::1] vot_vec, float_t[:, :, ::1] kout_exp, float_t[:, ::1] kin, float_t pen_coeff):
+    """
+    Return fitness value for a frame
+
+    vot_vec - voting reciprocal lattice vectors
+    kout_exp - experimental outcoming wavevectors
+    kin = [[kin_x_min, kin_y_min], [kin_x_max, kin_y_max]] - lens' pupil bounds
     pen_coeff - penalty coefficient
     """
     cdef:
         int a = vot_vec.shape[0], b = vot_vec.shape[1], i, j
-        float_t rec_abs, source_th, source_phi, source_x, source_y
-        float_t tau_x, tau_y, dk_x, dk_y, fit_x, fit_y, kin_x, kin_y
-        float_t fitness = 0.0, min_fit, pt_fit
+        float_t fitness = 0.0, min_fit, pt_fit, tau_x, tau_y
     for i in range(a):
         tau_x = kout_exp[i, 1, 0] - kout_exp[i, 0, 0]
         tau_y = kout_exp[i, 1, 1] - kout_exp[i, 0, 1]
-        rec_abs = sqrt(vot_vec[i, 0, 0]**2 + vot_vec[i, 0, 1]**2 + vot_vec[i, 0, 2]**2)
-        if rec_abs != 0:
-            source_th = acos(-vot_vec[i, 0, 2] / rec_abs) - acos(rec_abs / 2)
-            source_phi = atan2(vot_vec[i, 0, 1], vot_vec[i, 0, 0])
-            source_x = vot_vec[i, 0, 0] - sin(source_th) * cos(source_phi)
-            source_y = vot_vec[i, 0, 1] - sin(source_th) * sin(source_phi)
-            dk_x = source_x - (kout_exp[i, 0, 0] + kout_exp[i, 1, 0]) / 2
-            dk_y = source_y - (kout_exp[i, 0, 1] + kout_exp[i, 1, 1]) / 2
-            fit_x = (dk_x * tau_y**2 - dk_y * tau_y * tau_x) / (tau_x**2 + tau_y**2)
-            fit_y = (dk_y * tau_y**2 - dk_x * tau_x * tau_y) / (tau_x**2 + tau_y**2)
-            min_fit = sqrt(fit_x**2 + fit_y**2)
-        else:
-            min_fit = 0
-        kin_x = abs(vot_vec[i, 0, 0] - (kout_exp[i, 0, 0] + kout_exp[i, 1, 0]) / 2)
-        if kin_x > na_x:
-            min_fit += pen_coeff * (kin_x - na_x)
-        kin_y = abs(vot_vec[i, 0, 1] - (kout_exp[i, 0, 1] + kout_exp[i, 1, 1]) / 2)
-        if kin_y > na_y:
-            min_fit += pen_coeff * (kin_y - na_y)
+        min_fit = fit_streak(vot_vec[i, 0], kout_exp[i], kin, tau_x, tau_y, pen_coeff)
         for j in range(1, b):
-            rec_abs = sqrt(vot_vec[i, j, 0]**2 + vot_vec[i, j, 1]**2 + vot_vec[i, j, 2]**2)
-            if rec_abs != 0:
-                source_th = acos(-vot_vec[i, j, 2] / rec_abs) - acos(rec_abs / 2)
-                source_phi = atan2(vot_vec[i, j, 1], vot_vec[i, j, 0])
-                source_x = vot_vec[i, j, 0] - sin(source_th) * cos(source_phi)
-                source_y = vot_vec[i, j, 1] - sin(source_th) * sin(source_phi)
-                dk_x = source_x - (kout_exp[i, 0, 0] + kout_exp[i, 1, 0]) / 2
-                dk_y = source_y - (kout_exp[i, 0, 1] + kout_exp[i, 1, 1]) / 2
-                fit_x = (dk_x * tau_y**2 - dk_y * tau_y * tau_x) / (tau_x**2 + tau_y**2)
-                fit_y = (dk_y * tau_y**2 - dk_x * tau_x * tau_y) / (tau_x**2 + tau_y**2)
-                pt_fit = sqrt(fit_x**2 + fit_y**2)
-            else:
-                pt_fit = 0
-            kin_x = abs(vot_vec[i, j, 0] - (kout_exp[i, 0, 0] + kout_exp[i, 1, 0]) / 2)
-            if kin_x > na_x:
-                pt_fit += pen_coeff * (kin_x - na_x)
-            kin_y = abs(vot_vec[i, j, 1] - (kout_exp[i, 0, 1] + kout_exp[i, 1, 1]) / 2)
-            if kin_y > na_y:
-                pt_fit += pen_coeff * (kin_y - na_y)
+            pt_fit = fit_streak(vot_vec[i, j], kout_exp[i], kin, tau_x, tau_y, pen_coeff)
             if pt_fit < min_fit:
                 min_fit = pt_fit
         fitness += min_fit
     return fitness / a
 
-def fitness_idxs(float_t[:, :, ::1] vot_vec, float_t[:, :, ::1] kout_exp, float_t na_x, float_t na_y, float_t pen_coeff):
+def fitness_idxs(float_t[:, :, ::1] vot_vec, float_t[:, :, ::1] kout_exp, float_t[:, ::1] kin, float_t pen_coeff):
     """
-    Return indices of the best lattice vectors based on fitness values with the penalty added
+    Return indices of the best lattice vectors of a frame
 
     vot_vec - voting reciprocal lattice vectors
     kout_exp - experimental outcoming wavevectors
-    na_x, na_y - x- and y-coordinates of the incoming beam numerical aperture 
+    kin = [[kin_x_min, kin_y_min], [kin_x_max, kin_y_max]] - lens' pupil bounds
     pen_coeff - penalty coefficient
     """
     cdef:
         int a = vot_vec.shape[0], b = vot_vec.shape[1], i, j
-        float_t rec_abs, source_th, source_phi, source_x, source_y
-        float_t tau_x, tau_y, dk_x, dk_y, fit_x, fit_y, kin_x, kin_y
-        float_t min_fit, pt_fit
+        float_t min_fit, pt_fit, tau_x, tau_y
         int_t[::1] idxs = np.empty(a, dtype=np.int64)
     for i in range(a):
         tau_x = kout_exp[i, 1, 0] - kout_exp[i, 0, 0]
         tau_y = kout_exp[i, 1, 1] - kout_exp[i, 0, 1]
-        rec_abs = sqrt(vot_vec[i, 0, 0]**2 + vot_vec[i, 0, 1]**2 + vot_vec[i, 0, 2]**2)
-        if rec_abs != 0:
-            source_th = acos(-vot_vec[i, 0, 2] / rec_abs) - acos(rec_abs / 2)
-            source_phi = atan2(vot_vec[i, 0, 1], vot_vec[i, 0, 0])
-            source_x = vot_vec[i, 0, 0] - sin(source_th) * cos(source_phi)
-            source_y = vot_vec[i, 0, 1] - sin(source_th) * sin(source_phi)
-            dk_x = source_x - (kout_exp[i, 0, 0] + kout_exp[i, 1, 0]) / 2
-            dk_y = source_y - (kout_exp[i, 0, 1] + kout_exp[i, 1, 1]) / 2
-            fit_x = (dk_x * tau_y**2 - dk_y * tau_y * tau_x) / (tau_x**2 + tau_y**2)
-            fit_y = (dk_y * tau_y**2 - dk_x * tau_x * tau_y) / (tau_x**2 + tau_y**2)
-            min_fit = sqrt(fit_x**2 + fit_y**2)
-        else:
-            min_fit = 0
-        kin_x = abs(vot_vec[i, 0, 0] - (kout_exp[i, 0, 0] + kout_exp[i, 1, 0]) / 2)
-        if kin_x > na_x:
-            min_fit += pen_coeff * (kin_x - na_x)
-        kin_y = abs(vot_vec[i, 0, 1] - (kout_exp[i, 0, 1] + kout_exp[i, 1, 1]) / 2)
-        if kin_y > na_y:
-            min_fit += pen_coeff * (kin_y - na_y)
+        min_fit = fit_streak(vot_vec[i, 0], kout_exp[i], kin, tau_x, tau_y, pen_coeff)
         idxs[i] = 0
         for j in range(1, b):
-            rec_abs = sqrt(vot_vec[i, j, 0]**2 + vot_vec[i, j, 1]**2 + vot_vec[i, j, 2]**2)
-            if rec_abs != 0:
-                source_th = acos(-vot_vec[i, j, 2] / rec_abs) - acos(rec_abs / 2)
-                source_phi = atan2(vot_vec[i, j, 1], vot_vec[i, j, 0])
-                source_x = vot_vec[i, j, 0] - sin(source_th) * cos(source_phi)
-                source_y = vot_vec[i, j, 1] - sin(source_th) * sin(source_phi)
-                dk_x = source_x - (kout_exp[i, 0, 0] + kout_exp[i, 1, 0]) / 2
-                dk_y = source_y - (kout_exp[i, 0, 1] + kout_exp[i, 1, 1]) / 2
-                fit_x = (dk_x * tau_y**2 - dk_y * tau_y * tau_x) / (tau_x**2 + tau_y**2)
-                fit_y = (dk_y * tau_y**2 - dk_x * tau_x * tau_y) / (tau_x**2 + tau_y**2)
-                pt_fit = sqrt(fit_x**2 + fit_y**2)
-            else:
-                pt_fit = 0
-            kin_x = abs(vot_vec[i, j, 0] - (kout_exp[i, 0, 0] + kout_exp[i, 1, 0]) / 2)
-            if kin_x > na_x:
-                pt_fit += pen_coeff * (kin_x - na_x)
-            kin_y = abs(vot_vec[i, j, 1] - (kout_exp[i, 0, 1] + kout_exp[i, 1, 1]) / 2)
-            if kin_y > na_y:
-                pt_fit += pen_coeff * (kin_y - na_y)
+            pt_fit = fit_streak(vot_vec[i, j], kout_exp[i], kin, tau_x, tau_y, pen_coeff)
             if pt_fit < min_fit:
                 min_fit = pt_fit; idxs[i] = j
     return (np.arange(a), np.asarray(idxs))
