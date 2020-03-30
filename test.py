@@ -53,8 +53,9 @@ def main(out_path, prefix, scan_num, rec_basis, exp_set, n_isl,
     print("{:d} streaks detected in total".format(det_scan.size))
 
     print("Setting up the indexing solution refinement...")
-    archi = det_scan.rot_index_refine(rec_basis=rec_basis, n_isl=n_isl, pop_size=pop_size, gen_num=gen_num,
-                                      pos_tol=pos_tol, size_tol=size_tol, ang_tol=ang_tol)
+    archi = det_scan.rot_index_refine(rec_basis=rec_basis, n_isl=n_isl, pop_size=pop_size,
+                                      gen_num=gen_num, pos_tol=pos_tol, size_tol=size_tol,
+                                      ang_tol=ang_tol)
     print("Starting indexing solution refinement")
     start = timer()
     archi.evolve()
@@ -72,14 +73,18 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Index b12 diffraction data')
     parser.add_argument('out_path', type=str, help='Output file path')
     parser.add_argument('--n_isl', type=int, default=20, help='Number of islands for one frame')
-    parser.add_argument('--pos_tol', type=float, nargs=3, default=[0.007, 0.014, 0.06], help='Relative sample position tolerance')
-    parser.add_argument('--size_tol', type=float, default=0.03, help='Lattice basis vectors length tolerance')
+    parser.add_argument('--pos_tol', type=float, nargs=3, default=[0.01, 0.01, 0.05],
+                        help='Relative sample position tolerance')
+    parser.add_argument('--size_tol', type=float, default=0.03,
+                        help='Lattice basis vectors length tolerance')
     parser.add_argument('--ang_tol', type=float, default=1.5, help='Rotation anlges tolerance')
-    parser.add_argument('--gen_num', type=int, default=3000, help='Maximum generations number of the refinement algorithm')
-    parser.add_argument('--pop_size', type=int, default=50, help='Population size of the refinement islands')
+    parser.add_argument('--gen_num', type=int, default=3000,
+                        help='Maximum generations number of the refinement algorithm')
+    parser.add_argument('--pop_size', type=int, default=50,
+                        help='Population size of the refinement islands')
     args = parser.parse_args()
 
-    main(out_path=args.out_path, prefix=B12_PREFIX, scan_num=B12_NUM, exp_set=B12_SSET,
-         rec_basis=REC_BASIS, n_isl=args.n_isl, pop_size=args.pop_size,
-         gen_num=args.gen_num, pos_tol=args.pos_tol, size_tol=args.size_tol,
-         ang_tol=args.ang_tol)
+    main(out_path=args.out_path, prefix=B12_PREFIX, scan_num=B12_NUM,
+         exp_set=B12_SSET, rec_basis=REC_BASIS, n_isl=args.n_isl,
+         pop_size=args.pop_size, gen_num=args.gen_num, pos_tol=args.pos_tol,
+         size_tol=args.size_tol, ang_tol=args.ang_tol)
