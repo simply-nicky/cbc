@@ -18,11 +18,10 @@ import cbc_dp
 PIX_SIZE = 75 * 1e-3 #mm
 WL = 7.293188082141599e-08 #mm
 ROT_AX = np.array([0, 1, 0])
-B12_POS = np.array([118.99193627, 131.54189272, 100.41825068]) #mm
+B12_POS = np.array([119.16220162, 131.83067094, 101.7817772]) #mm
 BEAM_POS = np.array([1601, 1766])
 PUPIL = np.array([[1515, 1675], [1557, 1748]])
 Z_F = 129.1
-ROT_AX = np.array([0., 1., 0.])
 THETAS = np.radians(np.arange(0, 101))
 B12_SSET = cbc_dp.ScanSetup(pix_size=PIX_SIZE, smp_pos=B12_POS,
                             z_f=Z_F, pupil=PUPIL, beam_pos=BEAM_POS,
@@ -30,9 +29,9 @@ B12_SSET = cbc_dp.ScanSetup(pix_size=PIX_SIZE, smp_pos=B12_POS,
 
 B12_PREFIX = 'b12_2'
 B12_NUM = 135
-REC_BASIS = np.array([[0.00906475, -0.04583905, -0.00082416],
-                      [0.03227241, 0.00576972, 0.00194436],
-                      [0.0016247, 0.00172209, -0.02941539]])
+REC_BASIS = np.array([[0.00889941, -0.04500298, -0.00080913],
+                      [0.03149209,  0.00563021,  0.00189735],
+                      [0.00157608,  0.00167056, -0.02853517]])
 
 def main(out_path, prefix, scan_num, rec_basis, exp_set, n_isl,
          pop_size, gen_num, pos_tol, size_tol, ang_tol):

@@ -66,7 +66,7 @@ class FrameStreaks():
         kout = self.exp_set.kout_exp(index_pts)
         return RecVectors(kout=kout, kin=self.kin)
 
-    def full_index_refine(self, rec_basis, pos_tol=(0.007, 0.014, 0.06), rb_tol=0.12):
+    def full_index_refine(self, rec_basis, pos_tol=(0.01, 0.01, 0.05), rb_tol=0.12):
         """
         Return a population of reciprocal lattice basis vectors matrix refinement problem
 
@@ -79,7 +79,7 @@ class FrameStreaks():
                        tol=(pos_tol, rb_tol))
         return pygmo.problem(full_tf)
 
-    def rot_index_refine(self, rec_basis, pos_tol=(0.007, 0.014, 0.06), size_tol=0.05, ang_tol=0.09):
+    def rot_index_refine(self, rec_basis, pos_tol=(0.01, 0.01, 0.05), size_tol=0.03, ang_tol=1.5):
         """
         Return a population of reciprocal lattice rotation refinement problem
 
@@ -200,7 +200,7 @@ class ScanStreaks(FrameStreaks):
                           kin=np.concatenate(kin_list))
 
     def full_index_refine(self, rec_basis, n_isl=20, pop_size=50, gen_num=2000,
-                          pos_tol=(0.007, 0.014, 0.06), rb_tol=0.12):
+                          pos_tol=(0.01, 0.01, 0.05), rb_tol=0.12):
         """
         Return refinement problems archipelago
 
@@ -223,7 +223,7 @@ class ScanStreaks(FrameStreaks):
         return archi
 
     def rot_index_refine(self, rec_basis, n_isl=20, pop_size=50, gen_num=2000,
-                         pos_tol=(0.007, 0.014, 0.06), size_tol=0.05, ang_tol=0.09):
+                         pos_tol=(0.01, 0.01, 0.05), size_tol=0.03, ang_tol=1.5):
         """
         Return refinement problems archipelago
 
@@ -518,7 +518,7 @@ class FCBI(FrameCBI):
                                       reciprocal basis matrix tolerances [0.0 - 1.0]
     pen_coeff                       - fitness penalty coefficient
     """
-    def __init__(self, streaks, rec_basis, tol=([0.03, 0.03, 0.075], 0.12), pen_coeff=10):
+    def __init__(self, streaks, rec_basis, tol=([0.01, 0.01, 0.05], 0.12), pen_coeff=1.):
         super(FCBI, self).__init__(streaks, rec_basis.ravel(), tol, pen_coeff)
 
     def _init_bounds(self, rec_basis, tol):
@@ -551,7 +551,7 @@ class RCBI(FrameCBI):
                                           and rotation angles tolerances [0.0 - 1.0]
     pen_coeff                           - fitness penalty coefficient
     """
-    def __init__(self, streaks, rec_basis, tol=([0.03, 0.03, 0.075], 0.1, np.radians(5)), pen_coeff=10):
+    def __init__(self, streaks, rec_basis, tol=([0.01, 0.01, 0.05], 0.03, 1.5), pen_coeff=1.):
         super(RCBI, self).__init__(streaks, rec_basis, tol, pen_coeff)
 
     def _init_bounds(self, rec_basis, tol):
