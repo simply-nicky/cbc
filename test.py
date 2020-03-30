@@ -29,9 +29,9 @@ B12_SSET = cbc_dp.ScanSetup(pix_size=PIX_SIZE, smp_pos=B12_POS,
 
 B12_PREFIX = 'b12_2'
 B12_NUM = 135
-REC_BASIS = np.array([[0.00889941, -0.04500298, -0.00080913],
-                      [0.03149209,  0.00563021,  0.00189735],
-                      [0.00157608,  0.00167056, -0.02853517]])
+REC_BASIS = np.array([[0.00934103, -0.04573531, -0.00059503],
+                      [0.0325726,   0.00574564,  0.00306672],
+                      [0.00072599,  0.00160878, -0.03089601]])
 
 def main(out_path, prefix, scan_num, rec_basis, exp_set, n_isl,
          pop_size, gen_num, pos_tol, size_tol, ang_tol):
@@ -72,9 +72,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Index b12 diffraction data')
     parser.add_argument('out_path', type=str, help='Output file path')
     parser.add_argument('--n_isl', type=int, default=20, help='Number of islands for one frame')
-    parser.add_argument('--pos_tol', type=float, nargs=3, default=[0.01, 0.01, 0.05],
+    parser.add_argument('--pos_tol', type=float, nargs=3, default=[0.02, 0.02, 0.05],
                         help='Relative sample position tolerance')
-    parser.add_argument('--size_tol', type=float, default=0.03,
+    parser.add_argument('--size_tol', type=float, default=0.01,
                         help='Lattice basis vectors length tolerance')
     parser.add_argument('--ang_tol', type=float, default=1.5, help='Rotation anlges tolerance')
     parser.add_argument('--gen_num', type=int, default=3000,
