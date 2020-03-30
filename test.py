@@ -18,19 +18,24 @@ import cbc_dp
 PIX_SIZE = 75 * 1e-3 #mm
 WL = 7.293188082141599e-08 #mm
 ROT_AX = np.array([0, 1, 0])
+B12_POS = np.array([118.99193627, 131.54189272, 100.41825068]) #mm
+BEAM_POS = np.array([1601, 1766])
+PUPIL = np.array([[1515, 1675], [1557, 1748]])
+Z_F = 129.1
+ROT_AX = np.array([0., 1., 0.])
+THETAS = np.radians(np.arange(0, 101))
+B12_SSET = cbc_dp.ScanSetup(pix_size=PIX_SIZE, smp_pos=B12_POS,
+                            z_f=Z_F, pupil=PUPIL, beam_pos=BEAM_POS,
+                            rot_axis=ROT_AX, thetas=THETAS)
 
 B12_PREFIX = 'b12_2'
 B12_NUM = 135
-B12_DET_POS = np.array([115.27911592, 128.57856985, 100.41825068]) #mm
-B12_EXP = cbc_dp.ScanSetup(rot_axis=ROT_AX,
-                           pix_size=PIX_SIZE,
-                           det_pos=B12_DET_POS)
-B12_PUPIL = np.radians([0.75, 1.25])
 REC_BASIS = np.array([[0.00906475, -0.04583905, -0.00082416],
                       [0.03227241, 0.00576972, 0.00194436],
                       [0.0016247, 0.00172209, -0.02941539]])
 
-def main(out_path, prefix, scan_num, rec_basis, exp_set, num_ap, n_isl, pop_size, gen_num, pos_tol, size_tol, ang_tol):
+def main(out_path, prefix, scan_num, rec_basis, exp_set, n_isl,
+         pop_size, gen_num, pos_tol, size_tol, ang_tol):
     data_path = os.path.join(os.path.dirname(__file__),
                              "exp_results/scan_{0:05d}".format(scan_num),
                              cbc_dp.utils.FILENAME['scan'].format('streaks', scan_num, 'h5'))
@@ -48,8 +53,7 @@ def main(out_path, prefix, scan_num, rec_basis, exp_set, num_ap, n_isl, pop_size
     print("{:d} streaks detected in total".format(det_scan.size))
 
     print("Setting up the indexing solution refinement...")
-    archi = det_scan.rot_index_refine(theta=np.radians(np.arange(det_scan.size)), rec_basis=rec_basis,
-                                      num_ap=num_ap, n_isl=n_isl, pop_size=pop_size, gen_num=gen_num,
+    archi = det_scan.rot_index_refine(rec_basis=rec_basis, n_isl=n_isl, pop_size=pop_size, gen_num=gen_num,
                                       pos_tol=pos_tol, size_tol=size_tol, ang_tol=ang_tol)
     print("Starting indexing solution refinement")
     start = timer()
@@ -75,7 +79,7 @@ if __name__ == "__main__":
     parser.add_argument('--pop_size', type=int, default=50, help='Population size of the refinement islands')
     args = parser.parse_args()
 
-    main(out_path=args.out_path, prefix=B12_PREFIX, scan_num=B12_NUM, exp_set=B12_EXP,
-         num_ap=B12_PUPIL, rec_basis=REC_BASIS, n_isl=args.n_isl, pop_size=args.pop_size,
+    main(out_path=args.out_path, prefix=B12_PREFIX, scan_num=B12_NUM, exp_set=B12_SSET,
+         rec_basis=REC_BASIS, n_isl=args.n_isl, pop_size=args.pop_size,
          gen_num=args.gen_num, pos_tol=args.pos_tol, size_tol=args.size_tol,
          ang_tol=args.ang_tol)
