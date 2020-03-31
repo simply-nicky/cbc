@@ -18,7 +18,7 @@ import cbc_dp
 PIX_SIZE = 75 * 1e-3 #mm
 WL = 7.293188082141599e-08 #mm
 ROT_AX = np.array([0, 1, 0])
-B12_POS = np.array([119.16220162, 131.83067094, 101.7817772]) #mm
+B12_POS = np.array([118.79886068, 130.88583154, 97.4198254]) #mm
 BEAM_POS = np.array([1601, 1766])
 PUPIL = np.array([[1515, 1675], [1557, 1748]])
 Z_F = 129.1
@@ -72,7 +72,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Index b12 diffraction data')
     parser.add_argument('out_path', type=str, help='Output file path')
     parser.add_argument('--n_isl', type=int, default=20, help='Number of islands for one frame')
-    parser.add_argument('--pos_tol', type=float, nargs=3, default=[0.02, 0.02, 0.05],
+    parser.add_argument('--pos_tol', type=float, nargs=3, default=[0.02, 0.02, 0.075],
                         help='Relative sample position tolerance')
     parser.add_argument('--size_tol', type=float, default=0.01,
                         help='Lattice basis vectors length tolerance')
