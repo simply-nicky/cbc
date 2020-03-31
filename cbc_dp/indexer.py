@@ -555,10 +555,10 @@ class RCBI(FrameCBI):
         super(RCBI, self).__init__(streaks, rec_basis, tol, pen_coeff)
 
     def _init_bounds(self, rec_basis, tol):
-        self.rec_sizes = np.sqrt((rec_basis**2).sum(axis=-1))
-        self.or_mat = rec_basis / self.rec_sizes[:, None]
-        self.lower_b = np.concatenate(((1 - np.array(tol[0])) * self.exp_set.smp_pos, (1 - tol[1]) * self.rec_sizes, -tol[2] * np.ones(3)))
-        self.upper_b = np.concatenate(((1 + np.array(tol[0])) * self.exp_set.smp_pos, (1 + tol[1]) * self.rec_sizes, tol[2] * np.ones(3)))
+        rec_sizes = np.sqrt((rec_basis**2).sum(axis=-1))
+        self.or_mat = rec_basis / rec_sizes[:, None]
+        self.lower_b = np.concatenate(((1 - np.array(tol[0])) * self.exp_set.smp_pos, (1 - tol[1]) * rec_sizes, -tol[2] * np.ones(3)))
+        self.upper_b = np.concatenate(((1 + np.array(tol[0])) * self.exp_set.smp_pos, (1 + tol[1]) * rec_sizes, tol[2] * np.ones(3)))
 
     def rec_basis(self, vec):
         """

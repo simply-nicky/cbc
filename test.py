@@ -18,7 +18,7 @@ import cbc_dp
 PIX_SIZE = 75 * 1e-3 #mm
 WL = 7.293188082141599e-08 #mm
 ROT_AX = np.array([0, 1, 0])
-B12_POS = np.array([118.79886068, 130.88583154, 97.4198254]) #mm
+B12_POS = np.array([118.99193627, 131.54189272, 100.41825068]) #mm
 BEAM_POS = np.array([1601, 1766])
 PUPIL = np.array([[1515, 1675], [1557, 1748]])
 Z_F = 129.1
@@ -29,9 +29,9 @@ B12_SSET = cbc_dp.ScanSetup(pix_size=PIX_SIZE, smp_pos=B12_POS,
 
 B12_PREFIX = 'b12_2'
 B12_NUM = 135
-REC_BASIS = np.array([[0.00934103, -0.04573531, -0.00059503],
-                      [0.0325726,   0.00574564,  0.00306672],
-                      [0.00072599,  0.00160878, -0.03089601]])
+B12_RB = np.array([[0.00901929, -0.04416002, -0.00057454],
+                   [0.03368643,  0.00594212,  0.00317158],
+                   [0.00070322,  0.00155834, -0.02992732]])
 
 def main(out_path, prefix, scan_num, rec_basis, exp_set, n_isl,
          pop_size, gen_num, pos_tol, size_tol, ang_tol):
@@ -74,7 +74,7 @@ if __name__ == "__main__":
     parser.add_argument('--n_isl', type=int, default=20, help='Number of islands for one frame')
     parser.add_argument('--pos_tol', type=float, nargs=3, default=[0.02, 0.02, 0.075],
                         help='Relative sample position tolerance')
-    parser.add_argument('--size_tol', type=float, default=0.01,
+    parser.add_argument('--size_tol', type=float, default=1e-3,
                         help='Lattice basis vectors length tolerance')
     parser.add_argument('--ang_tol', type=float, default=1.5, help='Rotation anlges tolerance')
     parser.add_argument('--gen_num', type=int, default=3000,
@@ -84,6 +84,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     main(out_path=args.out_path, prefix=B12_PREFIX, scan_num=B12_NUM,
-         exp_set=B12_SSET, rec_basis=REC_BASIS, n_isl=args.n_isl,
-         pop_size=args.pop_size, gen_num=args.gen_num, pos_tol=args.pos_tol,
+         exp_set=B12_SSET, pop_size=args.pop_size, n_isl=args.n_isl,
+         rec_basis=B12_RB, gen_num=args.gen_num, pos_tol=args.pos_tol,
          size_tol=args.size_tol, ang_tol=args.ang_tol)
