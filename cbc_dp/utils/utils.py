@@ -1,7 +1,6 @@
 """
 utils.py - Uitility constants and functions module
 """
-from math import sqrt, cos, sin
 import os
 from multiprocessing import cpu_count
 import numpy as np
@@ -51,27 +50,6 @@ def arraytoimg(array):
     img = np.tile((array / array.max() * 255).astype(np.uint8)[..., np.newaxis], (1, 1, 3))
     return cvtColor(img, COLOR_BGR2GRAY)
 
-def rotation_matrix(axis, theta):
-    """
-    Return roatational matrix around axis to theta angle
-
-    axis - rotational axis
-    theta - angle of rotation
-    """
-    axis = np.asarray(axis)
-    axis = axis / sqrt(np.dot(axis, axis))
-    _a = cos(theta / 2.0)
-    _b, _c, _d = -axis * sin(theta / 2.0)
-    return np.array([[_a * _a + _b * _b - _c * _c - _d * _d,
-                      2 * (_b * _c + _a * _d),
-                      2 * (_b * _d - _a * _c)],
-                     [2 * (_b * _c - _a * _d),
-                      _a * _a + _c * _c - _b * _b - _d * _d,
-                      2 * (_c * _d + _a * _b)],
-                     [2 * (_b * _d + _a * _c),
-                      2 * (_c * _d - _a * _b),
-                      _a * _a + _d * _d - _b * _b - _c * _c]])
-
 def rec_basis(basis):
     """
     Return orientation matrix based on unit cell primitive vectors matrix
@@ -96,38 +74,6 @@ def gramm_schmidt(or_mat):
     b_vec = or_mat[1] - proj(or_mat[1], or_mat[0])
     c_vec = or_mat[2] - proj(or_mat[2], b_vec) - proj(or_mat[2], or_mat[0])
     return np.stack((or_mat[0], b_vec, c_vec))
-
-def euler_angles(or_mat):
-    """
-    Return euler angles with Bunge convention from the orientation matrix
-    """
-    Phi = np.arccos(or_mat[2, 2])
-    if np.isclose(Phi, 0):
-        phi1 = np.arctan2(-or_mat[1, 0], or_mat[0, 0])
-        phi2 = 0
-    elif np.isclose(Phi, np.pi):
-        phi1 = np.arctan2(or_mat[1, 0], or_mat[0, 0])
-        phi2 = 0
-    else:
-        phi1 = np.arctan2(or_mat[2, 0], -or_mat[2, 1])
-        phi2 = np.arctan2(or_mat[0, 2], or_mat[1, 2])
-    return np.array([phi1, Phi, phi2])
-
-def euler_matrix(phi1, Phi, phi2):
-    """
-    Return euler rotation matrix based on euler angles with bunge convention
-
-    See https://www.researchgate.net/publication/324088567_Computing_Euler_angles_with_Bunge_convention_from_rotation_matrix
-    """
-    return np.array([[cos(phi1) * cos(phi2) - sin(phi1) * sin(phi2) * cos(Phi),
-                      sin(phi1) * cos(phi2) + cos(phi1) * sin(phi2) * cos(Phi),
-                      sin(phi2) * sin(Phi)],
-                     [-cos(phi1) * sin(phi2) - sin(phi1) * cos(phi2) * cos(Phi),
-                      -sin(phi1) * sin(phi2) + cos(phi1) * cos(phi2) * cos(Phi),
-                      cos(phi2) * sin(Phi)],
-                     [sin(phi1) * sin(Phi),
-                      -cos(phi1) * sin(Phi),
-                      cos(Phi)]])
 
 def find_reduced(vectors, basis):
     """

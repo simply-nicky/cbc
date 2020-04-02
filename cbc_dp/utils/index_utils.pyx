@@ -1,7 +1,7 @@
 """
 index_utils.pyx - indexing and modelling utility functions written in Cython
 """
-from libc.math cimport sqrt, sin, cos, tan, atan, atan2, acos, floor, ceil
+from libc.math cimport sqrt, sin, cos, tan, atan, atan2, acos, floor, ceil, pi
 import numpy as np
 cimport numpy as cnp
 
@@ -10,38 +10,88 @@ ctypedef cnp.int64_t int_t
 ctypedef cnp.uint64_t uint_t
 ctypedef cnp.uint8_t uint8_t
 
-cdef void rotate_matrix(float_t[:, ::1] mat, float_t[:, ::1] output,
-                        float_t alpha, float_t betta, float_t theta) nogil:
+def euler_angles(float_t[:, ::1] rot_mat):
     """
-    Rotate 3x3 matrix mat around axis by angle theta and write it to output matrix
+    Return euler angles with Bunge convention from a rotation matrix
+    """
+    cdef float_t[::1] eul_ang = np.empty(3, dtype=np.float64)
+    eul_ang[1] = acos(rot_mat[2, 2])
+    if eul_ang[1] < 1e-8:
+        eul_ang[0] = atan2(-rot_mat[1, 0], rot_mat[0, 0])
+        eul_ang[2] = 0
+    elif pi - eul_ang[1] < (1e-8 + 1e-5 * pi):
+        eul_ang[0] = atan2(rot_mat[1, 0], rot_mat[0, 0])
+        eul_ang[2] = 0
+    else:
+        eul_ang[0] = atan2(rot_mat[2, 0], -rot_mat[2, 1])
+        eul_ang[2] = atan2(rot_mat[0, 2], rot_mat[1, 2])
+    return np.asarray(eul_ang)
 
-    mat - matrix to rotate
-    output - rotated matrix
+cdef void euler_mat_c(float_t[:, ::1] output, float_t phi1, float_t Phi, float_t phi2) nogil:
+    """
+    Write an Euler rotation matrix with Bunge convention to output matrix
+
+    phi1, Phi, phi2 - Euler angles
+    """
+    output[0, 0] = cos(phi1) * cos(phi2) - sin(phi1) * sin(phi2) * cos(Phi)
+    output[0, 1] = sin(phi1) * cos(phi2) + cos(phi1) * sin(phi2) * cos(Phi)
+    output[0, 2] = sin(phi2) * sin(Phi)
+    output[1, 0] = -cos(phi1) * sin(phi2) - sin(phi1) * cos(phi2) * cos(Phi)
+    output[1, 1] = -sin(phi1) * sin(phi2) + cos(phi1) * cos(phi2) * cos(Phi)
+    output[1, 2] = cos(phi2) * sin(Phi)
+    output[2, 0] = sin(phi1) * sin(Phi)
+    output[2, 1] = -cos(phi1) * sin(Phi)
+    output[2, 2] = cos(Phi)
+
+cdef void rot_mat_c(float_t[:, ::1] output, float_t alpha, float_t betta, float_t theta) nogil:
+    """
+    Write a rotation matrix to output matrix
+
     alpha, betta - spherical angles of axis of rotation
     theta - angle of rotation
     """
     cdef:
         float_t a = cos(theta / 2), b = -sin(alpha) * cos(betta) * sin(theta / 2)
         float_t c = -sin(alpha) * sin(betta) * sin(theta / 2), d = -cos(alpha) * sin(theta / 2)
-        float_t rot_mat[3][3]
-    rot_mat[0][0] = a * a + b * b - c * c - d * d
-    rot_mat[0][1] = 2 * (b * c + a * d)
-    rot_mat[0][2] = 2 * (b * d - a * c)
-    rot_mat[1][0] = 2 * (b * c - a * d)
-    rot_mat[1][1] = a * a + c * c - b * b - d * d
-    rot_mat[1][2] = 2 * (c * d + a * b)
-    rot_mat[2][0] = 2 * (b * d + a * c)
-    rot_mat[2][1] = 2 * (c * d - a * b)
-    rot_mat[2][2] = a * a + d * d - b * b - c * c
-    output[0, 0] = rot_mat[0][0] * mat[0, 0] + rot_mat[0][1] * mat[0, 1] + rot_mat[0][2] * mat[0, 2]
-    output[0, 1] = rot_mat[1][0] * mat[0, 0] + rot_mat[1][1] * mat[0, 1] + rot_mat[1][2] * mat[0, 2]
-    output[0, 2] = rot_mat[2][0] * mat[0, 0] + rot_mat[2][1] * mat[0, 1] + rot_mat[2][2] * mat[0, 2]
-    output[1, 0] = rot_mat[0][0] * mat[1, 0] + rot_mat[0][1] * mat[1, 1] + rot_mat[0][2] * mat[1, 2]
-    output[1, 1] = rot_mat[1][0] * mat[1, 0] + rot_mat[1][1] * mat[1, 1] + rot_mat[1][2] * mat[1, 2]
-    output[1, 2] = rot_mat[2][0] * mat[1, 0] + rot_mat[2][1] * mat[1, 1] + rot_mat[2][2] * mat[1, 2]
-    output[2, 0] = rot_mat[0][0] * mat[2, 0] + rot_mat[0][1] * mat[2, 1] + rot_mat[0][2] * mat[2, 2]
-    output[2, 1] = rot_mat[1][0] * mat[2, 0] + rot_mat[1][1] * mat[2, 1] + rot_mat[1][2] * mat[2, 2]
-    output[2, 2] = rot_mat[2][0] * mat[2, 0] + rot_mat[2][1] * mat[2, 1] + rot_mat[2][2] * mat[2, 2]
+    output[0, 0] = a * a + b * b - c * c - d * d
+    output[0, 1] = 2 * (b * c + a * d)
+    output[0, 2] = 2 * (b * d - a * c)
+    output[1, 0] = 2 * (b * c - a * d)
+    output[1, 1] = a * a + c * c - b * b - d * d
+    output[1, 2] = 2 * (c * d + a * b)
+    output[2, 0] = 2 * (b * d + a * c)
+    output[2, 1] = 2 * (c * d - a * b)
+    output[2, 2] = a * a + d * d - b * b - c * c
+
+def rotation_matrix(float_t[::1] axis, float_t theta):
+    """
+    Return a rotation matrix
+
+    axis - rotational axis
+    theta - angle of rotation
+    """
+    cdef:
+        float_t[:, ::1] rot_mat = np.empty((3, 3), dtype=np.float64)
+        float_t length = sqrt(axis[0]**2 + axis[1]**2 + axis[2]**2)
+        float_t alpha = acos(axis[2] / length), betta = atan2(axis[1], axis[0])
+    rot_mat_c(rot_mat, alpha, betta, theta)
+    return np.asarray(rot_mat)
+
+cdef void rotate_vector(float_t[::1] vec, float_t[:, ::1] rot_mat, float_t[::1] output) nogil:
+    """
+    Rotate a 3d vector by the rotation matrix and write it to output vector
+    """
+    output[0] = rot_mat[0, 0] * vec[0] + rot_mat[0, 1] * vec[1] + rot_mat[0, 2] * vec[2]
+    output[1] = rot_mat[1, 0] * vec[0] + rot_mat[1, 1] * vec[1] + rot_mat[1, 2] * vec[2]
+    output[2] = rot_mat[2, 0] * vec[0] + rot_mat[2, 1] * vec[1] + rot_mat[2, 2] * vec[2]
+    
+cdef void rotate_matrix(float_t[:, ::1] mat, float_t[:, ::1] rot_mat, float_t[:, ::1] output) nogil:
+    """
+    Rotate a 3x3 matrix by the rotation matrix and write it to output vector
+    """
+    rotate_vector(mat[0], rot_mat, output[0])
+    rotate_vector(mat[1], rot_mat, output[1])
+    rotate_vector(mat[2], rot_mat, output[2])
 
 cdef void inverse_matrix(float_t[:, ::1] mat, float_t[:, ::1] output) nogil:
     """
@@ -411,3 +461,41 @@ def reduce_streaks(float_t[:, :, ::1] kout_exp, int_t[:, ::1] hkl_idxs, float_t[
                                 idxs_arr[ii] = j; fit = new_fit
                 ii += 1
     return np.asarray(idxs_arr[:ii])
+
+def rcbi_rb(float_t[:, ::1] or_mat, float_t[::1] vec):
+    """
+    Return reciprocal lattice basis vectors
+
+    or_mat - orientation
+    vec - indexer vector
+    """
+    cdef:
+        float_t[:, ::1] rb = np.empty((3, 3), dtype=np.float64)
+        float_t[:, ::1] rot_mat = np.empty((3, 3), dtype=np.float64)
+    euler_mat_c(rot_mat, vec[6], vec[7], vec[8])
+    rotate_matrix(or_mat, rot_mat, rb)
+    rb[0, 0] *= vec[3]; rb[0, 1] *= vec[3]; rb[0, 2] *= vec[3]
+    rb[1, 0] *= vec[4]; rb[1, 1] *= vec[4]; rb[1, 2] *= vec[4]
+    rb[2, 0] *= vec[5]; rb[2, 1] *= vec[5]; rb[2, 2] *= vec[5]
+    return np.asarray(rb)
+
+def fcbi_rb(float_t[:, ::1] or_mat, float_t[::1] vec):
+    """
+    Return reciprocal lattice basis vectors
+
+    or_mat - orientation
+    vec - indexer vector
+    """
+    cdef:
+        float_t[:, ::1] rb = np.empty((3, 3), dtype=np.float64)
+        float_t[:, ::1] rot_mat = np.empty((3, 3), dtype=np.float64)
+    euler_mat_c(rot_mat, vec[6], vec[7], vec[8])
+    rotate_vector(or_mat[0], rot_mat, rb[0])
+    euler_mat_c(rot_mat, vec[9], vec[10], vec[11])
+    rotate_vector(or_mat[1], rot_mat, rb[1])
+    euler_mat_c(rot_mat, vec[12], vec[13], vec[14])
+    rotate_vector(or_mat[2], rot_mat, rb[2])
+    rb[0, 0] *= vec[3]; rb[0, 1] *= vec[3]; rb[0, 2] *= vec[3]
+    rb[1, 0] *= vec[4]; rb[1, 1] *= vec[4]; rb[1, 2] *= vec[4]
+    rb[2, 0] *= vec[5]; rb[2, 1] *= vec[5]; rb[2, 2] *= vec[5]
+    return np.asarray(rb)

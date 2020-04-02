@@ -66,30 +66,32 @@ class FrameStreaks():
         kout = self.exp_set.kout_exp(index_pts)
         return RecVectors(kout=kout, kin=self.kin)
 
-    def full_index_refine(self, rec_basis, pos_tol=(0.01, 0.01, 0.05), rb_tol=0.12):
+    def full_index_refine(self, rec_basis, rot_mat, pos_tol=(0.02, 0.02, 0.075),
+                          size_tol=0.01, ang_tol=0.05):
         """
         Return a population of reciprocal lattice basis vectors matrix refinement problem
 
         rec_basis - reciprocal lattice basis vectors matrix
+        rot_mat - rotation matrix
         pos_tol - relative sample position tolerance
         rb_tol - lattice basis vectors matrix tolerance
         """
-        full_tf = FCBI(streaks=self,
-                       rec_basis=rec_basis,
-                       tol=(pos_tol, rb_tol))
+        full_tf = FCBI(streaks=self, rec_basis=rec_basis, rot_mat=rot_mat,
+                       tol=(pos_tol, size_tol, ang_tol))
         return pygmo.problem(full_tf)
 
-    def rot_index_refine(self, rec_basis, pos_tol=(0.01, 0.01, 0.05), size_tol=0.03, ang_tol=1.5):
+    def rot_index_refine(self, rec_basis, rot_mat, pos_tol=(0.02, 0.02, 0.075),
+                         size_tol=0.01, ang_tol=0.05):
         """
         Return a population of reciprocal lattice rotation refinement problem
 
         rec_basis - reciprocal lattice basis vectors matrix
+        rot_mat - rotation matrix
         pos_tol - relative sample position tolerance
         size_tol - lattice basis vectors length tolerance
         ang_tol - rotation anlges tolerance
         """
-        rot_tf = RCBI(streaks=self,
-                      rec_basis=rec_basis,
+        rot_tf = RCBI(streaks=self, rot_mat=rot_mat, rec_basis=rec_basis,
                       tol=(pos_tol, size_tol, ang_tol))
         return pygmo.problem(rot_tf)
 
@@ -200,30 +202,7 @@ class ScanStreaks(FrameStreaks):
                           kin=np.concatenate(kin_list))
 
     def full_index_refine(self, rec_basis, n_isl=20, pop_size=50, gen_num=2000,
-                          pos_tol=(0.01, 0.01, 0.05), rb_tol=0.12):
-        """
-        Return refinement problems archipelago
-
-        rec_basis - preliminary reciprocal lattice basis vectors matrix
-        n_isl - number of islands of one frame
-        pop_size - population size
-        gen_num - maximum generations number of the refinement algorithm
-        pos_tol - relative sample position tolerance
-        rb_tol - lattice basis vectors matrix tolerance
-        """
-        archi = pygmo.archipelago()
-        for frame_idx, frame_strks in enumerate(iter(self)):
-            frame_basis = rec_basis.dot(self.exp_set.rotation_matrix(frame_idx))
-            prob = frame_strks.rot_index_refine(rec_basis=frame_basis,
-                                                pos_tol=pos_tol,
-                                                rb_tol=rb_tol)
-            pops = [pygmo.population(size=pop_size, prob=prob, b=pygmo.mp_bfe()) for _ in range(n_isl)]
-            for pop in pops:
-                archi.push_back(algo=pygmo.de(gen_num), pop=pop)
-        return archi
-
-    def rot_index_refine(self, rec_basis, n_isl=20, pop_size=50, gen_num=2000,
-                         pos_tol=(0.01, 0.01, 0.05), size_tol=0.03, ang_tol=1.5):
+                          pos_tol=(0.02, 0.02, 0.075), size_tol=0.01, ang_tol=0.05):
         """
         Return refinement problems archipelago
 
@@ -237,11 +216,34 @@ class ScanStreaks(FrameStreaks):
         """
         archi = pygmo.archipelago()
         for frame_idx, frame_strks in enumerate(iter(self)):
-            frame_basis = rec_basis.dot(self.exp_set.rotation_matrix(frame_idx))
-            prob = frame_strks.rot_index_refine(rec_basis=frame_basis,
-                                                pos_tol=pos_tol,
-                                                size_tol=size_tol,
-                                                ang_tol=ang_tol)
+            # rotating rec_basis by -theta
+            rot_mat = self.exp_set.rotation_matrix(frame_idx).T
+            prob = frame_strks.full_index_refine(rec_basis=rec_basis, rot_mat=rot_mat, pos_tol=pos_tol,
+                                                 size_tol=size_tol, ang_tol=ang_tol)
+            pops = [pygmo.population(size=pop_size, prob=prob, b=pygmo.mp_bfe()) for _ in range(n_isl)]
+            for pop in pops:
+                archi.push_back(algo=pygmo.de(gen_num), pop=pop)
+        return archi
+
+    def rot_index_refine(self, rec_basis, n_isl=20, pop_size=50, gen_num=2000,
+                         pos_tol=(0.02, 0.02, 0.075), size_tol=0.01, ang_tol=0.05):
+        """
+        Return refinement problems archipelago
+
+        rec_basis - preliminary reciprocal lattice basis vectors matrix
+        n_isl - number of islands of one frame
+        pop_size - population size
+        gen_num - maximum generations number of the refinement algorithm
+        pos_tol - relative sample position tolerance
+        size_tol - lattice basis vectors length tolerance
+        ang_tol - rotation anlges tolerance
+        """
+        archi = pygmo.archipelago()
+        for frame_idx, frame_strks in enumerate(iter(self)):
+            # rotating rec_basis by -theta
+            rot_mat = self.exp_set.rotation_matrix(frame_idx).T
+            prob = frame_strks.rot_index_refine(rec_basis=rec_basis, rot_mat=rot_mat, pos_tol=pos_tol,
+                                                size_tol=size_tol, ang_tol=ang_tol)
             pops = [pygmo.population(size=pop_size, prob=prob, b=pygmo.mp_bfe()) for _ in range(n_isl)]
             for pop in pops:
                 archi.push_back(algo=pygmo.de(gen_num), pop=pop)
@@ -420,17 +422,17 @@ class FrameCBI(AbcCBI):
     Abstract frame refinement class
 
     streaks - FrameStreaks class object
-    num_ap = [na_x, na_y] - convergent beam numerical apertures in x- and y-axis
     rec_basis - Reciprocal lattice basis vectors matrix
+    rot_mat - rotation matrix
     tol - tolerance defining vector bounds
     pen_coeff - fitness penalty coefficient
     """
-    def __init__(self, streaks, rec_basis, tol, pen_coeff):
+    def __init__(self, streaks, rec_basis, rot_mat, tol, pen_coeff):
         super(FrameCBI, self).__init__(streaks, pen_coeff)
-        self._init_bounds(rec_basis, tol)
+        self._init_bounds(rec_basis, rot_mat, tol)
 
     @abstractmethod
-    def _init_bounds(self, rec_basis, tol):
+    def _init_bounds(self, rec_basis, rot_mat, tol):
         pass
 
     def kout_exp(self, vec):
@@ -484,7 +486,6 @@ class ScanCBI(AbcCBI):
     Abstract scan refinement class (incomplete)
 
     streaks - ScanStreaks class object
-    num_ap = [na_x, na_y] - convergent beam numerical apertures in x- and y-axis
     rec_basis - Reciprocal lattice basis vectors matrix
     tol = [pos_tol, th_tol, rot_tol, rb_tol] - tolerance defining vector bounds
     pen_coeff - fitness penalty coefficient
@@ -505,66 +506,72 @@ class ScanCBI(AbcCBI):
 
 class FCBI(FrameCBI):
     """
-    Convergent beam crystallography indexer class
-    Argument vector is comprised of detector relative position
-    and full reciprocal basis vectors matrix
+    Convergent beam crystallography indexer class.
+    Argument vector is comprised of detector relative position,
+    reciprocal lattice basis vector lengths, and Euler angles for every basis vector.
+    Euler angles with Bunge convention are used.
 
-    lines                           - detected diffraction streaks positions at the detector
-                                      [mm]
-    exp_set                         - FrameSetup class object
-    num_ap = [na_x, na_y]           - convergent beam numerical apertures in x- and y-axis
-    rec_basis                       - Reciprocal lattice basis vectors matrix
-    tol = (pos_tol, rb_tol)         - relative detector position and
-                                      reciprocal basis matrix tolerances [0.0 - 1.0]
-    pen_coeff                       - fitness penalty coefficient
+    streaks                             - FrameStreaks class object
+    rec_basis                           - reciprocal lattice basis vectors matrix
+    rot_mat                             - rotation matrix
+    tol = (pos_tol, size_tol, ang_tol)  - relative detector position, basis vector lengths,
+                                          and rotation angles tolerances [0.0 - 1.0]
+    pen_coeff                           - fitness penalty coefficient
     """
-    def __init__(self, streaks, rec_basis, tol=([0.01, 0.01, 0.05], 0.12), pen_coeff=1.):
-        super(FCBI, self).__init__(streaks, rec_basis.ravel(), tol, pen_coeff)
+    def __init__(self, streaks, rec_basis, rot_mat, tol=([0.02, 0.02, 0.075], 0.01, 0.05), pen_coeff=1.):
+        super(FCBI, self).__init__(streaks, rec_basis, rot_mat, tol, pen_coeff)
 
-    def _init_bounds(self, rec_basis, tol):
-        rb_bounds = np.stack(((1 - tol[1]) * rec_basis, (1 + tol[1]) * rec_basis))
-        self.lower_b = np.concatenate(((1 - np.array(tol[0])) * self.exp_set.smp_pos, rb_bounds.min(axis=0)))
-        self.upper_b = np.concatenate(((1 + np.array(tol[0])) * self.exp_set.smp_pos, rb_bounds.max(axis=0)))
+    def _init_bounds(self, rec_basis, rot_mat, tol):
+        rec_sizes = np.sqrt((rec_basis**2).sum(axis=-1))
+        self.or_mat = rec_basis / rec_sizes[:, None]
+        eul_ang = utils.euler_angles(rot_mat)
+        ea_bounds = np.stack(((1 - tol[2]) * eul_ang, (1 + tol[2]) * eul_ang))
+        self.lower_b = np.concatenate(((1 - np.array(tol[0])) * self.exp_set.smp_pos,
+                                       (1 - tol[1]) * rec_sizes, np.tile(ea_bounds.min(axis=0), 3)))
+        self.upper_b = np.concatenate(((1 + np.array(tol[0])) * self.exp_set.smp_pos,
+                                       (1 + tol[1]) * rec_sizes, np.tile(ea_bounds.max(axis=0), 3)))
 
     def rec_basis(self, vec):
         """
         Return rectangular lattice basis vectors for a vector
         """
-        return vec[3:].reshape(self.mat_shape)
+        return utils.fcbi_rb(self.or_mat, vec)
 
     def get_extra_info(self):
-        return "Dimensions: 12 in total\n3 - detector position\n9 - reciprocal lattice basis vectors matrix"
+        return "Dimensions: 15 in total\n3 - detector position\n3 - reciprocal lattice basis vector lengths\n9 - Euler angles for every basis vector"
 
 class RCBI(FrameCBI):
     """
-    Convergent beam crystallography indexer class
+    Convergent beam crystallography indexer class.
     Argument vector is comprised of detector relative position,
-    flattened array of basis vectors lengths, and euler angles [phi1, Phi, phi2]
+    reciprocal lattice basis vector lengths, and Euler angles for basis vectors matrix.
     Euler angles with Bunge convention are used
 
-    lines                               - detected diffraction streaks positions at the detector
-                                          [mm]
-    exp_set                             - FrameSetup class object
-    num_ap = [na_x, na_y]               - convergent beam numerical apertures in x- and y-axis
-    rec_basis                           - Reciprocal lattice basis vectors matrix
+    streaks                             - FrameStreaks class object
+    rec_basis                           - reciprocal lattice basis vectors matrix
+    rot_mat                             - rotation matrix
     tol = (pos_tol, size_tol, ang_tol)  - relative detector position, basis vector lengths,
                                           and rotation angles tolerances [0.0 - 1.0]
     pen_coeff                           - fitness penalty coefficient
     """
-    def __init__(self, streaks, rec_basis, tol=([0.01, 0.01, 0.05], 0.03, 1.5), pen_coeff=1.):
-        super(RCBI, self).__init__(streaks, rec_basis, tol, pen_coeff)
+    def __init__(self, streaks, rec_basis, rot_mat, tol=([0.02, 0.02, 0.075], 0.01, 0.05), pen_coeff=1.):
+        super(RCBI, self).__init__(streaks, rec_basis, rot_mat, tol, pen_coeff)
 
-    def _init_bounds(self, rec_basis, tol):
+    def _init_bounds(self, rec_basis, rot_mat, tol):
         rec_sizes = np.sqrt((rec_basis**2).sum(axis=-1))
         self.or_mat = rec_basis / rec_sizes[:, None]
-        self.lower_b = np.concatenate(((1 - np.array(tol[0])) * self.exp_set.smp_pos, (1 - tol[1]) * rec_sizes, -tol[2] * np.ones(3)))
-        self.upper_b = np.concatenate(((1 + np.array(tol[0])) * self.exp_set.smp_pos, (1 + tol[1]) * rec_sizes, tol[2] * np.ones(3)))
+        eul_ang = utils.euler_angles(rot_mat)
+        ea_bounds = np.stack(((1 - tol[2]) * eul_ang, (1 + tol[2]) * eul_ang))
+        self.lower_b = np.concatenate(((1 - np.array(tol[0])) * self.exp_set.smp_pos,
+                                       (1 - tol[1]) * rec_sizes, ea_bounds.min(axis=0)))
+        self.upper_b = np.concatenate(((1 + np.array(tol[0])) * self.exp_set.smp_pos,
+                                       (1 + tol[1]) * rec_sizes, ea_bounds.max(axis=0)))
 
     def rec_basis(self, vec):
         """
         Return orthogonal orientation matrix based on euler angles
         """
-        return self.or_mat.dot(utils.euler_matrix(vec[6], vec[7], vec[8]).T) * vec[3:6, None]
+        return utils.rcbi_rb(self.or_mat, vec)
 
     def get_extra_info(self):
-        return "Dimensions: 9 in total\n3 - detector position\n3 - reciprocal lattice basis vectors lengths\n3 - orientation matrix angles"
+        return "Dimensions: 9 in total\n3 - detector position\n3 - reciprocal lattice basis vectors lengths\n3 - Euler angles for a basis vectors matrix"
