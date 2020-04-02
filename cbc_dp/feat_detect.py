@@ -100,11 +100,12 @@ class ScanSetup(FrameSetup):
     def scan_size(self):
         return self.thetas.size
 
-    def rotation_matrix(self, frame_idx):
+    def rotation_matrix(self, frame_idx, inverse=False):
         """
         Return roational matrix for a given frame index
         """
-        return utils.rotation_matrix(self.axis, self.thetas[frame_idx])
+        theta = -self.thetas[frame_idx] if inverse else self.thetas[frame_idx]
+        return utils.rotation_matrix(self.axis, theta)
 
     def save(self, out_file):
         """
