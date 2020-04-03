@@ -106,7 +106,7 @@ class ScanStreaks(FrameStreaks):
     def __init__(self, raw_lines, exp_set, frame_idxs):
         self.frame_idxs = frame_idxs
         self.uniq_frames, self.uniq_idxs = np.unique(self.frame_idxs, return_index=True)
-        self.uniq_idxs = np.append(self.uniq_idxs, self.size)
+        self.uniq_idxs = np.append(self.uniq_idxs, raw_lines.shape[0])
         super(ScanStreaks, self).__init__(raw_lines, exp_set)
 
     @classmethod
