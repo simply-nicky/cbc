@@ -88,7 +88,7 @@ def euler_angles_scan(float_t[::1] axis, float_t[::1] thetas):
         int_t a = thetas.shape[0], i
         float_t length = sqrt(axis[0]**2 + axis[1]**2 + axis[2]**2)
         float_t alpha = acos(axis[2] / length), betta = atan2(axis[1], axis[0])
-        float_t[:, ::1] rot_mat = np.emtpy((3, 3), dtype=np.float64)
+        float_t[:, ::1] rot_mat = np.empty((3, 3), dtype=np.float64)
         float_t[:, ::1] eul_ang = np.empty((a, 3), dtype=np.float64)
     for i in range(a):
         rot_mat_c(rot_mat, alpha, betta, thetas[i])
