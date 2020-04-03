@@ -105,6 +105,8 @@ class ScanStreaks(FrameStreaks):
     """
     def __init__(self, raw_lines, exp_set, frame_idxs):
         self.frame_idxs = frame_idxs
+        self.uniq_frames, self.uniq_idxs = np.unique(self.frame_idxs, return_index=True)
+        self.uniq_idxs = np.append(self.uniq_idxs, self.size)
         super(ScanStreaks, self).__init__(raw_lines, exp_set)
 
     @classmethod
@@ -136,10 +138,8 @@ class ScanStreaks(FrameStreaks):
             raise IndexError('Only integers and integer arrays are valid indices')
 
     def __iter__(self):
-        uniq_idxs = np.unique(self.frame_idxs)
-        for frame_idx in uniq_idxs:
-            idxs = np.where(self.frame_idxs == frame_idx)
-            yield FrameStreaks(self.raw_lines[idxs], self.exp_set)
+        for start, stop in zip(self.uniq_idxs[:-1], self.uniq_idxs[1:]):
+            yield FrameStreaks(self.raw_lines[start:stop], self.exp_set)
 
     def kout(self):
         """
