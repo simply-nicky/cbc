@@ -17,7 +17,7 @@ import cbc_dp
 
 PIX_SIZE = 75 * 1e-3 #mm
 WL = 7.293188082141599e-08 #mm
-ROT_AX = np.array([0, 1, 0])
+ROT_AX = np.array([0., 1., 0.])
 B12_POS = np.array([118.99193627, 131.54189272, 100.41825068]) #mm
 BEAM_POS = np.array([1601, 1766])
 PUPIL = np.array([[1515, 1675], [1557, 1748]])
