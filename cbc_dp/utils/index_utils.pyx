@@ -10,21 +10,24 @@ ctypedef cnp.int64_t int_t
 ctypedef cnp.uint64_t uint_t
 ctypedef cnp.uint8_t uint8_t
 
+cdef void eul_ang_c(float_t[::1] output, float_t[:, ::1] rot_mat) nogil:
+    output[1] = acos(rot_mat[2, 2])
+    if output[1] < 1e-8:
+        output[0] = atan2(-rot_mat[1, 0], rot_mat[0, 0])
+        output[2] = 0
+    elif pi - output[1] < (1e-8 + 1e-5 * pi):
+        output[0] = atan2(rot_mat[1, 0], rot_mat[0, 0])
+        output[2] = 0
+    else:
+        output[0] = atan2(rot_mat[2, 0], -rot_mat[2, 1])
+        output[2] = atan2(rot_mat[0, 2], rot_mat[1, 2])
+
 def euler_angles(float_t[:, ::1] rot_mat):
     """
     Return euler angles with Bunge convention from a rotation matrix
     """
     cdef float_t[::1] eul_ang = np.empty(3, dtype=np.float64)
-    eul_ang[1] = acos(rot_mat[2, 2])
-    if eul_ang[1] < 1e-8:
-        eul_ang[0] = atan2(-rot_mat[1, 0], rot_mat[0, 0])
-        eul_ang[2] = 0
-    elif pi - eul_ang[1] < (1e-8 + 1e-5 * pi):
-        eul_ang[0] = atan2(rot_mat[1, 0], rot_mat[0, 0])
-        eul_ang[2] = 0
-    else:
-        eul_ang[0] = atan2(rot_mat[2, 0], -rot_mat[2, 1])
-        eul_ang[2] = atan2(rot_mat[0, 2], rot_mat[1, 2])
+    eul_ang_c(eul_ang, rot_mat)
     return np.asarray(eul_ang)
 
 cdef void euler_mat_c(float_t[:, ::1] output, float_t phi1, float_t Phi, float_t phi2) nogil:
@@ -73,6 +76,24 @@ cdef void rot_mat_c(float_t[:, ::1] output, float_t alpha, float_t betta, float_
     output[2, 0] = 2 * (b * d + a * c)
     output[2, 1] = 2 * (c * d - a * b)
     output[2, 2] = a * a + d * d - b * b - c * c
+
+def euler_angles_scan(float_t[::1] axis, float_t[::1] thetas):
+    """
+    Return Euler angles of a tilt scan
+
+    axis - axis of rotation
+    thetas - angles of rotation
+    """
+    cdef:
+        int_t a = thetas.shape[0], i
+        float_t length = sqrt(axis[0]**2 + axis[1]**2 + axis[2]**2)
+        float_t alpha = acos(axis[2] / length), betta = atan2(axis[1], axis[0])
+        float_t[:, ::1] rot_mat = np.emtpy((3, 3), dtype=np.float64)
+        float_t[:, ::1] eul_ang = np.empty((a, 3), dtype=np.float64)
+    for i in range(a):
+        rot_mat_c(rot_mat, alpha, betta, thetas[i])
+        eul_ang_c(eul_ang[i], rot_mat)
+    return np.asarray(eul_ang)
 
 def rotation_matrix(float_t[::1] axis, float_t theta):
     """

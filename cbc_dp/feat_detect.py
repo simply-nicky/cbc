@@ -82,6 +82,7 @@ class ScanSetup(FrameSetup):
     def __init__(self, pix_size, smp_pos, z_f, pupil, beam_pos, rot_axis, thetas):
         super(ScanSetup, self).__init__(pix_size, smp_pos, z_f, pupil, beam_pos)
         self.axis, self.thetas = rot_axis, thetas
+        self.eul_ang = utils.euler_angles_scan(self.axis, -self.thetas)
 
     @classmethod
     def from_frame_setup(cls, frame_setup, rot_axis, thetas):
@@ -106,6 +107,12 @@ class ScanSetup(FrameSetup):
         """
         theta = -self.thetas[frame_idx] if inverse else self.thetas[frame_idx]
         return utils.rotation_matrix(self.axis, theta)
+
+    def euler_angles(self, frame_idx):
+        """
+        Return Euler angles for a given frame index of the inversed rotation
+        """
+        return self.eul_ang[frame_idx]
 
     def save(self, out_file):
         """

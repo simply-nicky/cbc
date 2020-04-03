@@ -491,16 +491,13 @@ class ScanCBI(AbcCBI):
     def __init__(self, streaks, rec_basis, tol, pen_coeff=10):
         super(ScanCBI, self).__init__(streaks, pen_coeff)
         self.frame_idxs = streaks.frame_idxs
-        self._init_bounds(rec_basis.ravel(), tol)
+        self._init_bounds(rec_basis, tol)
 
     def _init_bounds(self, rec_basis, tol):
         pt0_lb = np.repeat((1 - np.array(tol[0])) * self.exp_set.smp_pos, self.exp_set.scan_size)
         pt0_ub = np.repeat((1 + np.array(tol[0])) * self.exp_set.smp_pos, self.exp_set.scan_size)
-        th_lb, th_ub = self.exp_set.thetas - tol[1], self.exp_set.thetas + tol[1]
-        rot_lb, rot_ub = np.pi / 2 - tol[2] * np.ones(2), np.pi / 2 + tol[2] * np.ones(2)
-        rb_bounds = np.stack(((1 - tol[1]) * rec_basis, (1 + tol[1]) * rec_basis))
-        self.lower_b = np.concatenate((pt0_lb, th_lb, rot_lb, rb_bounds.min(axis=0)))
-        self.upper_b = np.concatenate((pt0_ub, th_ub, rot_ub, rb_bounds.max(axis=0)))
+        self.lower_b = np.concatenate((rec_basis.ravel() - tol[1], pt0_lb, self.exp_set.eul_ang.ravel() - tol[2]))
+        self.upper_b = np.concatenate((rec_basis.ravel() + tol[1], pt0_ub, self.exp_set.eul_ang.ravel() + tol[2]))
 
 class FCBI(FrameCBI):
     """
