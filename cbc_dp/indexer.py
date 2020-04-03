@@ -523,11 +523,10 @@ class FCBI(FrameCBI):
         rec_sizes = np.sqrt((rec_basis**2).sum(axis=-1))
         self.or_mat = rec_basis / rec_sizes[:, None]
         eul_ang = utils.euler_angles(rot_mat)
-        ea_bounds = np.stack(((1 - tol[2]) * eul_ang, (1 + tol[2]) * eul_ang))
         self.lower_b = np.concatenate(((1 - np.array(tol[0])) * self.exp_set.smp_pos,
-                                       (1 - tol[1]) * rec_sizes, np.tile(ea_bounds.min(axis=0), 3)))
+                                       (1 - tol[1]) * rec_sizes, np.tile(eul_ang - tol[2], 3)))
         self.upper_b = np.concatenate(((1 + np.array(tol[0])) * self.exp_set.smp_pos,
-                                       (1 + tol[1]) * rec_sizes, np.tile(ea_bounds.max(axis=0), 3)))
+                                       (1 + tol[1]) * rec_sizes, np.tile(eul_ang + tol[2], 3)))
 
     def rec_basis(self, vec):
         """
@@ -559,11 +558,10 @@ class RCBI(FrameCBI):
         rec_sizes = np.sqrt((rec_basis**2).sum(axis=-1))
         self.or_mat = rec_basis / rec_sizes[:, None]
         eul_ang = utils.euler_angles(rot_mat)
-        ea_bounds = np.stack(((1 - tol[2]) * eul_ang, (1 + tol[2]) * eul_ang))
         self.lower_b = np.concatenate(((1 - np.array(tol[0])) * self.exp_set.smp_pos,
-                                       (1 - tol[1]) * rec_sizes, ea_bounds.min(axis=0)))
+                                       (1 - tol[1]) * rec_sizes, eul_ang - tol[2]))
         self.upper_b = np.concatenate(((1 + np.array(tol[0])) * self.exp_set.smp_pos,
-                                       (1 + tol[1]) * rec_sizes, ea_bounds.max(axis=0)))
+                                       (1 + tol[1]) * rec_sizes, eul_ang + tol[2]))
 
     def rec_basis(self, vec):
         """

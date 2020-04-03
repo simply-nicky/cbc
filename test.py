@@ -29,12 +29,12 @@ B12_SSET = cbc_dp.ScanSetup(pix_size=PIX_SIZE, smp_pos=B12_POS,
 
 B12_PREFIX = 'b12_2'
 B12_NUM = 135
-B12_RB = np.array([[0.00901929, -0.04416002, -0.00057454],
-                   [0.03368643,  0.00594212,  0.00317158],
-                   [0.00070322,  0.00155834, -0.02992732]])
+B12_RB = np.array([[0.00889941, -0.04500298, -0.00080913],
+                   [0.03149209,  0.00563021,  0.00189735],
+                   [0.00157608,  0.00167056, -0.02853517]])
 
-def main(out_path, prefix, scan_num, rec_basis, exp_set, n_isl,
-         pop_size, gen_num, pos_tol, size_tol, ang_tol):
+def run_rot_index(out_path, prefix, scan_num, rec_basis, exp_set, n_isl,
+                  pop_size, gen_num, pos_tol, size_tol, ang_tol):
     data_path = os.path.join(os.path.dirname(__file__),
                              "exp_results/scan_{0:05d}".format(scan_num),
                              cbc_dp.utils.FILENAME['scan'].format('streaks', scan_num, 'h5'))
@@ -74,16 +74,16 @@ if __name__ == "__main__":
     parser.add_argument('--n_isl', type=int, default=20, help='Number of islands for one frame')
     parser.add_argument('--pos_tol', type=float, nargs=3, default=[0.02, 0.02, 0.075],
                         help='Relative sample position tolerance')
-    parser.add_argument('--size_tol', type=float, default=1e-3,
+    parser.add_argument('--size_tol', type=float, default=0.03,
                         help='Lattice basis vectors length tolerance')
-    parser.add_argument('--ang_tol', type=float, default=1.5, help='Rotation anlges tolerance')
+    parser.add_argument('--ang_tol', type=float, default=0.1, help='Rotation anlges tolerance')
     parser.add_argument('--gen_num', type=int, default=3000,
                         help='Maximum generations number of the refinement algorithm')
     parser.add_argument('--pop_size', type=int, default=50,
                         help='Population size of the refinement islands')
     args = parser.parse_args()
 
-    main(out_path=args.out_path, prefix=B12_PREFIX, scan_num=B12_NUM,
-         exp_set=B12_SSET, pop_size=args.pop_size, n_isl=args.n_isl,
-         rec_basis=B12_RB, gen_num=args.gen_num, pos_tol=args.pos_tol,
-         size_tol=args.size_tol, ang_tol=args.ang_tol)
+    run_rot_index(out_path=args.out_path, prefix=B12_PREFIX, scan_num=B12_NUM,
+                  exp_set=B12_SSET, pop_size=args.pop_size, n_isl=args.n_isl,
+                  rec_basis=B12_RB, gen_num=args.gen_num, pos_tol=args.pos_tol,
+                  size_tol=args.size_tol, ang_tol=args.ang_tol)
