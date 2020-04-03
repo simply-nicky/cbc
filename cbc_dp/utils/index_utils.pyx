@@ -43,6 +43,17 @@ cdef void euler_mat_c(float_t[:, ::1] output, float_t phi1, float_t Phi, float_t
     output[2, 1] = -cos(phi1) * sin(Phi)
     output[2, 2] = cos(Phi)
 
+def euler_matrix(float_t phi1, float_t Phi, float_t phi2):
+    """
+    Return an Euler matrix with Bunge convention
+
+    phi1, Phi, phi2 - Euler angles
+    """
+    cdef:
+        float_t[:, ::1] rot_mat = np.empty((3, 3), dtype=np.float64)
+    euler_mat_c(rot_mat, phi1, Phi, phi2)
+    return np.asarray(rot_mat)
+
 cdef void rot_mat_c(float_t[:, ::1] output, float_t alpha, float_t betta, float_t theta) nogil:
     """
     Write a rotation matrix to output matrix
