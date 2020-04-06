@@ -129,13 +129,16 @@ class ScanStreaks(FrameStreaks):
 
     def __getitem__(self, frame_idx):
         if isinstance(frame_idx, int):
-            idxs = np.where(self.frame_idxs == frame_idx)
-            return FrameStreaks(self.raw_lines[idxs], self.exp_set)
-        elif isinstance(frame_idx, np.ndarray) and np.issubdtype(frame_idx.dtype, np.integer):
-            idxs = np.where((self.frame_idxs[:, None] == frame_idx[None, :]).any(axis=1))
-            return self.extract(idxs)
+            return FrameStreaks(self.raw_lines[self.uniq_idxs[frame_idx]:self.uniq_idxs[frame_idx + 1]],
+                                self.exp_set)
+        elif isinstance(frame_idx, slice) or (isinstance(frame_idx, np.ndarray) and np.issubdtype(frame_idx.dtype, np.integer)):
+            streaks, frame_idxs = [], []
+            for start, stop in zip(self.uniq_idxs[frame_idx], self.uniq_idxs[1:][frame_idx]):
+                streaks.append(self.raw_lines[start:stop])
+                frame_idxs.append(self.frame_idxs[start:stop])
+            return ScanStreaks(np.concatenate(streaks), self.exp_set, np.concatenate(frame_idxs))
         else:
-            raise IndexError('Only integers and integer arrays are valid indices')
+            raise IndexError('Only integers, slice, and integer arrays are valid indices')
 
     def __iter__(self):
         for start, stop in zip(self.uniq_idxs[:-1], self.uniq_idxs[1:]):
