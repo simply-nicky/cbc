@@ -105,8 +105,8 @@ class ScanStreaks(FrameStreaks):
     """
     def __init__(self, raw_lines, exp_set, frame_idxs):
         self.frame_idxs = frame_idxs
-        self.uniq_frames, self.uniq_idxs = np.unique(self.frame_idxs, return_index=True)
-        self.uniq_idxs = np.append(self.uniq_idxs, raw_lines.shape[0])
+        self.frames, self.idxs = np.unique(self.frame_idxs, return_index=True)
+        self.idxs = np.append(self.idxs, raw_lines.shape[0])
         super(ScanStreaks, self).__init__(raw_lines, exp_set)
 
     @classmethod
@@ -129,11 +129,11 @@ class ScanStreaks(FrameStreaks):
 
     def __getitem__(self, frame_idx):
         if isinstance(frame_idx, int):
-            return FrameStreaks(self.raw_lines[self.uniq_idxs[frame_idx]:self.uniq_idxs[frame_idx + 1]],
+            return FrameStreaks(self.raw_lines[self.idxs[frame_idx]:self.idxs[frame_idx + 1]],
                                 self.exp_set)
         elif isinstance(frame_idx, slice) or (isinstance(frame_idx, np.ndarray) and np.issubdtype(frame_idx.dtype, np.integer)):
             streaks, frame_idxs = [], []
-            for start, stop in zip(self.uniq_idxs[frame_idx], self.uniq_idxs[1:][frame_idx]):
+            for start, stop in zip(self.idxs[frame_idx], self.idxs[1:][frame_idx]):
                 streaks.append(self.raw_lines[start:stop])
                 frame_idxs.append(self.frame_idxs[start:stop])
             return ScanStreaks(np.concatenate(streaks), self.exp_set, np.concatenate(frame_idxs))
@@ -141,7 +141,7 @@ class ScanStreaks(FrameStreaks):
             raise IndexError('Only integers, slice, and integer arrays are valid indices')
 
     def __iter__(self):
-        for start, stop in zip(self.uniq_idxs[:-1], self.uniq_idxs[1:]):
+        for start, stop in zip(self.idxs[:-1], self.idxs[1:]):
             yield FrameStreaks(self.raw_lines[start:stop], self.exp_set)
 
     def kout(self):
