@@ -8,4 +8,4 @@ from .data_process import Frame, open_scan, Scan1D, Scan2D, ScanST, CorrectedDat
 from .feat_detect import HoughLineDetector, LineSegmentDetector, FrameSetup, ScanSetup
 from .grouper import Grouper, TiltGroups
 from .model import BallLattice, RecLattice, CircModel, RectModel
-from .indexer import FCBI, RCBI, FrameStreaks, ScanStreaks, RecVectors
+from .indexer import FCBI, RCBI, ScanCBI, FrameStreaks, ScanStreaks, RecVectors
