@@ -4,7 +4,7 @@ index.py - indexing refinement script
 import os
 
 os.environ["OMP_NUM_THREADS"] = "4" # export OMP_NUM_THREADS=4
-os.environ["OPENBLAS_NUM_THREADS"] = "4" # export OPENBLAS_NUM_THREADS=4 
+os.environ["OPENBLAS_NUM_THREADS"] = "4" # export OPENBLAS_NUM_THREADS=4
 os.environ["MKL_NUM_THREADS"] = "6" # export MKL_NUM_THREADS=6
 os.environ["VECLIB_MAXIMUM_THREADS"] = "4" # export VECLIB_MAXIMUM_THREADS=4
 os.environ["NUMEXPR_NUM_THREADS"] = "6" # export NUMEXPR_NUM_THREADS=6
@@ -44,8 +44,8 @@ def open_scan(scan_num, exp_set):
     print("Opening the data file...")
     with h5py.File(data_path, 'r') as data_file:
         det_scan = cbc_dp.ScanStreaks(raw_lines=data_file['streaks/lines'][:],
-                                    exp_set=exp_set,
-                                    frame_idxs=data_file['streaks/frame_idxs'][:])
+                                      exp_set=exp_set,
+                                      frame_idxs=data_file['streaks/frame_idxs'][:])
     print("{:d} streaks detected in total".format(det_scan.size))
     return det_scan
 
@@ -59,7 +59,7 @@ def write_data(index_sol, index_f, out_path):
 def run_rot_index(out_path, scan_num, rec_basis, exp_set, n_isl,
                   pop_size, gen_num, pos_tol, size_tol, ang_tol):
     det_scan = open_scan(scan_num, exp_set)
-    frame_num = det_scan.uniq_frames.size
+    scan_size = det_scan.frames.size
 
     print("Setting up the indexing solution refinement...")
     archi = det_scan.rot_index_refine(rec_basis=rec_basis, n_isl=n_isl, pop_size=pop_size,
@@ -70,14 +70,14 @@ def run_rot_index(out_path, scan_num, rec_basis, exp_set, n_isl,
     archi.evolve()
     archi.wait()
     print("The refinement has been completed, elapsed time: {:f}s".format(timer() - start))
-    index_sol = np.array(archi.get_champions_x()).reshape((n_isl, frame_num, -1), order='F')
-    index_f = np.array(archi.get_champions_f()).reshape((n_isl, frame_num), order='F')
+    index_sol = np.array(archi.get_champions_x()).reshape((n_isl, scan_size, -1), order='F')
+    index_f = np.array(archi.get_champions_f()).reshape((n_isl, scan_size), order='F')
     write_data(index_sol, index_f, out_path)
 
 def run_full_index(out_path, scan_num, rec_basis, exp_set, n_isl,
                    pop_size, gen_num, pos_tol, size_tol, ang_tol):
     det_scan = open_scan(scan_num, exp_set)
-    frame_num = det_scan.uniq_frames.size
+    scan_size = det_scan.frames.size
 
     print("Setting up the indexing solution refinement...")
     archi = det_scan.full_index_refine(rec_basis=rec_basis, n_isl=n_isl, pop_size=pop_size,
@@ -88,8 +88,8 @@ def run_full_index(out_path, scan_num, rec_basis, exp_set, n_isl,
     archi.evolve()
     archi.wait()
     print("The refinement has been completed, elapsed time: {:f}s".format(timer() - start))
-    index_sol = np.array(archi.get_champions_x()).reshape((n_isl, frame_num, -1), order='F')
-    index_f = np.array(archi.get_champions_f()).reshape((n_isl, frame_num), order='F')
+    index_sol = np.array(archi.get_champions_x()).reshape((n_isl, scan_size, -1), order='F')
+    index_f = np.array(archi.get_champions_f()).reshape((n_isl, scan_size), order='F')
     write_data(index_sol, index_f, out_path)
 
 if __name__ == "__main__":

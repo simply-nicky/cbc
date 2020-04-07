@@ -363,6 +363,10 @@ class AbcCBI(metaclass=ABCMeta):
     def voting_vectors(self, vec, kout_exp):
         pass
 
+    @abstractmethod
+    def fit(self, vot_vec, kout_exp):
+        pass
+
     def det_pts(self, kout_x, kout_y, vec):
         """
         Return diffraction streaks locations at the detector plane
@@ -376,8 +380,8 @@ class AbcCBI(metaclass=ABCMeta):
         """
         Return the indices of the optimal reciprocal lattice voting vectors
         """
-        return utils.fitness_idxs(vot_vec=vot_vec, kout_exp=kout_exp, kin=self.exp_set.kin,
-                                  pen_coeff=self.pen_coeff)
+        return utils.fit_idxs(vot_vec=vot_vec, kout_exp=kout_exp, kin=self.exp_set.kin,
+                              pen_coeff=self.pen_coeff)
 
     def get_bounds(self):
         """
@@ -391,8 +395,7 @@ class AbcCBI(metaclass=ABCMeta):
         """
         kout_exp = self.kout_exp(vec)
         vot_vec = self.voting_vectors(vec, kout_exp)
-        return [utils.fitness(vot_vec=vot_vec, kout_exp=kout_exp, kin=self.exp_set.kin,
-                              pen_coeff=self.pen_coeff)]
+        return self.fit(vot_vec, kout_exp)
 
     def hkl_idxs(self, vec):
         """
@@ -458,6 +461,14 @@ class FrameCBI(AbcCBI):
         return utils.vot_idxs_frame(kout_exp=kout_exp.mean(axis=1), rec_basis=self.rec_basis(vec),
                                     kin=self.exp_set.kin)
 
+    def fit(self, vot_vec, kout_exp):
+        """
+        Return fitness value for the given voting vectors array vot_vec and
+        experimental outcoming wavevectors kout_exp
+        """
+        return [utils.fit_frame(vot_vec=vot_vec, kout_exp=kout_exp, kin=self.exp_set.kin,
+                                pen_coeff=self.pen_coeff)]
+
     # def good_idxs(self, vec, na_ext):
     #     """
     #     Return indices of good streaks lying inside extended pupil bounds na_ext
@@ -493,14 +504,56 @@ class ScanCBI(AbcCBI):
     """
     def __init__(self, streaks, rec_basis, tol, pen_coeff=10):
         super(ScanCBI, self).__init__(streaks, pen_coeff)
-        self.frame_idxs = streaks.frame_idxs
+        self.frame_idxs, self.frames, self.idxs = streaks.frame_idxs, streaks.frames, streaks.idxs
         self._init_bounds(rec_basis, tol)
 
     def _init_bounds(self, rec_basis, tol):
-        pt0_lb = np.repeat((1 - np.array(tol[0])) * self.exp_set.smp_pos, self.exp_set.scan_size)
-        pt0_ub = np.repeat((1 + np.array(tol[0])) * self.exp_set.smp_pos, self.exp_set.scan_size)
+        pt0_lb = np.tile((1 - np.array(tol[0])) * self.exp_set.smp_pos, self.exp_set.scan_size)
+        pt0_ub = np.tile((1 + np.array(tol[0])) * self.exp_set.smp_pos, self.exp_set.scan_size)
         self.lower_b = np.concatenate((rec_basis.ravel() - tol[1], pt0_lb, self.exp_set.eul_ang.ravel() - tol[2]))
         self.upper_b = np.concatenate((rec_basis.ravel() + tol[1], pt0_ub, self.exp_set.eul_ang.ravel() + tol[2]))
+
+    def rec_basis(self, vec):
+        """
+        Return rectangular lattice basis vectors for a vector
+        """
+        return utils.scan_rb(vec=vec, frames=self.frames, scan_size=self.exp_set.scan_size)
+
+    def kout_exp(self, vec):
+        """
+        Generate the experimentally measured diffraction streaks outcoming wavevectors of a scan
+        """
+        return utils.kout_scan(streaks=self.lines, vec=vec, frame_idxs=self.frame_idxs)
+
+    def voting_vectors(self, vec, kout_exp):
+        """
+        Return the reciprocal lattice voting points for the given experimental outcoming
+        wavevectors kout_exp
+        """
+        return utils.vot_vec_scan(kout_exp=kout_exp.mean(axis=1), rec_basis=self.rec_basis(vec),
+                                  kin=self.exp_set.kin, idxs=self.idxs)
+
+    def voting_hkl(self, vec, kout_exp):
+        """
+        Return the reciprocal lattice voting hkl indices for the given experimental outcoming
+        wavevectors kout_exp
+        """
+        return utils.vot_idxs_scan(kout_exp=kout_exp.mean(axis=1), rec_basis=self.rec_basis(vec),
+                                   kin=self.exp_set.kin, idxs=self.idxs)
+
+    def fit(self, vot_vec, kout_exp):
+        """
+        Return fitness value for the given voting vectors array vot_vec and
+        experimental outcoming wavevectors kout_exp
+        """
+        return utils.fit_scan(vot_vec=vot_vec, kout_exp=kout_exp, kin=self.exp_set.kin,
+                              idxs=self.idxs, pen_coeff=self.pen_coeff)
+
+    def get_nobj(self):
+        """
+        Return fitness vector dimension
+        """
+        return self.frames.size
 
 class FCBI(FrameCBI):
     """
@@ -571,3 +624,4 @@ class RCBI(FrameCBI):
 
     def get_extra_info(self):
         return "Dimensions: 9 in total\n3 - detector position\n3 - reciprocal lattice basis vectors lengths\n3 - Euler angles for a basis vectors matrix"
+    

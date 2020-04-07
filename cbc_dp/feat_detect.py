@@ -82,7 +82,7 @@ class ScanSetup(FrameSetup):
     def __init__(self, pix_size, smp_pos, z_f, pupil, beam_pos, rot_axis, thetas):
         super(ScanSetup, self).__init__(pix_size, smp_pos, z_f, pupil, beam_pos)
         self.axis, self.thetas = rot_axis, thetas
-        self.eul_ang = utils.euler_angles_scan(self.axis, -self.thetas)
+        self.eul_ang = utils.scan_eul_ang(self.axis, -self.thetas)
 
     @classmethod
     def from_frame_setup(cls, frame_setup, rot_axis, thetas):
@@ -218,3 +218,4 @@ class LineSegmentDetector(LineDetector):
         cap = np.mean(frame[frame != 0]) + np.std(frame[frame != 0])
         img = utils.arraytoimg(np.clip(frame, 0, cap))
         return self.detector.detect(img)[0][:, 0].reshape((-1, 2, 2)).astype(np.float64)
+    
