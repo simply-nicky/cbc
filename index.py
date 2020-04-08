@@ -117,7 +117,7 @@ def run_scan_index(out_path, scan_num, rec_basis, exp_set, n_isl,
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Index b12 diffraction data')
-    parser.add_argument('index_mode', type=str, choices=['rot', 'full'],
+    parser.add_argument('index_mode', type=str, choices=['rot', 'full', 'scan'],
                         help='Choose between rotation and full indexing refinement')
     parser.add_argument('out_path', type=str, help='Output file path')
     parser.add_argument('--n_isl', type=int, default=64, help='Number of islands for one frame')
@@ -137,8 +137,13 @@ if __name__ == "__main__":
                       pop_size=args.pop_size, n_isl=args.n_isl, rec_basis=B12_RB,
                       gen_num=args.gen_num, pos_tol=args.pos_tol,
                       size_tol=args.size_tol, ang_tol=args.ang_tol)
-    else:
+    elif args.index_mode == 'full':
         run_full_index(out_path=args.out_path, scan_num=B12_NUM, exp_set=B12_SSET,
+                       pop_size=args.pop_size, n_isl=args.n_isl, rec_basis=B12_RB,
+                       gen_num=args.gen_num, pos_tol=args.pos_tol,
+                       size_tol=args.size_tol, ang_tol=args.ang_tol)
+    else:
+        run_scan_index(out_path=args.out_path, scan_num=B12_NUM, exp_set=B12_SSET,
                        pop_size=args.pop_size, n_isl=args.n_isl, rec_basis=B12_RB,
                        gen_num=args.gen_num, pos_tol=args.pos_tol,
                        size_tol=args.size_tol, ang_tol=args.ang_tol)
