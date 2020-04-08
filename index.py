@@ -100,7 +100,7 @@ def run_scan_index(out_path, scan_num, rec_basis, exp_set, n_isl,
     print("Setting up the indexing solution refinement...")
     prob = cbc_dp.ScanCBI(streaks=det_scan[10::10], rec_basis=rec_basis,
                           tol=(pos_tol, size_tol, ang_tol), pen_coeff=1.)
-    pops = [pygmo.population(prob, size=715) for _ in range(n_isl)]
+    pops = [pygmo.population(prob, size=715, b=pygmo.mp_bfe()) for _ in range(n_isl)]
     archi = pygmo.archipelago()
     algo = pygmo.moead(gen=gen_num)
     for pop in pops:
@@ -120,7 +120,7 @@ if __name__ == "__main__":
     parser.add_argument('index_mode', type=str, choices=['rot', 'full'],
                         help='Choose between rotation and full indexing refinement')
     parser.add_argument('out_path', type=str, help='Output file path')
-    parser.add_argument('--n_isl', type=int, default=20, help='Number of islands for one frame')
+    parser.add_argument('--n_isl', type=int, default=64, help='Number of islands for one frame')
     parser.add_argument('--pos_tol', type=float, nargs=3, default=[0.02, 0.02, 0.075],
                         help='Relative sample position tolerance')
     parser.add_argument('--size_tol', type=float, default=0.03,
