@@ -96,12 +96,11 @@ def run_full_index(out_path, scan_num, rec_basis, exp_set, n_isl,
 def run_scan_index(out_path, scan_num, rec_basis, exp_set, n_isl,
                    pop_size, gen_num, pos_tol, size_tol, ang_tol):
     det_scan = open_scan(scan_num, exp_set)
-    scan_size = det_scan.frames.size
 
     print("Setting up the indexing solution refinement...")
     prob = cbc_dp.ScanCBI(streaks=det_scan[10::10], rec_basis=rec_basis,
                           tol=(pos_tol, size_tol, ang_tol), pen_coeff=1.)
-    pops = [pygmo.population(prob, size=715)]
+    pops = [pygmo.population(prob, size=715) for _ in range(n_isl)]
     archi = pygmo.archipelago()
     algo = pygmo.moead(gen=gen_num)
     for pop in pops:
