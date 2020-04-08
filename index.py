@@ -95,7 +95,7 @@ def rot_index(scan, rec_basis, n_isl, pop_size, gen_num, pos_tol, size_tol, ang_
     archi = scan.rot_index_refine(rec_basis=rec_basis, n_isl=n_isl, pop_size=pop_size,
                                   gen_num=gen_num, pos_tol=pos_tol, size_tol=size_tol,
                                   ang_tol=ang_tol)
-    print("Starting indexing solution refinement")
+    print("Starting indexing solution refinement...")
     start = timer()
     archi.evolve()
     archi.wait()
