@@ -76,26 +76,26 @@ class ScanSetup(FrameSetup):
     z_f - distance between the focus and the detector [mm]
     pupil - pupil outline at the detector plane [pixels]
     beam_pos - unfocussed beam position at the detector plane [pixels]
-    rot_axis - axis of rotation
+    axis - axis of rotation
     thetas - angles of rotation
     """
-    def __init__(self, pix_size, smp_pos, z_f, pupil, beam_pos, rot_axis, thetas):
+    def __init__(self, pix_size, smp_pos, z_f, pupil, beam_pos, axis, thetas):
         super(ScanSetup, self).__init__(pix_size, smp_pos, z_f, pupil, beam_pos)
-        self.axis, self.thetas = rot_axis, thetas
+        self.axis, self.thetas = axis, thetas
         self.eul_ang = utils.scan_eul_ang(self.axis, -self.thetas)
 
     @classmethod
-    def from_frame_setup(cls, frame_setup, rot_axis, thetas):
+    def from_frame_setup(cls, frame_setup, axis, thetas):
         """
         Return ScanSetup object initialized with a FrameSetup object
 
         frame_setup - FrameSetup object
-        rot_axis - axis of rotation
+        axis - axis of rotation
         thetas - angles of rotation
         """
         return cls(pix_size=frame_setup.pix_size, smp_pos=frame_setup.smp_pos, thetas=thetas,
                    z_f=frame_setup.z_f, pupil=frame_setup.pupil / frame_setup.pix_size,
-                   beam_pos=frame_setup.beam_pos / frame_setup.pix_size, rot_axis=rot_axis)
+                   beam_pos=frame_setup.beam_pos / frame_setup.pix_size, axis=axis)
 
     @property
     def scan_size(self):
