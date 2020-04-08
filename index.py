@@ -34,7 +34,7 @@ class ConfigParser():
         pix_size = self.config.getfloat('exp_geom', 'pix_size')
         smp_pos = np.array([float(coord) for coord in self.config.get('exp_geom', 'sample_pos').split()])
         z_f = self.config.getfloat('exp_geom', 'focus_z')
-        pupil = np.array([int(bound) for bound in self.config.get('exp_geom', 'pupil_bounds').split()])
+        pupil = np.array([int(bound) for bound in self.config.get('exp_geom', 'pupil_bounds').split()]).reshape((2, 2))
         beam_pos = np.array([int(coord) for coord in self.config.get('exp_geom', 'beam_pos').split()])
         axis = np.array([float(coord) for coord in self.config.get('exp_geom', 'rot_axis').split()])
         th_min = self.config.getfloat('exp_geom', 'theta_min')
