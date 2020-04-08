@@ -12,6 +12,7 @@ os.environ["NUMEXPR_NUM_THREADS"] = "6" # export NUMEXPR_NUM_THREADS=6
 from timeit import default_timer as timer
 import argparse
 import numpy as np
+import pygmo
 import h5py
 import cbc_dp
 
@@ -90,6 +91,29 @@ def run_full_index(out_path, scan_num, rec_basis, exp_set, n_isl,
     print("The refinement has been completed, elapsed time: {:f}s".format(timer() - start))
     index_sol = np.array(archi.get_champions_x()).reshape((n_isl, scan_size, -1), order='F')
     index_f = np.array(archi.get_champions_f()).reshape((n_isl, scan_size), order='F')
+    write_data(index_sol, index_f, out_path)
+
+def run_scan_index(out_path, scan_num, rec_basis, exp_set, n_isl,
+                   pop_size, gen_num, pos_tol, size_tol, ang_tol):
+    det_scan = open_scan(scan_num, exp_set)
+    scan_size = det_scan.frames.size
+
+    print("Setting up the indexing solution refinement...")
+    prob = cbc_dp.ScanCBI(streaks=det_scan[10::10], rec_basis=rec_basis,
+                          tol=(pos_tol, size_tol, ang_tol), pen_coeff=1.)
+    pops = [pygmo.population(prob, size=715)]
+    archi = pygmo.archipelago()
+    algo = pygmo.moead(gen=gen_num)
+    for pop in pops:
+        archi.push_back(algo=algo, pop=pop)
+    print("Starting indexing solution refinement")
+    start = timer()
+    archi.evolve()
+    archi.wait()
+    print("The refinement has been completed, elapsed time: {:f}s".format(timer() - start))
+    ev_pops = [island.get_population() for island in archi]
+    index_sol = np.stack([pop.get_x() for pop in ev_pops])
+    index_f = np.stack([pop.get_f() for pop in ev_pops])
     write_data(index_sol, index_f, out_path)
 
 if __name__ == "__main__":
