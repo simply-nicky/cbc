@@ -421,9 +421,6 @@ class AbcCBI(metaclass=ABCMeta):
     def get_name(self):
         return "A convergent beam indexing problem"
 
-    def get_thread_safety(self):
-        return pygmo.thread_safety.basic
-
 class FrameCBI(AbcCBI):
     """
     Abstract frame refinement class
