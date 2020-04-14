@@ -55,7 +55,7 @@ class JobConfig():
         """
         params = [self.mode, self.out_path]
         for key in self.param_dict:
-            params.extend([key, self.param_dict[key]])
+            params.extend([key, str(self.param_dict[key])])
         return params
 
 class JobBatcher():
