@@ -67,7 +67,7 @@ class FrameStreaks():
         return RecVectors(kout=kout, kin=self.kin)
 
     def full_index_refine(self, rec_basis, rot_mat, pos_tol=(0.02, 0.02, 0.075),
-                          size_tol=0.01, ang_tol=0.05):
+                          rb_tol=0.01, ang_tol=0.05):
         """
         Return a population of reciprocal lattice basis vectors matrix refinement problem
 
@@ -77,22 +77,22 @@ class FrameStreaks():
         rb_tol - lattice basis vectors matrix tolerance
         """
         full_tf = FCBI(streaks=self, rec_basis=rec_basis, rot_mat=rot_mat,
-                       tol=(pos_tol, size_tol, ang_tol))
+                       tol=(pos_tol, rb_tol, ang_tol))
         return pygmo.problem(full_tf)
 
     def rot_index_refine(self, rec_basis, rot_mat, pos_tol=(0.02, 0.02, 0.075),
-                         size_tol=0.01, ang_tol=0.05):
+                         rb_tol=0.01, ang_tol=0.05):
         """
         Return a population of reciprocal lattice rotation refinement problem
 
         rec_basis - reciprocal lattice basis vectors matrix
         rot_mat - rotation matrix
         pos_tol - relative sample position tolerance
-        size_tol - lattice basis vectors length tolerance
+        rb_tol - lattice basis vectors length tolerance
         ang_tol - rotation anlges tolerance
         """
         rot_tf = RCBI(streaks=self, rot_mat=rot_mat, rec_basis=rec_basis,
-                      tol=(pos_tol, size_tol, ang_tol))
+                      tol=(pos_tol, rb_tol, ang_tol))
         return pygmo.problem(rot_tf)
 
 class ScanStreaks(FrameStreaks):
@@ -204,8 +204,8 @@ class ScanStreaks(FrameStreaks):
         return RecVectors(kout=np.concatenate(kout_list),
                           kin=np.concatenate(kin_list))
 
-    def full_index_refine(self, rec_basis, n_isl=20, pop_size=50, gen_num=2000,
-                          pos_tol=(0.02, 0.02, 0.075), size_tol=0.01, ang_tol=0.05):
+    def full_index(self, rec_basis, n_isl=20, pop_size=50, gen_num=2000,
+                   pos_tol=(0.02, 0.02, 0.075), rb_tol=0.01, ang_tol=0.05):
         """
         Return refinement problems archipelago
 
@@ -214,21 +214,21 @@ class ScanStreaks(FrameStreaks):
         pop_size - population size
         gen_num - maximum generations number of the refinement algorithm
         pos_tol - relative sample position tolerance
-        size_tol - lattice basis vectors length tolerance
+        rb_tol - lattice basis vectors length tolerance
         ang_tol - rotation anlges tolerance
         """
         archi = pygmo.archipelago()
         for frame_idx, frame_strks in enumerate(iter(self)):
             rot_mat = self.exp_set.rotation_matrix(frame_idx, inverse=True)
             prob = frame_strks.full_index_refine(rec_basis=rec_basis, rot_mat=rot_mat, pos_tol=pos_tol,
-                                                 size_tol=size_tol, ang_tol=ang_tol)
+                                                 rb_tol=rb_tol, ang_tol=ang_tol)
             pops = [pygmo.population(size=pop_size, prob=prob) for _ in range(n_isl)]
             for pop in pops:
                 archi.push_back(algo=pygmo.de(gen_num), pop=pop)
         return archi
 
-    def rot_index_refine(self, rec_basis, n_isl=20, pop_size=50, gen_num=2000,
-                         pos_tol=(0.02, 0.02, 0.075), size_tol=0.01, ang_tol=0.05):
+    def rot_index(self, rec_basis, n_isl=20, pop_size=50, gen_num=2000,
+                  pos_tol=(0.02, 0.02, 0.075), rb_tol=0.01, ang_tol=0.05):
         """
         Return refinement problems archipelago
 
@@ -237,14 +237,14 @@ class ScanStreaks(FrameStreaks):
         pop_size - population size
         gen_num - maximum generations number of the refinement algorithm
         pos_tol - relative sample position tolerance
-        size_tol - lattice basis vectors length tolerance
+        rb_tol - lattice basis vectors length tolerance
         ang_tol - rotation anlges tolerance
         """
         archi = pygmo.archipelago()
         for frame_idx, frame_strks in enumerate(iter(self)):
             rot_mat = self.exp_set.rotation_matrix(frame_idx, inverse=True)
             prob = frame_strks.rot_index_refine(rec_basis=rec_basis, rot_mat=rot_mat, pos_tol=pos_tol,
-                                                size_tol=size_tol, ang_tol=ang_tol)
+                                                rb_tol=rb_tol, ang_tol=ang_tol)
             pops = [pygmo.population(size=pop_size, prob=prob) for _ in range(n_isl)]
             for pop in pops:
                 archi.push_back(algo=pygmo.de(gen_num), pop=pop)
@@ -565,7 +565,7 @@ class FCBI(FrameCBI):
     streaks                             - FrameStreaks class object
     rec_basis                           - reciprocal lattice basis vectors matrix
     rot_mat                             - rotation matrix
-    tol = (pos_tol, size_tol, ang_tol)  - relative detector position, basis vector lengths,
+    tol = (pos_tol, rb_tol, ang_tol)  - relative detector position, basis vector lengths,
                                           and rotation angles tolerances [0.0 - 1.0]
     pen_coeff                           - fitness penalty coefficient
     """
@@ -600,7 +600,7 @@ class RCBI(FrameCBI):
     streaks                             - FrameStreaks class object
     rec_basis                           - reciprocal lattice basis vectors matrix
     rot_mat                             - rotation matrix
-    tol = (pos_tol, size_tol, ang_tol)  - relative detector position, basis vector lengths,
+    tol = (pos_tol, rb_tol, ang_tol)  - relative detector position, basis vector lengths,
                                           and rotation angles tolerances [0.0 - 1.0]
     pen_coeff                           - fitness penalty coefficient
     """

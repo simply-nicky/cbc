@@ -10,6 +10,16 @@ ctypedef cnp.int64_t int_t
 ctypedef cnp.uint64_t uint_t
 ctypedef cnp.uint8_t uint8_t
 
+def chunkify(int_t num, int_t chunk):
+    cdef:
+        int_t size = num / chunk, rem = num % chunk
+        int_t[::1] chunks = np.empty(size + (rem != 0), dtype=np.int64)
+    for i in range(size):
+        chunks[i] = chunk
+    if rem:
+        chunks[size] = rem
+    return np.asarray(chunks)
+
 def binary_search(float_t[::1] values, int l, int r, float_t x):
     cdef int_t m = l + (r - l) // 2
     if l <= r:

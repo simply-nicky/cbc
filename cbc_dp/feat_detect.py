@@ -4,6 +4,7 @@ feat_detect.py - feature detection on convergent diffraction pattern module
 from abc import ABCMeta, abstractmethod
 import numpy as np
 from skimage.transform import probabilistic_hough_line
+import configparser
 from cv2 import createLineSegmentDetector
 from . import utils
 from .indexer import FrameStreaks, ScanStreaks
@@ -22,6 +23,22 @@ class FrameSetup():
         self.pix_size, self.smp_pos = pix_size, smp_pos
         self.z_f, self.pupil, self.beam_pos = z_f, pupil * pix_size, beam_pos * pix_size
         self.kin = (self.pupil - self.beam_pos) / self.z_f
+
+    @classmethod
+    def import_ini(cls, geom_file):
+        """
+        Import FrameSetup class object from an ini file
+
+        geom_file - path to a file
+        """
+        config = configparser.ConfigParser()
+        config.read(geom_file)
+        pix_size = config.getfloat('exp_geom', 'pix_size')
+        smp_pos = np.array([float(coord) for coord in config.get('exp_geom', 'sample_pos').split()])
+        z_f = config.getfloat('exp_geom', 'focus_z')
+        pupil = np.array([int(bound) for bound in config.get('exp_geom', 'pupil_bounds').split()]).reshape((2, 2))
+        beam_pos = np.array([int(coord) for coord in config.get('exp_geom', 'beam_pos').split()])
+        return cls(pix_size=pix_size, smp_pos=smp_pos, z_f=z_f, pupil=pupil, beam_pos=beam_pos)
 
     def pixtoq(self, pixels):
         """
@@ -96,6 +113,26 @@ class ScanSetup(FrameSetup):
         return cls(pix_size=frame_setup.pix_size, smp_pos=frame_setup.smp_pos, thetas=thetas,
                    z_f=frame_setup.z_f, pupil=frame_setup.pupil / frame_setup.pix_size,
                    beam_pos=frame_setup.beam_pos / frame_setup.pix_size, axis=axis)
+
+    @classmethod
+    def import_ini(cls, geom_file):
+        """
+        Import ScanSetup class object from an ini file
+
+        geom_file - path to a file
+        """
+        config = configparser.ConfigParser()
+        config.read(geom_file)
+        pix_size = config.getfloat('exp_geom', 'pix_size')
+        smp_pos = np.array([float(coord) for coord in config.get('exp_geom', 'sample_pos').split()])
+        z_f = config.getfloat('exp_geom', 'focus_z')
+        pupil = np.array([int(bound) for bound in config.get('exp_geom', 'pupil_bounds').split()]).reshape((2, 2))
+        beam_pos = np.array([int(coord) for coord in config.get('exp_geom', 'beam_pos').split()])
+        axis = np.array([float(coord) for coord in config.get('exp_geom', 'rot_axis').split()])
+        th_min = config.getfloat('exp_geom', 'theta_min')
+        th_max = config.getfloat('exp_geom', 'theta_max')
+        return cls(pix_size=pix_size, smp_pos=smp_pos, z_f=z_f, pupil=pupil, beam_pos=beam_pos,
+                   axis=axis, thetas=np.radians(np.arange(th_min, th_max)))
 
     @property
     def scan_size(self):

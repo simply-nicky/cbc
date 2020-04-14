@@ -3,6 +3,7 @@ wrapper.py - Eiger 4M detector data processing from Petra P06 beamline module
 """
 import os
 import concurrent.futures
+from multiprocessing import cpu_count
 from abc import ABCMeta, abstractmethod, abstractproperty
 from scipy.ndimage import median_filter, label
 from scipy import constants
@@ -74,8 +75,7 @@ class Measurement(metaclass=ABCMeta):
 
     @property
     def out_path(self):
-        return os.path.join(os.path.dirname(__file__),
-                            utils.OUT_PATH[self.mode].format(self.scan_num))
+        return utils.OUT_PATH[self.mode].format(self.scan_num)
 
     def filename(self, tag, ext):
         return utils.FILENAME[self.mode].format(tag, self.scan_num, ext)
@@ -190,7 +190,7 @@ class ABCScan(Measurement, metaclass=ABCMeta):
                       for filename in os.listdir(self.data_path)
                       if not filename.endswith('master.h5')]
         paths = np.sort(np.array(paths_list, dtype=object))
-        thread_num = min(paths.size, utils.CPU_COUNT)
+        thread_num = min(paths.size, cpu_count())
         futures = []
         with concurrent.futures.ProcessPoolExecutor() as executor:
             for paths_chunk in np.array_split(paths, thread_num):
@@ -429,9 +429,9 @@ class CorrectedData():
     def _init_background(self):
         futures = []
         with concurrent.futures.ProcessPoolExecutor() as executor:
-            data_list = np.array_split(self.data, utils.CPU_COUNT, axis=-1)
-            bgd_list = np.array_split(self.exp_bgd, utils.CPU_COUNT, axis=-1)
-            mask_list = np.array_split(self.bad_mask, utils.CPU_COUNT, axis=-1)
+            data_list = np.array_split(self.data, cpu_count(), axis=-1)
+            bgd_list = np.array_split(self.exp_bgd, cpu_count(), axis=-1)
+            mask_list = np.array_split(self.bad_mask, cpu_count(), axis=-1)
             for data_chunk, bgd_chunk, mask_chunk in zip(data_list, bgd_list, mask_list):
                 futures.append(executor.submit(CorrectedData._background_worker,
                                                data_chunk,

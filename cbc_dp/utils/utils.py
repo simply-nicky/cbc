@@ -2,26 +2,26 @@
 utils.py - Uitility constants and functions module
 """
 import os
-from multiprocessing import cpu_count
 import numpy as np
 import h5py
 from cv2 import cvtColor, COLOR_BGR2GRAY
 
-CPU_COUNT = cpu_count()
 RAW_PATH = "/asap3/petra3/gpfs/p06/2019/data/11006252/raw"
+PROJECT_PATH = os.path.abspath('.')
 PREFIXES = {'alignment': '0001_alignment',
             'opal': '0001_opal',
             'b12_1': '0002_b12_1',
             'b12_2': '0002_b12_2',
             'imaging': '0003_imaging1'}
-HOTMASK = np.load(os.path.join(os.path.dirname(__file__), "P06_mask.npy"))
+HOTMASK = np.load(os.path.join(PROJECT_PATH, "cbc_dp/utils/P06_mask.npy"))
 MEAS_PATH = {'scan': "scan_{0:05d}", "frame": "count_{0:05d}"}
 EIGER_PATH = "eiger4m_01"
 NXS_PATH = "/scan/program_name"
 COMMAND_PATH = "scan_command"
 DATA_PATH = "entry/data/data"
 ENERGY_PATH = "scan/data/energy"
-OUT_PATH = {'scan': "../exp_results/scan_{0:05d}", 'frame': "../exp_results/count_{0:05d}"}
+OUT_PATH = {'scan': os.path.join(PROJECT_PATH, "exp_results/scan_{0:05d}"),
+            'frame': os.path.join(PROJECT_PATH, "exp_results/count_{0:05d}")}
 FILENAME = {'scan': "scan_{0:s}_{1:05d}.{2:s}", 'frame': "count_{0:s}_{1:05d}.{2:s}"}
 DATA_FILENAME = {'scan': 'scan_{0:05d}_data_{1:06d}.h5', 'frame': 'count_{0:05d}_data_{1:06d}.h5'}
 COMMANDS = {'single_frame': ('cnt', 'ct'),
