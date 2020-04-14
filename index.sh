@@ -3,4 +3,4 @@
 source /home/nivanov/conda-setup.sh
 conda activate python3
 
-python cbc_dp.index $*
+python -m cbc_dp.index $*

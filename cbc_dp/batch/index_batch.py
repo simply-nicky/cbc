@@ -110,7 +110,7 @@ class JobBatcher():
         command.extend(job.shell_parameters())
         print('Submitting job: {:s}'.format(job.name))
         print('Shell script: {:s}'.format(self.shell_script))
-        print('Command: {:s}'.format(command))
+        print('Command: {:s}'.format(' '.join(command)))
         if test:
             return -1
         else:
