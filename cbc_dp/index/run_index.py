@@ -180,12 +180,12 @@ def main():
     args = parser.parse_args()
     rec_basis = import_rb(args.rb_file)
     scan = open_scan(scan_num=args.scan_num, exp_set=ScanSetup.import_ini(args.geom_file))
-    if args.mode == 'rot':
+    if args.index_mode == 'rot':
         index_sol, index_pts = rot_index(scan=scan, pop_size=args.pop_size,
                                          n_isl=args.n_isl, rec_basis=rec_basis,
                                          gen_num=args.gen_num, pos_tol=args.pos_tol,
                                          rb_tol=args.rb_tol, ang_tol=args.ang_tol)
-    elif args.mode == 'full':
+    elif args.index_mode == 'full':
         index_sol, index_pts = full_index(scan=scan, pop_size=args.pop_size,
                                           n_isl=args.n_isl, rec_basis=rec_basis,
                                           gen_num=args.gen_num, pos_tol=args.pos_tol,
