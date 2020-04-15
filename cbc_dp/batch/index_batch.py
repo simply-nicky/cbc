@@ -71,9 +71,9 @@ class JobBatcher():
     """
     batch_cmd = "sbatch"
     shell_script = os.path.join(PROJECT_PATH, "index.sh")
-    output_path = "index/{out_path:s}_{idx:03d}.h5"
-    output_file = "sbatch_out/{job_name:s}_{now:s}.out"
-    error_file = "sbatch_out/{job_name:s}_{now:s}.err"
+    data_file = "{out_path:s}_{idx:03d}.h5"
+    out_file = "{job_name:s}_{now:s}.out"
+    err_file = "{job_name:s}_{now:s}.err"
     error_text = "Command '{cmd:s}' has returned an error (code {code:s}): {stderr:s}"
     job_size = 16
 
@@ -83,10 +83,14 @@ class JobBatcher():
 
     def _init_pool(self, config_file):
         config = JobConfig.import_ini(config_file)
+        self.data_dir = os.path.join(OUT_PATH['scan'].format(config.scan_num), 'index')
+        os.makedirs(self.data_dir, exist_ok=True)
+        self.sbatch_dir = os.path.join(OUT_PATH['scan'].format(config.scan_num), 'sbatch_out')
+        os.makedirs(self.sbatch_dir, exist_ok=True)
         self.pool = []
         for idx, n_isl in enumerate(chunkify(config.n_isl, self.job_size)):
-            out_path = os.path.join(OUT_PATH['scan'].format(config.scan_num),
-                                    self.output_path.format(out_path=config.out_path, idx=idx))
+            out_path = os.path.join(self.data_dir,
+                                    self.data_file.format(out_path=config.out_path, idx=idx))
             job = JobConfig(mode=config.mode, out_path=out_path, scan_num=config.scan_num,
                             pop_size=config.pop_size, n_isl=n_isl, gen_num=config.gen_num,
                             pos_tol=config.pos_tol, rb_tol=config.rb_tol, ang_tol=config.ang_tol)
@@ -98,10 +102,10 @@ class JobBatcher():
         """
         now = datetime.now().strftime('%m-%d-%y_%H-%M-%S')
         sbatch_params = ['--partition', 'upex', '--job_name', job.name,
-                         '--output', os.path.join(job.out_path,
-                                                  self.output_file.format(job_name=job.name, now=now)),
-                         '--error', os.path.join(job.out_path,
-                                                 self.error_file.format(job_name=job.name, now=now))]
+                         '--output', os.path.join(self.sbatch_dir,
+                                                  self.out_file.format(job_name=job.name, now=now)),
+                         '--error', os.path.join(self.sbatch_dir,
+                                                 self.err_file.format(job_name=job.name, now=now))]
         return sbatch_params
 
     def batch_job(self, job, test):
