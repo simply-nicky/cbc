@@ -110,7 +110,7 @@ class JobBatcher():
         """
         Return sbatch command parameters for a job
         """
-        sbatch_params = ['--partition', 'upex', '--job_name', job_name,
+        sbatch_params = ['--partition', 'upex', '--job-name', job_name,
                          '--output', os.path.join(self.sbatch_dir,
                                                   self.out_file.format(job_name=job_name, now=self.now())),
                          '--error', os.path.join(self.sbatch_dir,
