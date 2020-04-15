@@ -162,7 +162,7 @@ def main():
     parser = argparse.ArgumentParser(description='Run CBC indexing refinement')
     parser.add_argument('geom_file', type=str, help='Path to a geometry ini file')
     parser.add_argument('rb_file', type=str, help='Path to a reciprocal lattice basis vectors ini file')
-    parser.add_argument('index_mode', type=str, choices=['rot', 'full', 'scan'],
+    parser.add_argument('mode', type=str, choices=['rot', 'full', 'scan'],
                         help='Choose between rotation and full indexing refinement')
     parser.add_argument('out_path', type=str, help='Output file path')
     parser.add_argument('--scan_num', type=int, default=135, help='Scan number')
@@ -180,12 +180,12 @@ def main():
     args = parser.parse_args()
     rec_basis = import_rb(args.rb_file)
     scan = open_scan(scan_num=args.scan_num, exp_set=ScanSetup.import_ini(args.geom_file))
-    if args.index_mode == 'rot':
+    if args.mode == 'rot':
         index_sol, index_pts = rot_index(scan=scan, pop_size=args.pop_size,
                                          n_isl=args.n_isl, rec_basis=rec_basis,
                                          gen_num=args.gen_num, pos_tol=args.pos_tol,
                                          rb_tol=args.rb_tol, ang_tol=args.ang_tol)
-    elif args.index_mode == 'full':
+    elif args.mode == 'full':
         index_sol, index_pts = full_index(scan=scan, pop_size=args.pop_size,
                                           n_isl=args.n_isl, rec_basis=rec_basis,
                                           gen_num=args.gen_num, pos_tol=args.pos_tol,
