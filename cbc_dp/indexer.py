@@ -66,8 +66,8 @@ class FrameStreaks():
         kout = self.exp_set.kout_exp(index_pts)
         return RecVectors(kout=kout, kin=self.kin)
 
-    def full_index_refine(self, rec_basis, rot_mat, pos_tol=(0.02, 0.02, 0.075),
-                          rb_tol=0.01, ang_tol=0.05):
+    def full_index(self, rec_basis, rot_mat, pos_tol=(0.02, 0.02, 0.075),
+                   rb_tol=0.01, ang_tol=0.05):
         """
         Return a population of reciprocal lattice basis vectors matrix refinement problem
 
@@ -80,8 +80,8 @@ class FrameStreaks():
                        tol=(pos_tol, rb_tol, ang_tol))
         return pygmo.problem(full_tf)
 
-    def rot_index_refine(self, rec_basis, rot_mat, pos_tol=(0.02, 0.02, 0.075),
-                         rb_tol=0.01, ang_tol=0.05):
+    def rot_index(self, rec_basis, rot_mat, pos_tol=(0.02, 0.02, 0.075),
+                  rb_tol=0.01, ang_tol=0.05):
         """
         Return a population of reciprocal lattice rotation refinement problem
 

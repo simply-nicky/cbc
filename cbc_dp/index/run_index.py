@@ -88,9 +88,9 @@ def rot_index(scan, rec_basis, n_isl, pop_size, gen_num, pos_tol, rb_tol, ang_to
     scan_size = scan.frames.size
 
     print("Setting up the indexing solution refinement...")
-    archi = scan.rot_index_refine(rec_basis=rec_basis, n_isl=n_isl, pop_size=pop_size,
-                                  gen_num=gen_num, pos_tol=pos_tol, rb_tol=rb_tol,
-                                  ang_tol=ang_tol)
+    archi = scan.rot_index(rec_basis=rec_basis, n_isl=n_isl, pop_size=pop_size,
+                           gen_num=gen_num, pos_tol=pos_tol, rb_tol=rb_tol,
+                           ang_tol=ang_tol)
     print("Starting indexing solution refinement...")
     start = timer()
     archi.evolve()
@@ -114,9 +114,9 @@ def full_index(scan, rec_basis, n_isl, pop_size, gen_num, pos_tol, rb_tol, ang_t
     scan_size = scan.frames.size
 
     print("Setting up the indexing solution refinement...")
-    archi = scan.full_index_refine(rec_basis=rec_basis, n_isl=n_isl, pop_size=pop_size,
-                                   gen_num=gen_num, pos_tol=pos_tol, rb_tol=rb_tol,
-                                   ang_tol=ang_tol)
+    archi = scan.full_index(rec_basis=rec_basis, n_isl=n_isl, pop_size=pop_size,
+                            gen_num=gen_num, pos_tol=pos_tol, rb_tol=rb_tol,
+                            ang_tol=ang_tol)
     print("Starting indexing solution refinement")
     start = timer()
     archi.evolve()
