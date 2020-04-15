@@ -55,7 +55,11 @@ class JobConfig():
         """
         params = [self.mode, self.out_path]
         for key in self.param_dict:
-            params.extend([key, str(self.param_dict[key])])
+            if key == '--pos_tol':
+                params.append(key)
+                params.extend([str(tol) for tol in self.param_dict[key]])
+            else:
+                params.extend([key, str(self.param_dict[key])])
         return params
 
 class JobBatcher():
