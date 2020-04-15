@@ -135,7 +135,7 @@ class JobBatcher():
         command.extend(self.sbatch_parameters('combine'))
         command.extend(['--dependency', 'afterok:{:s}'.format(':'.join(job_nums)), self.combine_script])
         command.extend([job.out_path for job in self.pool])
-        command.append(self.out_filename + '.h5')
+        command.append(os.path.join(self.data_dir, self.out_filename + '.h5'))
         return command
 
     def batch_job(self, job_name, command, test):
