@@ -220,8 +220,8 @@ class ScanStreaks(FrameStreaks):
         archi = pygmo.archipelago()
         for frame_idx, frame_strks in enumerate(iter(self)):
             rot_mat = self.exp_set.rotation_matrix(frame_idx, inverse=True)
-            prob = frame_strks.full_index_refine(rec_basis=rec_basis, rot_mat=rot_mat, pos_tol=pos_tol,
-                                                 rb_tol=rb_tol, ang_tol=ang_tol)
+            prob = frame_strks.full_index(rec_basis=rec_basis, rot_mat=rot_mat, pos_tol=pos_tol,
+                                          rb_tol=rb_tol, ang_tol=ang_tol)
             pops = [pygmo.population(size=pop_size, prob=prob) for _ in range(n_isl)]
             for pop in pops:
                 archi.push_back(algo=pygmo.de(gen_num), pop=pop)
@@ -243,8 +243,8 @@ class ScanStreaks(FrameStreaks):
         archi = pygmo.archipelago()
         for frame_idx, frame_strks in enumerate(iter(self)):
             rot_mat = self.exp_set.rotation_matrix(frame_idx, inverse=True)
-            prob = frame_strks.rot_index_refine(rec_basis=rec_basis, rot_mat=rot_mat, pos_tol=pos_tol,
-                                                rb_tol=rb_tol, ang_tol=ang_tol)
+            prob = frame_strks.rot_index(rec_basis=rec_basis, rot_mat=rot_mat, pos_tol=pos_tol,
+                                         rb_tol=rb_tol, ang_tol=ang_tol)
             pops = [pygmo.population(size=pop_size, prob=prob) for _ in range(n_isl)]
             for pop in pops:
                 archi.push_back(algo=pygmo.de(gen_num), pop=pop)
