@@ -70,7 +70,9 @@ class JobBatcher():
     geom_file - path to an experimental geometry ini file
     """
     batch_cmd = "sbatch"
-    shell_script = os.path.join(PROJECT_PATH, "index.sh")
+    frmt = '%m-%d-%y_%H-%M-%S'
+    index_script = os.path.join(PROJECT_PATH, "index.sh")
+    combine_script = os.path.join(PROJECT_PATH, "cbc_dp/batch/combine.sh")
     data_file = "{out_path:s}_{idx:03d}.h5"
     out_file = "{job_name:s}_{now:s}.out"
     err_file = "{job_name:s}_{now:s}.err"
@@ -87,40 +89,63 @@ class JobBatcher():
         os.makedirs(self.data_dir, exist_ok=True)
         self.sbatch_dir = os.path.join(OUT_PATH['scan'].format(config.scan_num), 'sbatch_out')
         os.makedirs(self.sbatch_dir, exist_ok=True)
+        self.out_filename = config.out_path
         self.pool = []
         for idx, n_isl in enumerate(chunkify(config.n_isl, self.job_size)):
             out_path = os.path.join(self.data_dir,
-                                    self.data_file.format(out_path=config.out_path, idx=idx))
+                                    self.data_file.format(out_path=self.out_filename, idx=idx))
             job = JobConfig(mode=config.mode, out_path=out_path, scan_num=config.scan_num,
                             pop_size=config.pop_size, n_isl=n_isl, gen_num=config.gen_num,
                             pos_tol=config.pos_tol, rb_tol=config.rb_tol, ang_tol=config.ang_tol)
             self.pool.append(job)
 
-    def sbatch_parameters(self, job):
+    @classmethod
+    def now(cls):
+        """
+        Return current date and time string at the particular format
+        """
+        return datetime.now().strftime(cls.frmt)
+
+    def sbatch_parameters(self, job_name):
         """
         Return sbatch command parameters for a job
         """
-        now = datetime.now().strftime('%m-%d-%y_%H-%M-%S')
-        sbatch_params = ['--partition', 'upex', '--job_name', job.name,
+        sbatch_params = ['--partition', 'upex', '--job_name', job_name,
                          '--output', os.path.join(self.sbatch_dir,
-                                                  self.out_file.format(job_name=job.name, now=now)),
+                                                  self.out_file.format(job_name=job_name, now=self.now())),
                          '--error', os.path.join(self.sbatch_dir,
-                                                 self.err_file.format(job_name=job.name, now=now))]
+                                                 self.err_file.format(job_name=job_name, now=self.now()))]
         return sbatch_params
 
-    def batch_job(self, job, test):
+    def index_command(self, job):
+        """
+        Return a command to batch an indexing job
+        """
+        command = [self.batch_cmd]
+        command.extend(self.sbatch_parameters(job.name))
+        command.extend([self.index_script, self.geom_file, self.rb_file])
+        command.extend(job.shell_parameters())
+        return command
+
+    def combine_command(self, job_nums):
+        """
+        Return a command to batch a combine job
+        """
+        command = [self.batch_cmd]
+        command.extend(self.sbatch_parameters('combine'))
+        command.extend(['--dependency', 'afterok:{:s}'.format(':'.join(job_nums)), self.combine_script])
+        command.extend([job.out_path for job in self.pool])
+        command.append(self.out_filename + '.h5')
+        return command
+
+    def batch_job(self, job_name, command, test):
         """
         Batch a job
         """
-        command = [self.batch_cmd]
-        command.extend(self.sbatch_parameters(job))
-        command.extend([self.shell_script, self.geom_file, self.rb_file])
-        command.extend(job.shell_parameters())
-        print('Submitting job: {:s}'.format(job.name))
-        print('Shell script: {:s}'.format(self.shell_script))
+        print('Submitting job: {:s}'.format(job_name))
         print('Command: {:s}'.format(' '.join(command)))
         if test:
-            return -1
+            return '-1'
         else:
             try:
                 output = subprocess.run(args=command, check=True, capture_output=True)
@@ -129,8 +154,8 @@ class JobBatcher():
                                                   code=error.returncode,
                                                   stderr=error.stderr)
                 raise RuntimeError(err_text) from error
-            job_num = int(output.stdout.rstrip().decode("unicode_escape").split()[-1])
-            print("The job {} has been submitted".format(job.name))
+            job_num = output.stdout.rstrip().decode("unicode_escape").split()[-1]
+            print("The job {} has been submitted".format(job_name))
             print("Job ID: {}".format(job_num))
             return job_num
 
@@ -138,8 +163,12 @@ class JobBatcher():
         """
         Batch a pool of jobs
         """
+        job_nums = []
         for job in self.pool:
-            self.batch_job(job, test)
+            command = self.index_command(job)
+            job_nums.append(self.batch_job(job.name, command, test))
+        command = self.combine_command(job_nums)
+        self.batch_job('combine', command, test)
 
 def main():
     parser = argparse.ArgumentParser(description='Batch to Maxwell jobs of indexing refinement')
