@@ -9,11 +9,9 @@ import numpy as np
 from datetime import datetime
 from ..utils import OUT_PATH, chunkify, PROJECT_PATH
 
-class JobConfig():
+class IndexConfig():
     """
-    Class parser for ini files
-    config_file - path to a config file
-    geom_file - path to a experimental geometry config file
+    Index job parameters class
     """
     name_str = "{scan_num:03d}_{mode:s}_index"
 
@@ -28,19 +26,15 @@ class JobConfig():
                            '--ang_tol': self.ang_tol}
 
     @classmethod
-    def import_ini(cls, config_file):
+    def import_config(cls, config, out_path, n_isl):
         """
         Import from an ini file
 
         config_file - path to a file
         """
-        config = configparser.ConfigParser()
-        config.read(config_file)
         mode = config.get('config', 'mode')
-        out_path = config.get('config', 'out_path')
         scan_num = config.getint('config', 'scan_num')
         pop_size = config.getint('config', 'pop_size')
-        n_isl = config.getint('config', 'n_islands')
         gen_num = config.getint('config', 'gen_number')
         pos_tol = np.array([float(tol) for tol in config.get('config', 'pos_tol').split()])
         rb_tol = config.getfloat('config', 'rb_tol')
@@ -55,12 +49,46 @@ class JobConfig():
         """
         params = [self.mode, self.out_path]
         for key in self.param_dict:
-            if key == '--pos_tol':
+            if key == '--pos_tol' or key == '--frames':
                 params.append(key)
-                params.extend([str(tol) for tol in self.param_dict[key]])
+                params.extend([str(num) for num in self.param_dict[key]])
             else:
                 params.extend([key, str(self.param_dict[key])])
         return params
+    
+    def get_chunk(self, n_isl):
+        """
+        Return job config with the given nmber of islands
+        """
+
+class ScanIndexConfig(IndexConfig):
+    """
+    Scan index job parameters class
+    """
+    def __init__(self, out_path, scan_num, frames, pop_size, n_isl, gen_num, pos_tol, rb_tol, ang_tol):
+        super(ScanIndexConfig, self).__init__(mode='scan', out_path=out_path, scan_num=scan_num,
+                                              pop_size=pop_size, n_isl=n_isl, gen_num=gen_num,
+                                              pos_tol=pos_tol, rb_tol=rb_tol, ang_tol=ang_tol)
+        self.frames = frames
+        self.param_dict['--frames'] = frames
+
+    @classmethod
+    def import_config(cls, config, out_path, n_isl):
+        """
+        Import from an ini file
+
+        config_file - path to a file
+        """
+        scan_num = config.getint('config', 'scan_num')
+        pop_size = config.getint('config', 'pop_size')
+        gen_num = config.getint('config', 'gen_number')
+        pos_tol = np.array([float(tol) for tol in config.get('config', 'pos_tol').split()])
+        rb_tol = config.getfloat('config', 'rb_tol')
+        ang_tol = config.getfloat('config', 'ang_tol')
+        frames = np.array([int(frame) for frame in config.get('config', 'frames').split()])
+        return cls(out_path=out_path, scan_num=scan_num, frames=frames,
+                   pop_size=pop_size, n_isl=n_isl, gen_num=gen_num,
+                   pos_tol=pos_tol, rb_tol=rb_tol, ang_tol=ang_tol)
 
 class JobBatcher():
     """
@@ -84,19 +112,22 @@ class JobBatcher():
         self._init_pool(config_file)
 
     def _init_pool(self, config_file):
-        config = JobConfig.import_ini(config_file)
-        self.data_dir = os.path.join(OUT_PATH['scan'].format(config.scan_num), 'index')
+        config = configparser.ConfigParser()
+        config.read(config_file)
+        scan_num = config.getint('config', 'scan_num')
+        self.data_dir = os.path.join(OUT_PATH['scan'].format(scan_num), 'index')
         os.makedirs(self.data_dir, exist_ok=True)
-        self.sbatch_dir = os.path.join(OUT_PATH['scan'].format(config.scan_num), 'sbatch_out')
+        self.sbatch_dir = os.path.join(OUT_PATH['scan'].format(scan_num), 'sbatch_out')
         os.makedirs(self.sbatch_dir, exist_ok=True)
-        self.data_path = config.out_path
+        self.data_path = config.get('config', 'out_path')
         self.pool = []
-        for idx, n_isl in enumerate(chunkify(config.n_isl, self.job_size)):
+        for idx, n_isl in enumerate(chunkify(config.getint('config', 'n_islands'), self.job_size)):
             out_path = os.path.join(self.data_dir,
                                     self.data_file.format(out_path=self.data_path, idx=idx))
-            job = JobConfig(mode=config.mode, out_path=out_path, scan_num=config.scan_num,
-                            pop_size=config.pop_size, n_isl=n_isl, gen_num=config.gen_num,
-                            pos_tol=config.pos_tol, rb_tol=config.rb_tol, ang_tol=config.ang_tol)
+            if config.get('config', 'mode') == 'scan':
+                job = ScanIndexConfig.import_config(config, out_path, n_isl)
+            else:
+                job = IndexConfig.import_config(config, out_path, n_isl)
             self.pool.append(job)
 
     @classmethod

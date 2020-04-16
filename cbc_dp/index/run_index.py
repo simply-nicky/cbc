@@ -3,11 +3,11 @@ run_index.py - script to run indexing refinement
 """
 import os
 
-os.environ["OMP_NUM_THREADS"] = "4" # export OMP_NUM_THREADS=4
-os.environ["OPENBLAS_NUM_THREADS"] = "4" # export OPENBLAS_NUM_THREADS=4
-os.environ["MKL_NUM_THREADS"] = "6" # export MKL_NUM_THREADS=6
-os.environ["VECLIB_MAXIMUM_THREADS"] = "4" # export VECLIB_MAXIMUM_THREADS=4
-os.environ["NUMEXPR_NUM_THREADS"] = "6" # export NUMEXPR_NUM_THREADS=6
+os.environ["OMP_NUM_THREADS"] = "4"         # export OMP_NUM_THREADS=4
+os.environ["OPENBLAS_NUM_THREADS"] = "4"    # export OPENBLAS_NUM_THREADS=4
+os.environ["MKL_NUM_THREADS"] = "6"         # export MKL_NUM_THREADS=6
+os.environ["VECLIB_MAXIMUM_THREADS"] = "4"  # export VECLIB_MAXIMUM_THREADS=4
+os.environ["NUMEXPR_NUM_THREADS"] = "6"     # export NUMEXPR_NUM_THREADS=6
 
 from timeit import default_timer as timer
 import argparse
@@ -49,10 +49,8 @@ def open_scan(scan_num, exp_set):
                              OUT_PATH['scan'].format(scan_num),
                              FILENAME['scan'].format('streaks', scan_num, 'h5'))
     print("Looking for data file: {}".format(data_path))
-
     if not os.path.exists(data_path):
         raise ValueError("Data doesn't exist at the following path: {}".format(data_path))
-
     print("Opening the data file...")
     with h5py.File(data_path, 'r') as data_file:
         det_scan = ScanStreaks(raw_lines=data_file['streaks/lines'][:],
@@ -91,7 +89,6 @@ def rot_index(scan, rec_basis, n_isl, pop_size, gen_num, pos_tol, rb_tol, ang_to
     [pos_tol, rb_tol, ang_tol] - refinement tolerances
     """
     scan_size = scan.frames.size
-
     print("Setting up the indexing solution refinement...")
     archi = scan.rot_index(rec_basis=rec_basis, n_isl=n_isl, pop_size=pop_size,
                            gen_num=gen_num, pos_tol=pos_tol, rb_tol=rb_tol,
@@ -117,7 +114,6 @@ def full_index(scan, rec_basis, n_isl, pop_size, gen_num, pos_tol, rb_tol, ang_t
     [pos_tol, rb_tol, ang_tol] - refinement tolerances
     """
     scan_size = scan.frames.size
-
     print("Setting up the indexing solution refinement...")
     archi = scan.full_index(rec_basis=rec_basis, n_isl=n_isl, pop_size=pop_size,
                             gen_num=gen_num, pos_tol=pos_tol, rb_tol=rb_tol,
@@ -181,6 +177,8 @@ def main():
     parser.add_argument('--rb_tol', type=float, default=0.01,
                         help='Lattice basis vectors length tolerance')
     parser.add_argument('--ang_tol', type=float, default=0.1, help='Rotation anlges tolerance')
+    parser.add_argument('--frames', type=int, nargs='+', default=list(range(10, 101, 10)),
+                        help='Frames to index (scan mode only)')
 
     args = parser.parse_args()
     rec_basis = import_rb(args.rb_file)
@@ -196,7 +194,8 @@ def main():
                                           gen_num=args.gen_num, pos_tol=args.pos_tol,
                                           rb_tol=args.rb_tol, ang_tol=args.ang_tol)
     else:
-        index_sol, index_pts = scan_index(scan=scan, pop_size=args.pop_size,
+        frames = np.array(args.frames)
+        index_sol, index_pts = scan_index(scan=scan[frames], pop_size=args.pop_size,
                                           n_isl=args.n_isl, rec_basis=rec_basis,
                                           gen_num=args.gen_num, pos_tol=args.pos_tol,
                                           rb_tol=args.rb_tol, ang_tol=args.ang_tol)
