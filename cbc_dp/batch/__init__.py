@@ -1,1 +1,1 @@
-from .index_batch import JobConfig, JobBatcher
+from .batch_index import JobConfig, JobBatcher
