@@ -71,7 +71,7 @@ class JobBatcher():
     """
     batch_cmd = "sbatch"
     frmt = '%m-%d-%y_%H-%M-%S'
-    index_script = os.path.join(PROJECT_PATH, "index.sh")
+    index_script = os.path.join(PROJECT_PATH, "cbc_dp/index/index.sh")
     combine_script = os.path.join(PROJECT_PATH, "cbc_dp/batch/combine.sh")
     data_file = "{out_path:s}_{idx:03d}.h5"
     out_file = "{job_name:s}_{now:s}.out"
@@ -110,11 +110,13 @@ class JobBatcher():
         """
         Return sbatch command parameters for a job
         """
-        sbatch_params = ['--partition', 'upex', '--job-name', job_name,
+        sbatch_params = ['--partition', 'upex', '--job-name', job_name, '--chdir', PROJECT_PATH,
                          '--output', os.path.join(self.sbatch_dir,
-                                                  self.out_file.format(job_name=job_name, now=self.now())),
+                                                  self.out_file.format(job_name=job_name,
+                                                                       now=self.now())),
                          '--error', os.path.join(self.sbatch_dir,
-                                                 self.err_file.format(job_name=job_name, now=self.now()))]
+                                                 self.err_file.format(job_name=job_name,
+                                                                      now=self.now()))]
         return sbatch_params
 
     def index_command(self, job):
@@ -133,7 +135,9 @@ class JobBatcher():
         """
         command = [self.batch_cmd]
         command.extend(self.sbatch_parameters('combine'))
-        command.extend(['--dependency', 'afterok:{:s}'.format(':'.join(job_nums)), self.combine_script])
+        command.extend(['--dependency',
+                        'afterok:{:s}'.format(':'.join(job_nums)),
+                        self.combine_script])
         command.extend([job.out_path for job in self.pool])
         command.append(os.path.join(self.data_dir, self.out_filename + '.h5'))
         return command
