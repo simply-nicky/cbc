@@ -1,5 +1,5 @@
 """
-index_batch.py - batching to Maxwell cluster script
+batch_index.py - batching to Maxwell cluster script
 """
 import configparser
 import argparse
@@ -89,11 +89,11 @@ class JobBatcher():
         os.makedirs(self.data_dir, exist_ok=True)
         self.sbatch_dir = os.path.join(OUT_PATH['scan'].format(config.scan_num), 'sbatch_out')
         os.makedirs(self.sbatch_dir, exist_ok=True)
-        self.out_filename = config.out_path
+        self.data_path = config.out_path
         self.pool = []
         for idx, n_isl in enumerate(chunkify(config.n_isl, self.job_size)):
             out_path = os.path.join(self.data_dir,
-                                    self.data_file.format(out_path=self.out_filename, idx=idx))
+                                    self.data_file.format(out_path=self.data_path, idx=idx))
             job = JobConfig(mode=config.mode, out_path=out_path, scan_num=config.scan_num,
                             pop_size=config.pop_size, n_isl=n_isl, gen_num=config.gen_num,
                             pos_tol=config.pos_tol, rb_tol=config.rb_tol, ang_tol=config.ang_tol)
@@ -139,7 +139,7 @@ class JobBatcher():
                         'afterok:{:s}'.format(':'.join(job_nums)),
                         self.combine_script])
         command.extend([job.out_path for job in self.pool])
-        command.append(os.path.join(self.data_dir, self.out_filename + '.h5'))
+        command.append(os.path.join(self.data_dir, self.data_path + '.h5'))
         return command
 
     def batch_job(self, job_name, command, test):

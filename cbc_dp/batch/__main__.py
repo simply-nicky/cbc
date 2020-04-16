@@ -1,3 +1,3 @@
-from .index_batch import main
+from .batch_index import main
 
 main()

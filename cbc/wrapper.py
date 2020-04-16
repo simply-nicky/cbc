@@ -291,7 +291,7 @@ class DiffRes(object):
     def write(self):
         self.setup.logger.info('Writing the results:')
         self.setup.logger.info('Folder: %s' % self.setup.path)
-        utils.make_dirs(self.setup.path)
+        os.makedirs(self.setup.path, exist_ok=True)
         _filename = 'diff_' + datetime.datetime.now().strftime('%d-%m-%Y_%H-%M-%S') + '.hdf5'
         _file_path = utils.make_filename(self.setup.path, _filename)
         self.setup.logger.info('Filename: %s', _filename)

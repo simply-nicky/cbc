@@ -61,7 +61,7 @@ def open_scan(scan_num, exp_set):
     print("{:d} streaks detected in total".format(det_scan.size))
     return det_scan
 
-def write_data(index_sol, index_pts, out_path):
+def write_data(out_path, index_sol, index_pts, rec_basis, gen_num, pos_tol, rb_tol, ang_tol):
     """
     Write refinement solutions to an hdf5 file
 
@@ -71,6 +71,11 @@ def write_data(index_sol, index_pts, out_path):
     out_file = h5py.File(os.path.join('exp_results', out_path), 'w')
     out_file.create_dataset('data/index_sol', data=index_sol)
     out_file.create_dataset('data/index_pts', data=index_pts)
+    out_file.create_dataset('config/rec_basis', data=rec_basis)
+    out_file.create_dataset('config/gen_num', data=gen_num)
+    out_file.create_dataset('config/pos_tol', data=np.array(pos_tol))
+    out_file.create_dataset('config/rb_tol', data=rb_tol)
+    out_file.create_dataset('config/ang_tol', data=ang_tol)
     print("The refined solutions have been saved, file: {}".format(out_file.filename))
     out_file.close()
 
@@ -195,5 +200,7 @@ def main():
                                           n_isl=args.n_isl, rec_basis=rec_basis,
                                           gen_num=args.gen_num, pos_tol=args.pos_tol,
                                           rb_tol=args.rb_tol, ang_tol=args.ang_tol)
-    write_data(index_sol, index_pts, args.out_path)
+    write_data(out_path=args.out_path, index_sol=index_sol, index_pts=index_pts,
+               rec_basis=rec_basis, gen_num=args.gen_num, pos_tol=args.pos_tol,
+               rb_tol=args.rb_tol, ang_tol=args.ang_tol)
     

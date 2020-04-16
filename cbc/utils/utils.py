@@ -6,7 +6,6 @@ Dependencies: scipy, numpy and numba.
 """
 import os
 import datetime
-import errno
 import logging
 from multiprocessing import cpu_count
 import numpy as np
@@ -28,13 +27,6 @@ PAR_PATH = os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardi
 RES_PATH = 'results'
 LOG_PATH = 'logs'
 
-def make_dirs(path):
-    try:
-        os.makedirs(path)
-    except OSError as error:
-        if error.errno != errno.EEXIST:
-            raise OSError(error.errno, error.strerror, error.filename)
-
 def make_filename(path, filename, i=2):
     name, ext = os.path.splitext(filename)
     newname = name + "_{:d}".format(i) + ext
@@ -46,7 +38,7 @@ def make_filename(path, filename, i=2):
         return newname
 
 def get_logpath(filename=str(datetime.date.today()) + '.log'):
-    make_dirs(os.path.join(PAR_PATH, LOG_PATH))
+    os.makedirs(os.path.join(PAR_PATH, LOG_PATH), exist_ok=True)
     logpath = os.path.join(PAR_PATH, LOG_PATH, filename)
     return logpath
 
