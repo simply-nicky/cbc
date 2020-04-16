@@ -218,7 +218,7 @@ class ScanStreaks(FrameStreaks):
         ang_tol - rotation anlges tolerance
         """
         archi = pygmo.archipelago()
-        for frame_idx, frame_strks in enumerate(iter(self)):
+        for frame_idx, frame_strks in zip(self.frames, iter(self)):
             rot_mat = self.exp_set.rotation_matrix(frame_idx, inverse=True)
             prob = frame_strks.full_index(rec_basis=rec_basis, rot_mat=rot_mat, pos_tol=pos_tol,
                                           rb_tol=rb_tol, ang_tol=ang_tol)
@@ -241,7 +241,7 @@ class ScanStreaks(FrameStreaks):
         ang_tol - rotation anlges tolerance
         """
         archi = pygmo.archipelago()
-        for frame_idx, frame_strks in enumerate(iter(self)):
+        for frame_idx, frame_strks in zip(self.frames, iter(self)):
             rot_mat = self.exp_set.rotation_matrix(frame_idx, inverse=True)
             prob = frame_strks.rot_index(rec_basis=rec_basis, rot_mat=rot_mat, pos_tol=pos_tol,
                                          rb_tol=rb_tol, ang_tol=ang_tol)
