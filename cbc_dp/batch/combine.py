@@ -11,7 +11,7 @@ def make_path(path, i=0):
     Return a nonexistant path to write a file
     """
     filename, ext = os.path.splitext(path)
-    new_path = filename + "_{:d}".format(i) + ext
+    new_path = filename + "_{:02d}".format(i) + ext
     if not os.path.isfile(path):
         return path
     elif os.path.isfile(new_path):

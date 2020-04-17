@@ -2,6 +2,7 @@
 index_utils.pyx - indexing and modelling utility functions written in Cython
 """
 from libc.math cimport sqrt, sin, cos, tan, atan, atan2, acos, floor, ceil, pi
+from scipy.special.cython_special cimport binom
 import numpy as np
 cimport numpy as cnp
 
@@ -9,6 +10,15 @@ ctypedef cnp.float64_t float_t
 ctypedef cnp.int64_t int_t
 ctypedef cnp.uint64_t uint_t
 ctypedef cnp.uint8_t uint8_t
+
+def scan_ps(int_t pop_size, int_t scan_size):
+    cdef:
+        int_t k = scan_size
+        float_t ps1 = binom(k, scan_size - 1), ps2 = binom(k + 1, scan_size - 1)
+    while abs(ps1 - pop_size) > abs(ps2 - pop_size):
+        k += 1
+        ps1 = ps2; ps2 = binom(k + 1, scan_size - 1)
+    return ps1
 
 cdef void eul_ang_c(float_t[::1] output, float_t[:, ::1] rot_mat) nogil:
     output[1] = acos(rot_mat[2, 2])

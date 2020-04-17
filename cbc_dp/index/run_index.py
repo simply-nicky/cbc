@@ -7,7 +7,7 @@ import argparse
 import numpy as np
 import pygmo
 import h5py
-from ..utils import OUT_PATH, FILENAME
+from ..utils import OUT_PATH, FILENAME, scan_ps
 from ..feat_detect import ScanSetup
 from ..indexer import ScanStreaks, ScanCBI
 from ..model import RecBasis
@@ -119,7 +119,9 @@ def scan_index(scan, rec_basis, n_isl, pop_size, gen_num, pos_tol, rb_tol, ang_t
     [pos_tol, rb_tol, ang_tol] - refinement tolerances
     """
     print("Setting up the indexing solution refinement...")
-    prob = ScanCBI(streaks=scan[10::10], rec_basis=rec_basis,
+    pop_size = scan_ps(pop_size, scan.frames.size)
+    print("Number of frames: {0:d}\n Population size: {1:d}".format(scan.frames.size, pop_size))
+    prob = ScanCBI(streaks=scan, rec_basis=rec_basis,
                    tol=(pos_tol, rb_tol, ang_tol), pen_coeff=1.)
     pops = [pygmo.population(prob, size=pop_size, b=pygmo.mp_bfe()) for _ in range(n_isl)]
     archi = pygmo.archipelago()
