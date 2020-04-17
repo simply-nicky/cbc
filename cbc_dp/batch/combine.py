@@ -10,8 +10,8 @@ def make_path(path, i=0):
     """
     Return a nonexistant path to write a file
     """
-    path, ext = os.path.splitext(path)
-    new_path = path + "_{:d}".format(i) + ext
+    filename, ext = os.path.splitext(path)
+    new_path = filename + "_{:d}".format(i) + ext
     if not os.path.isfile(path):
         return path
     elif os.path.isfile(new_path):
@@ -64,6 +64,7 @@ def write_data(files, out_path):
         with h5py.File(path, 'r') as data_file:
             data_list.append(HDF_Data(data_file))
     print("Writing data to the file: {}".format(out_path))
+    print("Datasets' names:\n{:s}".format('\n'.join(list(data_list[0].keys()))))
     out_path = make_path(out_path)
     with h5py.File(out_path, 'w') as out_file:
         for key in data_list[0].keys():
