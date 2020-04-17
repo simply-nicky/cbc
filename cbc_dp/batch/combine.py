@@ -31,7 +31,7 @@ class HDF_Data(object):
 
     def _append_data(self, path, node):
         if isinstance(node, h5py.Dataset):
-            self.data[path] = node[:]
+            self.data[path] = node[...]
 
     def keys(self):
         """
