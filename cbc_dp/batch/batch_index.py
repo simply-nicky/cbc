@@ -106,6 +106,7 @@ class JobBatcher():
     err_file = "{job_name:s}_{now:s}.err"
     error_text = "Command '{cmd:s}' has returned an error (code {code:s}): {stderr:s}"
     job_size = 16
+    time_limit = '1-00:00:00'
 
     def __init__(self, config_file, geom_file, rb_file):
         self.geom_file, self.rb_file = geom_file, rb_file
@@ -142,6 +143,7 @@ class JobBatcher():
         Return sbatch command parameters for a job
         """
         sbatch_params = ['--partition', 'upex', '--job-name', job_name, '--chdir', PROJECT_PATH,
+                         '--time', self.time_limit,
                          '--output', os.path.join(self.sbatch_dir,
                                                   self.out_file.format(job_name=job_name,
                                                                        now=self.now())),
