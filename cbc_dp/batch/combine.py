@@ -77,8 +77,8 @@ def write_data(files, out_path):
                 err_txt = "HDF5 dataset name {:s} doesn't start with 'data' or 'config'".format(key)
                 raise RuntimeError(err_txt)
     print("Deleting old files...")
-    # for filename in files:
-    #     os.remove(filename)
+    for filename in files:
+        os.remove(filename)
     print('Done!')
 
 def main():

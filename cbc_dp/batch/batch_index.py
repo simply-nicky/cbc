@@ -156,7 +156,7 @@ class JobBatcher():
         """
         command = [self.batch_cmd]
         command.extend(self.sbatch_parameters(job.name))
-        command.extend(['--mail-type', 'END,FAIL', self.index_script, self.geom_file, self.rb_file])
+        command.extend([self.index_script, self.geom_file, self.rb_file])
         command.extend(job.shell_parameters())
         return command
 
@@ -168,6 +168,7 @@ class JobBatcher():
         command.extend(self.sbatch_parameters('combine'))
         command.extend(['--dependency',
                         'afterok:{:s}'.format(':'.join(job_nums)),
+                        '--mail-type', 'END,FAIL',
                         self.combine_script])
         command.extend([job.out_path for job in self.pool])
         command.append(os.path.join(self.data_dir, self.data_path + '.h5'))
