@@ -183,7 +183,7 @@ def scan_rb(float_t[::1] vec, int_t[::1] frames, int_t scan_size):
         rotate_matrix(rb0, rot_mat, rec_basis[i])
     return np.asarray(rec_basis)
 
-cdef void inverse_matrix(float_t[:, ::1] mat, float_t[:, ::1] output) nogil:
+cdef void inverse_mat_c(float_t[:, ::1] mat, float_t[:, ::1] output) nogil:
     """
     Inverse 3x3 matrix mat and write it to output matrix
 
@@ -203,6 +203,16 @@ cdef void inverse_matrix(float_t[:, ::1] mat, float_t[:, ::1] output) nogil:
     output[0, 2] = (mat[0, 1] * mat[1, 2] - mat[0, 2] * mat[1, 1]) / det
     output[1, 2] = -(mat[0, 0] * mat[1, 2] - mat[0, 2] * mat[1, 0]) / det
     output[2, 2] = (mat[0, 0] * mat[1, 1] - mat[0, 1] * mat[1, 0]) / det
+
+def inverse_matrix(float_t[:, ::1] mat):
+    """
+    Inverse 3x3 matrix
+
+    mat - matrix to inverse
+    """
+    cdef float_t[:, ::1] inv_mat = np.empty((3, 3), dtype=np.float64)
+    inverse_mat_c(mat, inv_mat)
+    return np.asarray(inv_mat)
 
 def init_source(float_t[:, ::1] rec_vec):
     """
@@ -393,7 +403,7 @@ def vot_vec_frame(float_t[:, ::1] kout_exp, float_t[:, ::1] rec_basis, float_t[:
         float_t kin_z = sqrt(1 - kin_x**2 - kin_y**2)
         float_t[:, ::1] inv_basis = np.empty((3, 3), dtype=np.float64)
         float_t[:, :, ::1] vot_vec
-    inverse_matrix(rec_basis, inv_basis)
+    inverse_mat_c(rec_basis, inv_basis)
     h_size = int(ceil(abs(na_x * inv_basis[0, 0] + na_y * inv_basis[1, 0] + na_z * inv_basis[2, 0])))
     k_size = int(ceil(abs(na_x * inv_basis[0, 1] + na_y * inv_basis[1, 1] + na_z * inv_basis[2, 1])))
     l_size = int(ceil(abs(na_x * inv_basis[0, 2] + na_y * inv_basis[1, 2] + na_z * inv_basis[2, 2])))
@@ -418,7 +428,7 @@ def vot_idxs_frame(float_t[:, ::1] kout_exp, float_t[:, ::1] rec_basis, float_t[
         float_t kin_z = sqrt(1 - kin_x**2 - kin_y**2)
         float_t[:, ::1] inv_basis = np.empty((3, 3), dtype=np.float64)
         int_t[:, :, ::1] vot_idxs
-    inverse_matrix(rec_basis, inv_basis)
+    inverse_mat_c(rec_basis, inv_basis)
     h_size = int(ceil(abs(na_x * inv_basis[0, 0] + na_y * inv_basis[1, 0] + na_z * inv_basis[2, 0])))
     k_size = int(ceil(abs(na_x * inv_basis[0, 1] + na_y * inv_basis[1, 1] + na_z * inv_basis[2, 1])))
     l_size = int(ceil(abs(na_x * inv_basis[0, 2] + na_y * inv_basis[1, 2] + na_z * inv_basis[2, 2])))
@@ -444,7 +454,7 @@ def vot_vec_scan(float_t[:, ::1] kout_exp, float_t[:, :, ::1] rec_basis,
         float_t kin_z = sqrt(1 - kin_x**2 - kin_y**2)
         float_t[:, ::1] inv_basis = np.empty((3, 3), dtype=np.float64)
         float_t[:, :, ::1] vot_vec
-    inverse_matrix(rec_basis[0], inv_basis)
+    inverse_mat_c(rec_basis[0], inv_basis)
     h_size = int(ceil(abs(na_x * inv_basis[0, 0] + na_y * inv_basis[1, 0] + na_z * inv_basis[2, 0])))
     k_size = int(ceil(abs(na_x * inv_basis[0, 1] + na_y * inv_basis[1, 1] + na_z * inv_basis[2, 1])))
     l_size = int(ceil(abs(na_x * inv_basis[0, 2] + na_y * inv_basis[1, 2] + na_z * inv_basis[2, 2])))
@@ -452,7 +462,7 @@ def vot_vec_scan(float_t[:, ::1] kout_exp, float_t[:, :, ::1] rec_basis,
     vot_vec_c(vot_vec[idxs[0]:idxs[1]], kout_exp[idxs[0]:idxs[1]], rec_basis[0],
               inv_basis, kin_x, kin_y, kin_z, h_size, k_size, l_size)
     for i in range(1, a):
-        inverse_matrix(rec_basis[i], inv_basis)
+        inverse_mat_c(rec_basis[i], inv_basis)
         vot_vec_c(vot_vec[idxs[i]:idxs[i + 1]], kout_exp[idxs[i]:idxs[i + 1]],
                   rec_basis[i], inv_basis, kin_x, kin_y, kin_z, h_size, k_size, l_size)
     return np.asarray(vot_vec)
@@ -475,7 +485,7 @@ def vot_idxs_scan(float_t[:, ::1] kout_exp, float_t[:, :, ::1] rec_basis,
         float_t kin_z = sqrt(1 - kin_x**2 - kin_y**2)
         float_t[:, ::1] inv_basis = np.empty((3, 3), dtype=np.float64)
         int_t[:, :, ::1] vot_idxs
-    inverse_matrix(rec_basis[0], inv_basis)
+    inverse_mat_c(rec_basis[0], inv_basis)
     h_size = int(ceil(abs(na_x * inv_basis[0, 0] + na_y * inv_basis[1, 0] + na_z * inv_basis[2, 0])))
     k_size = int(ceil(abs(na_x * inv_basis[0, 1] + na_y * inv_basis[1, 1] + na_z * inv_basis[2, 1])))
     l_size = int(ceil(abs(na_x * inv_basis[0, 2] + na_y * inv_basis[1, 2] + na_z * inv_basis[2, 2])))
@@ -483,7 +493,7 @@ def vot_idxs_scan(float_t[:, ::1] kout_exp, float_t[:, :, ::1] rec_basis,
     vot_idxs_c(vot_idxs[idxs[0]:idxs[1]], kout_exp[idxs[0]:idxs[1]], rec_basis[0],
                inv_basis, kin_x, kin_y, kin_z, h_size, k_size, l_size)
     for i in range(1, a):
-        inverse_matrix(rec_basis[i], inv_basis)
+        inverse_mat_c(rec_basis[i], inv_basis)
         vot_idxs_c(vot_idxs[idxs[i]:idxs[i + 1]], kout_exp[idxs[i]:idxs[i + 1]],
                    rec_basis[i], inv_basis, kin_x, kin_y, kin_z, h_size, k_size, l_size)
     return np.asarray(vot_idxs)

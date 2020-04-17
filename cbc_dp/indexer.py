@@ -7,6 +7,7 @@ import pygmo
 from scipy.ndimage import gaussian_filter, label, maximum_position
 from . import utils
 from .grouper import TiltGroups
+from .model import RecBasis
 
 class FrameStreaks():
     """
@@ -71,7 +72,7 @@ class FrameStreaks():
         """
         Return a population of reciprocal lattice basis vectors matrix refinement problem
 
-        rec_basis - reciprocal lattice basis vectors matrix
+        rec_basis - RecBasis class object
         rot_mat - rotation matrix
         pos_tol - relative sample position tolerance
         rb_tol - lattice basis vectors matrix tolerance
@@ -85,7 +86,7 @@ class FrameStreaks():
         """
         Return a population of reciprocal lattice rotation refinement problem
 
-        rec_basis - reciprocal lattice basis vectors matrix
+        rec_basis - RecBasis class object
         rot_mat - rotation matrix
         pos_tol - relative sample position tolerance
         rb_tol - lattice basis vectors length tolerance
@@ -209,7 +210,7 @@ class ScanStreaks(FrameStreaks):
         """
         Return refinement problems archipelago
 
-        rec_basis - preliminary reciprocal lattice basis vectors matrix
+        rec_basis - RecBasis class object
         n_isl - number of islands of one frame
         pop_size - population size
         gen_num - maximum generations number of the refinement algorithm
@@ -232,7 +233,7 @@ class ScanStreaks(FrameStreaks):
         """
         Return refinement problems archipelago
 
-        rec_basis - preliminary reciprocal lattice basis vectors matrix
+        rec_basis - RecBasis class object
         n_isl - number of islands of one frame
         pop_size - population size
         gen_num - maximum generations number of the refinement algorithm
@@ -348,7 +349,7 @@ class AbcCBI(metaclass=ABCMeta):
         self.pen_coeff = pen_coeff
 
     @abstractmethod
-    def rec_basis(self, vec):
+    def rb_mat(self, vec):
         pass
 
     @abstractmethod
@@ -366,6 +367,12 @@ class AbcCBI(metaclass=ABCMeta):
     @abstractmethod
     def fit(self, vot_vec, kout_exp):
         pass
+
+    def rec_basis(self, vec):
+        """
+        Return RecBasis class object
+        """
+        return RecBasis(rb_mat=self.rb_mat(vec))
 
     def det_pts(self, kout_x, kout_y, vec):
         """
@@ -410,7 +417,7 @@ class AbcCBI(metaclass=ABCMeta):
         """
         Return optimal reciprocal lattice vectors
         """
-        return self.hkl_idxs(vec).dot(self.rec_basis(vec))
+        return self.hkl_idxs(vec).dot(self.rb_mat(vec))
 
     def gradient(self, d_vec):
         """
@@ -426,7 +433,7 @@ class FrameCBI(AbcCBI):
     Abstract frame refinement class
 
     streaks - FrameStreaks class object
-    rec_basis - Reciprocal lattice basis vectors matrix
+    rec_basis - RecBasis class object
     rot_mat - rotation matrix
     tol - tolerance defining vector bounds
     pen_coeff - fitness penalty coefficient
@@ -450,7 +457,7 @@ class FrameCBI(AbcCBI):
         Return the reciprocal lattice voting points for the given experimental outcoming
         wavevectors kout_exp
         """
-        return utils.vot_vec_frame(kout_exp=kout_exp.mean(axis=1), rec_basis=self.rec_basis(vec),
+        return utils.vot_vec_frame(kout_exp=kout_exp.mean(axis=1), rec_basis=self.rb_mat(vec),
                                    kin=self.exp_set.kin)
 
     def voting_hkl(self, vec, kout_exp):
@@ -458,7 +465,7 @@ class FrameCBI(AbcCBI):
         Return the reciprocal lattice voting hkl indices for the given experimental outcoming
         wavevectors kout_exp
         """
-        return utils.vot_idxs_frame(kout_exp=kout_exp.mean(axis=1), rec_basis=self.rec_basis(vec),
+        return utils.vot_idxs_frame(kout_exp=kout_exp.mean(axis=1), rec_basis=self.rb_mat(vec),
                                     kin=self.exp_set.kin)
 
     def fit(self, vot_vec, kout_exp):
@@ -498,7 +505,7 @@ class ScanCBI(AbcCBI):
     Abstract scan refinement class (incomplete)
 
     streaks - ScanStreaks class object
-    rec_basis - Reciprocal lattice basis vectors matrix
+    rec_basis - RecBasis class object
     tol = [pos_tol, th_tol, rot_tol, rb_tol] - tolerance defining vector bounds
     pen_coeff - fitness penalty coefficient
     """
@@ -510,10 +517,10 @@ class ScanCBI(AbcCBI):
     def _init_bounds(self, rec_basis, tol):
         pt0_lb = np.tile((1 - np.array(tol[0])) * self.exp_set.smp_pos, self.exp_set.scan_size)
         pt0_ub = np.tile((1 + np.array(tol[0])) * self.exp_set.smp_pos, self.exp_set.scan_size)
-        self.lower_b = np.concatenate((rec_basis.ravel() - tol[1], pt0_lb, self.exp_set.eul_ang.ravel() - tol[2]))
-        self.upper_b = np.concatenate((rec_basis.ravel() + tol[1], pt0_ub, self.exp_set.eul_ang.ravel() + tol[2]))
+        self.lower_b = np.concatenate((rec_basis.rb_mat.ravel() - tol[1], pt0_lb, self.exp_set.eul_ang.ravel() - tol[2]))
+        self.upper_b = np.concatenate((rec_basis.rb_mat.ravel() + tol[1], pt0_ub, self.exp_set.eul_ang.ravel() + tol[2]))
 
-    def rec_basis(self, vec):
+    def rb_mat(self, vec):
         """
         Return rectangular lattice basis vectors for a vector
         """
@@ -530,7 +537,7 @@ class ScanCBI(AbcCBI):
         Return the reciprocal lattice voting points for the given experimental outcoming
         wavevectors kout_exp
         """
-        return utils.vot_vec_scan(kout_exp=kout_exp.mean(axis=1), rec_basis=self.rec_basis(vec),
+        return utils.vot_vec_scan(kout_exp=kout_exp.mean(axis=1), rec_basis=self.rb_mat(vec),
                                   kin=self.exp_set.kin, idxs=self.idxs)
 
     def voting_hkl(self, vec, kout_exp):
@@ -538,7 +545,7 @@ class ScanCBI(AbcCBI):
         Return the reciprocal lattice voting hkl indices for the given experimental outcoming
         wavevectors kout_exp
         """
-        return utils.vot_idxs_scan(kout_exp=kout_exp.mean(axis=1), rec_basis=self.rec_basis(vec),
+        return utils.vot_idxs_scan(kout_exp=kout_exp.mean(axis=1), rec_basis=self.rb_mat(vec),
                                    kin=self.exp_set.kin, idxs=self.idxs)
 
     def fit(self, vot_vec, kout_exp):
@@ -563,7 +570,7 @@ class FCBI(FrameCBI):
     Euler angles with Bunge convention are used.
 
     streaks                             - FrameStreaks class object
-    rec_basis                           - reciprocal lattice basis vectors matrix
+    rec_basis                           - RecBasis class object
     rot_mat                             - rotation matrix
     tol = (pos_tol, rb_tol, ang_tol)  - relative detector position, basis vector lengths,
                                           and rotation angles tolerances [0.0 - 1.0]
@@ -573,15 +580,16 @@ class FCBI(FrameCBI):
         super(FCBI, self).__init__(streaks, rec_basis, rot_mat, tol, pen_coeff)
 
     def _init_bounds(self, rec_basis, rot_mat, tol):
-        rec_sizes = np.sqrt((rec_basis**2).sum(axis=-1))
-        self.or_mat = rec_basis / rec_sizes[:, None]
+        self.or_mat = rec_basis.or_mat
         eul_ang = utils.euler_angles(rot_mat)
         self.lower_b = np.concatenate(((1 - np.array(tol[0])) * self.exp_set.smp_pos,
-                                       (1 - tol[1]) * rec_sizes, np.tile(eul_ang - tol[2], 3)))
+                                       (1 - tol[1]) * rec_basis.sizes,
+                                       np.tile(eul_ang - tol[2], 3)))
         self.upper_b = np.concatenate(((1 + np.array(tol[0])) * self.exp_set.smp_pos,
-                                       (1 + tol[1]) * rec_sizes, np.tile(eul_ang + tol[2], 3)))
+                                       (1 + tol[1]) * rec_basis.sizes,
+                                       np.tile(eul_ang + tol[2], 3)))
 
-    def rec_basis(self, vec):
+    def rb_mat(self, vec):
         """
         Return rectangular lattice basis vectors for a vector
         """
@@ -598,7 +606,7 @@ class RCBI(FrameCBI):
     Euler angles with Bunge convention are used
 
     streaks                             - FrameStreaks class object
-    rec_basis                           - reciprocal lattice basis vectors matrix
+    rec_basis                           - RecBasis class object
     rot_mat                             - rotation matrix
     tol = (pos_tol, rb_tol, ang_tol)  - relative detector position, basis vector lengths,
                                           and rotation angles tolerances [0.0 - 1.0]
@@ -608,15 +616,16 @@ class RCBI(FrameCBI):
         super(RCBI, self).__init__(streaks, rec_basis, rot_mat, tol, pen_coeff)
 
     def _init_bounds(self, rec_basis, rot_mat, tol):
-        rec_sizes = np.sqrt((rec_basis**2).sum(axis=-1))
-        self.or_mat = rec_basis / rec_sizes[:, None]
+        self.or_mat = rec_basis.or_mat
         eul_ang = utils.euler_angles(rot_mat)
         self.lower_b = np.concatenate(((1 - np.array(tol[0])) * self.exp_set.smp_pos,
-                                       (1 - tol[1]) * rec_sizes, eul_ang - tol[2]))
+                                       (1 - tol[1]) * rec_basis.sizes,
+                                       eul_ang - tol[2]))
         self.upper_b = np.concatenate(((1 + np.array(tol[0])) * self.exp_set.smp_pos,
-                                       (1 + tol[1]) * rec_sizes, eul_ang + tol[2]))
+                                       (1 + tol[1]) * rec_basis.sizes,
+                                       eul_ang + tol[2]))
 
-    def rec_basis(self, vec):
+    def rb_mat(self, vec):
         """
         Return orthogonal orientation matrix based on euler angles
         """

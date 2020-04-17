@@ -2,41 +2,21 @@
 run_index.py - script to run indexing refinement
 """
 import os
+from timeit import default_timer as timer
+import argparse
+import numpy as np
+import pygmo
+import h5py
+from ..utils import OUT_PATH, FILENAME
+from ..feat_detect import ScanSetup
+from ..indexer import ScanStreaks, ScanCBI
+from ..model import RecBasis
 
 os.environ["OMP_NUM_THREADS"] = "4"         # export OMP_NUM_THREADS=4
 os.environ["OPENBLAS_NUM_THREADS"] = "4"    # export OPENBLAS_NUM_THREADS=4
 os.environ["MKL_NUM_THREADS"] = "6"         # export MKL_NUM_THREADS=6
 os.environ["VECLIB_MAXIMUM_THREADS"] = "4"  # export VECLIB_MAXIMUM_THREADS=4
 os.environ["NUMEXPR_NUM_THREADS"] = "6"     # export NUMEXPR_NUM_THREADS=6
-
-from timeit import default_timer as timer
-import argparse
-import numpy as np
-import pygmo
-import h5py
-import configparser
-from ..utils import OUT_PATH, FILENAME
-from ..feat_detect import ScanSetup
-from ..indexer import ScanStreaks, ScanCBI
-
-def import_rb(rb_file):
-    """
-    Import reciprocal lattice basis vectors from an ini file
-
-    rb_file - path to a file
-    """
-    config = configparser.ConfigParser()
-    config.read(rb_file)
-    ax = config.getfloat('rec_basis', 'ax')
-    ay = config.getfloat('rec_basis', 'ay')
-    az = config.getfloat('rec_basis', 'az')
-    bx = config.getfloat('rec_basis', 'bx')
-    by = config.getfloat('rec_basis', 'by')
-    bz = config.getfloat('rec_basis', 'bz')
-    cx = config.getfloat('rec_basis', 'cx')
-    cy = config.getfloat('rec_basis', 'cy')
-    cz = config.getfloat('rec_basis', 'cz')
-    return np.array([[ax, ay, az], [bx, by, bz], [cx, cy, cz]])
 
 def open_scan(scan_num, exp_set):
     """
@@ -162,7 +142,8 @@ def main():
     """
     parser = argparse.ArgumentParser(description='Run CBC indexing refinement')
     parser.add_argument('geom_file', type=str, help='Path to a geometry ini file')
-    parser.add_argument('rb_file', type=str, help='Path to a reciprocal lattice basis vectors ini file')
+    parser.add_argument('rb_file', type=str,
+                        help='Path to a reciprocal lattice basis vectors ini file')
     parser.add_argument('mode', type=str, choices=['rot', 'full', 'scan'],
                         help='Choose between rotation and full indexing refinement')
     parser.add_argument('out_path', type=str, help='Output file path')
@@ -181,7 +162,7 @@ def main():
                         help='Frames to index (scan mode only)')
 
     args = parser.parse_args()
-    rec_basis = import_rb(args.rb_file)
+    rec_basis = RecBasis.import_ini(args.rb_file)
     scan = open_scan(scan_num=args.scan_num, exp_set=ScanSetup.import_ini(args.geom_file))
     if args.mode == 'rot':
         index_sol, index_pts = rot_index(scan=scan, pop_size=args.pop_size,
