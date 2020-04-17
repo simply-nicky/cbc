@@ -19,7 +19,7 @@ def make_path(path, i=0):
     else:
         return new_path
 
-class HDF_Data(object):
+class HDFData(object):
     """
     Extract HDF5 file data recursively with the structure preserved
 
@@ -62,7 +62,7 @@ def write_data(files, out_path):
     data_list = []
     for path in files:
         with h5py.File(path, 'r') as data_file:
-            data_list.append(HDF_Data(data_file))
+            data_list.append(HDFData(data_file))
     print("Writing data to the file: {}".format(out_path))
     print("Datasets' names:\n{:s}".format('\n'.join(list(data_list[0].keys()))))
     out_path = make_path(out_path)

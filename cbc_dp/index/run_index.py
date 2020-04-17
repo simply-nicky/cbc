@@ -49,7 +49,7 @@ def write_data(out_path, index_sol, index_pts, rec_basis, gen_num, pos_tol, rb_t
     out_file = h5py.File(os.path.join('exp_results', out_path), 'w')
     out_file.create_dataset('data/index_sol', data=index_sol)
     out_file.create_dataset('data/index_pts', data=index_pts)
-    out_file.create_dataset('config/rec_basis', data=rec_basis)
+    out_file.create_dataset('config/rec_basis', data=rec_basis.rb_mat)
     out_file.create_dataset('config/gen_num', data=gen_num)
     out_file.create_dataset('config/pos_tol', data=np.array(pos_tol))
     out_file.create_dataset('config/rb_tol', data=rb_tol)
@@ -62,7 +62,7 @@ def rot_index(scan, rec_basis, n_isl, pop_size, gen_num, pos_tol, rb_tol, ang_to
     Conduct indexing solution framewise rotational refinement
 
     scan - ScanStreaks class object
-    rec_basis - reciprocal lattice basis vectors matrix
+    rec_basis - RecBasis class object
     n_isl - number of islands for every frame
     pop_size - population size
     gen_num - maximal number of generations
@@ -87,7 +87,7 @@ def full_index(scan, rec_basis, n_isl, pop_size, gen_num, pos_tol, rb_tol, ang_t
     Conduct indexing solution framewise full refinement
 
     scan - ScanStreaks class object
-    rec_basis - reciprocal lattice basis vectors matrix
+    rec_basis - RecBasis class object
     n_isl - number of islands for every frame
     pop_size - population size
     gen_num - maximal number of generations
@@ -112,7 +112,7 @@ def scan_index(scan, rec_basis, n_isl, pop_size, gen_num, pos_tol, rb_tol, ang_t
     Conduct indexing solution whole scan refinement
 
     scan - ScanStreaks class object
-    rec_basis - reciprocal lattice basis vectors matrix
+    rec_basis - RecBasis class object
     n_isl - number of islands for every frame
     pop_size - population size
     gen_num - maximal number of generations
@@ -183,4 +183,3 @@ def main():
     write_data(out_path=args.out_path, index_sol=index_sol, index_pts=index_pts,
                rec_basis=rec_basis, gen_num=args.gen_num, pos_tol=args.pos_tol,
                rb_tol=args.rb_tol, ang_tol=args.ang_tol)
-    

@@ -5,8 +5,8 @@ import configparser
 import argparse
 import subprocess
 import os
-import numpy as np
 from datetime import datetime
+import numpy as np
 from ..utils import OUT_PATH, chunkify, PROJECT_PATH
 
 class IndexConfig():
@@ -156,7 +156,7 @@ class JobBatcher():
         """
         command = [self.batch_cmd]
         command.extend(self.sbatch_parameters(job.name))
-        command.extend([self.index_script, self.geom_file, self.rb_file])
+        command.extend(['--mail-type', 'END,FAIL', self.index_script, self.geom_file, self.rb_file])
         command.extend(job.shell_parameters())
         return command
 
