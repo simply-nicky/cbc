@@ -18,7 +18,7 @@ def scan_ps(int_t pop_size, int_t scan_size):
     while abs(ps1 - pop_size) > abs(ps2 - pop_size):
         k += 1
         ps1 = ps2; ps2 = binom(k + 1, scan_size - 1)
-    return ps1
+    return int(ps1)
 
 cdef void eul_ang_c(float_t[::1] output, float_t[:, ::1] rot_mat) nogil:
     output[1] = acos(rot_mat[2, 2])
