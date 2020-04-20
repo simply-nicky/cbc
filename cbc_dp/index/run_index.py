@@ -134,8 +134,8 @@ def scan_index(scan, rec_basis, n_isl, pop_size, gen_num, pos_tol, rb_tol, ang_t
     archi.wait()
     print("The refinement has been completed, elapsed time: {:f}s".format(timer() - start))
     ev_pops = [island.get_population() for island in archi]
-    index_sol = np.stack([pop.get_x() for pop in ev_pops])
-    index_pts = np.stack([pop.get_f() for pop in ev_pops])
+    index_sol = np.concatenate([pop.get_x() for pop in ev_pops])
+    index_pts = np.concatenate([pop.get_f() for pop in ev_pops])
     return index_sol, index_pts
 
 def main():
