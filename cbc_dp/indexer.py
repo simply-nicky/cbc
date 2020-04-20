@@ -342,7 +342,7 @@ class AbcCBI(metaclass=ABCMeta):
     pen_coeff - fitness penalty coefficient
     """
     mat_shape = (3, 3)
-    lower_b, upper_b = None, None
+    lower_b, upper_b, info_text = None, None, None
 
     def __init__(self, streaks, pen_coeff):
         self.lines, self.exp_set = streaks.raw_lines * streaks.exp_set.pix_size, streaks.exp_set
@@ -428,6 +428,9 @@ class AbcCBI(metaclass=ABCMeta):
     def get_name(self):
         return "A convergent beam indexing problem"
 
+    def get_extra_info(self):
+        return self.info_text
+
 class FrameCBI(AbcCBI):
     """
     Abstract frame refinement class
@@ -438,6 +441,7 @@ class FrameCBI(AbcCBI):
     tol - tolerance defining vector bounds
     pen_coeff - fitness penalty coefficient
     """
+
     def __init__(self, streaks, rec_basis, rot_mat, tol, pen_coeff):
         super(FrameCBI, self).__init__(streaks, pen_coeff)
         self._init_bounds(rec_basis, rot_mat, tol)
@@ -476,30 +480,6 @@ class FrameCBI(AbcCBI):
         return [utils.fit_frame(vot_vec=vot_vec, kout_exp=kout_exp, kin=self.exp_set.kin,
                                 pen_coeff=self.pen_coeff)]
 
-    # def good_idxs(self, vec, na_ext):
-    #     """
-    #     Return indices of good streaks lying inside extended pupil bounds na_ext
-    #     """
-    #     return utils.reduce_streaks(kout_exp=self.kout_exp(vec), hkl_idxs=self.hkl_idxs(vec),
-    #                                 rec_basis=self.rec_basis(vec), na_x=self.num_ap[0], na_y=self.num_ap[1],
-    #                                 na_ext_x=na_ext[0], na_ext_y=na_ext[1], pen_coeff=self.pen_coeff)
-
-    # def i_sigma(self, vec, cor_data, background, structure, width, na_ext):
-    #     """
-    #     Return good streaks intensities and Poisson noise
-
-    #     vec - refinement vector
-    #     cor_data - background subtracted diffraction pattern image
-    #     background - background image
-    #     structure - binary structure for binary dilation
-    #     width - diffraction streaks width
-    #     """
-    #     kin = self.kout_exp(vec) - self.rec_vectors(vec)[:, None]
-    #     source_streaks = self.det_pts(kin[..., 0], kin[..., 1], vec)
-    #     idxs = self.good_idxs(vec, na_ext)
-    #     return utils.i_sigma_frame(streaks=self.lines[idxs], source_streaks=source_streaks[idxs], cor_data=cor_data,
-    #                                background=background, structure=structure, width=width)
-
 class ScanCBI(AbcCBI):
     """
     Abstract scan refinement class (incomplete)
@@ -509,28 +489,40 @@ class ScanCBI(AbcCBI):
     tol = [pos_tol, th_tol, rot_tol, rb_tol] - tolerance defining vector bounds
     pen_coeff - fitness penalty coefficient
     """
+    info_text_str = ("Dimensions: {total:d} in total",
+                     "9 - reciprocal lattice basis vectors matrix",
+                     "{smp_pos:d} - sample coordinates",
+                     "{eul_ang:d} - Euler angles")
+
     def __init__(self, streaks, rec_basis, tol, pen_coeff=10):
         super(ScanCBI, self).__init__(streaks, pen_coeff)
-        self.frame_idxs, self.frames, self.idxs = streaks.frame_idxs, streaks.frames, streaks.idxs
+        self.frames, self.idxs = streaks.frames, streaks.idxs
         self._init_bounds(rec_basis, tol)
 
     def _init_bounds(self, rec_basis, tol):
-        pt0_lb = np.tile((1 - np.array(tol[0])) * self.exp_set.smp_pos, self.exp_set.scan_size)
-        pt0_ub = np.tile((1 + np.array(tol[0])) * self.exp_set.smp_pos, self.exp_set.scan_size)
-        self.lower_b = np.concatenate((rec_basis.rb_mat.ravel() - tol[1], pt0_lb, self.exp_set.eul_ang.ravel() - tol[2]))
-        self.upper_b = np.concatenate((rec_basis.rb_mat.ravel() + tol[1], pt0_ub, self.exp_set.eul_ang.ravel() + tol[2]))
+        pt0_lb = np.tile((1 - np.array(tol[0])) * self.exp_set.smp_pos, self.frames.size)
+        pt0_ub = np.tile((1 + np.array(tol[0])) * self.exp_set.smp_pos, self.frames.size)
+        eul_ang = self.exp_set.eul_ang[self.frames].ravel()
+        self.lower_b = np.concatenate((rec_basis.rb_mat.ravel() - tol[1], pt0_lb, eul_ang - tol[2]))
+        self.upper_b = np.concatenate((rec_basis.rb_mat.ravel() + tol[1], pt0_ub, eul_ang + tol[2]))
+
+    @property
+    def info_text(self):
+        return "\n".join(self.info_text_str).format(total=self.lower_b.size,
+                                                    smp_pos=3 * self.frames.size,
+                                                    eul_ang=3 * self.frames.size)
 
     def rb_mat(self, vec):
         """
         Return rectangular lattice basis vectors for a vector
         """
-        return utils.scan_rb(vec=vec, frames=self.frames, scan_size=self.exp_set.scan_size)
+        return utils.scan_rb(vec=vec, frames=self.frames)
 
     def kout_exp(self, vec):
         """
         Generate the experimentally measured diffraction streaks outcoming wavevectors of a scan
         """
-        return utils.kout_scan(streaks=self.lines, vec=vec, frame_idxs=self.frame_idxs)
+        return utils.kout_scan(streaks=self.lines, vec=vec, idxs=self.idxs)
 
     def voting_vectors(self, vec, kout_exp):
         """
@@ -572,10 +564,14 @@ class FCBI(FrameCBI):
     streaks                             - FrameStreaks class object
     rec_basis                           - RecBasis class object
     rot_mat                             - rotation matrix
-    tol = (pos_tol, rb_tol, ang_tol)  - relative detector position, basis vector lengths,
+    tol = (pos_tol, rb_tol, ang_tol)    - sample coordinates, basis vector lengths,
                                           and rotation angles tolerances [0.0 - 1.0]
     pen_coeff                           - fitness penalty coefficient
     """
+    info_text = "\n".join(("Dimensions: 15 in total", "3 - sample coordinates",
+                           "3 - reciprocal lattice basis vector lengths",
+                           "9 - Euler angles for every basis vector"))
+
     def __init__(self, streaks, rec_basis, rot_mat, tol=([0.02, 0.02, 0.075], 0.01, 0.05), pen_coeff=1.):
         super(FCBI, self).__init__(streaks, rec_basis, rot_mat, tol, pen_coeff)
 
@@ -595,9 +591,6 @@ class FCBI(FrameCBI):
         """
         return utils.fcbi_rb(self.or_mat, vec)
 
-    def get_extra_info(self):
-        return "Dimensions: 15 in total\n3 - detector position\n3 - reciprocal lattice basis vector lengths\n9 - Euler angles for every basis vector"
-
 class RCBI(FrameCBI):
     """
     Convergent beam crystallography indexer class.
@@ -608,10 +601,14 @@ class RCBI(FrameCBI):
     streaks                             - FrameStreaks class object
     rec_basis                           - RecBasis class object
     rot_mat                             - rotation matrix
-    tol = (pos_tol, rb_tol, ang_tol)  - relative detector position, basis vector lengths,
+    tol = (pos_tol, rb_tol, ang_tol)    - sample coordinates, basis vector lengths,
                                           and rotation angles tolerances [0.0 - 1.0]
     pen_coeff                           - fitness penalty coefficient
     """
+    info_text = "\n".join(("Dimensions: 9 in total", "3 - sample coordinates",
+                           "3 - reciprocal lattice basis vectors lengths",
+                           "3 - orientation matrix angles"))
+
     def __init__(self, streaks, rec_basis, rot_mat, tol=([0.02, 0.02, 0.075], 0.01, 0.05), pen_coeff=1.):
         super(RCBI, self).__init__(streaks, rec_basis, rot_mat, tol, pen_coeff)
 
@@ -630,7 +627,4 @@ class RCBI(FrameCBI):
         Return orthogonal orientation matrix based on euler angles
         """
         return utils.rcbi_rb(self.or_mat, vec)
-
-    def get_extra_info(self):
-        return "Dimensions: 9 in total\n3 - detector position\n3 - reciprocal lattice basis vectors lengths\n3 - Euler angles for a basis vectors matrix"
     

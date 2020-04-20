@@ -173,7 +173,7 @@ def fcbi_rb(float_t[:, ::1] or_mat, float_t[::1] vec):
     rb[2, 0] *= vec[5]; rb[2, 1] *= vec[5]; rb[2, 2] *= vec[5]
     return np.asarray(rb)
 
-def scan_rb(float_t[::1] vec, int_t[::1] frames, int_t scan_size):
+def scan_rb(float_t[::1] vec, int_t[::1] frames):
     """
     Return reciprocal lattice basis vectors
 
@@ -188,7 +188,7 @@ def scan_rb(float_t[::1] vec, int_t[::1] frames, int_t scan_size):
         float_t[:, :, ::1] rec_basis = np.empty((a, 3, 3), dtype=np.float64)
     rb0[0] = vec[:3]; rb0[1] = vec[3:6]; rb0[2] = vec[6:9]
     for i in range(a):
-        ind = 9 + 3 * (scan_size + frames[i])
+        ind = 9 + 3 * (a + i)
         euler_mat_c(rot_mat, vec[ind], vec[ind + 1], vec[ind + 2])
         rotate_matrix(rb0, rot_mat, rec_basis[i])
     return np.asarray(rec_basis)
@@ -325,7 +325,7 @@ def kout_frame(float_t[:, :, ::1] streaks, float_t[::1] pt0):
         kout_streak(streaks[i], pt0, kout[i])
     return np.asarray(kout)
 
-def kout_scan(float_t[:, :, ::1] streaks, float_t[::1] vec, int_t[::1] frame_idxs):
+def kout_scan(float_t[:, :, ::1] streaks, float_t[::1] vec, int_t[::1] idxs):
     """
     Return outcoming wavevectors of a pattern
     
@@ -334,11 +334,12 @@ def kout_scan(float_t[:, :, ::1] streaks, float_t[::1] vec, int_t[::1] frame_idx
     frame_idxs - streaks' frame indices
     """
     cdef:
-        int_t a = frame_idxs.shape[0], i, ind
-        float_t[:, :, ::1] kout = np.empty((a, 2, 3), dtype=np.float64)
+        int_t a = idxs.shape[0] - 1, aa = streaks.shape[0], i, ii, ind
+        float_t[:, :, ::1] kout = np.empty((aa, 2, 3), dtype=np.float64)
     for i in range(a):
-        ind = 9 + 3 * frame_idxs[i]
-        kout_streak(streaks[i], vec[ind:ind + 3], kout[i])
+        for ii in range(idxs[i], idxs[i + 1]):
+            ind = 3 * i + 9
+            kout_streak(streaks[ii], vec[ind:ind + 3], kout[ii])
     return np.asarray(kout)
 
 cdef void vot_vec_c(float_t[:, :, ::1] output, float_t[:, ::1] kout_exp, float_t[:, ::1] rec_basis,
