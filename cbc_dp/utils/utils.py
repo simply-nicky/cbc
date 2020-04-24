@@ -2,6 +2,7 @@
 utils.py - Uitility constants and functions module
 """
 import os
+import configparser
 import numpy as np
 import h5py
 from cv2 import cvtColor, COLOR_BGR2GRAY
@@ -20,10 +21,12 @@ NXS_PATH = "/scan/program_name"
 COMMAND_PATH = "scan_command"
 DATA_PATH = "entry/data/data"
 ENERGY_PATH = "scan/data/energy"
-OUT_PATH = {'scan': os.path.join(PROJECT_PATH, "exp_results/scan_{0:05d}"),
-            'frame': os.path.join(PROJECT_PATH, "exp_results/count_{0:05d}")}
-FILENAME = {'scan': "scan_{0:s}_{1:05d}.{2:s}", 'frame': "count_{0:s}_{1:05d}.{2:s}"}
-DATA_FILENAME = {'scan': 'scan_{0:05d}_data_{1:06d}.h5', 'frame': 'count_{0:05d}_data_{1:06d}.h5'}
+OUT_PATH = {'scan': os.path.join(PROJECT_PATH, "exp_results/scan_{scan_num:05d}"),
+            'frame': os.path.join(PROJECT_PATH, "exp_results/count_{scan_num:05d}")}
+FILENAME = {'scan': "scan_{tag:s}_{scan_num:05d}.{ext:s}",
+            'frame': "count_{scan_num:05d}.{ext:s}"}
+DATA_FILENAME = {'scan': 'scan_{tag:05d}_data_{scan_num:06d}.h5',
+                 'frame': 'count_data_{scan_num:06d}.h5'}
 COMMANDS = {'single_frame': ('cnt', 'ct'),
             'scan1d': ('dscan', 'ascan'),
             'scan2d': ('dmesh', 'cmesh')}
@@ -34,6 +37,17 @@ STRUCT = np.array([[0, 0, 1, 0, 0],
                    [1, 1, 1, 1, 1],
                    [0, 1, 1, 1, 0],
                    [0, 0, 1, 0, 0]], dtype=np.uint8)
+
+def make_path(path, idx=0):
+    """
+    Return a nonexistant path to write a file
+    """
+    name, ext = os.path.splitext(path)
+    new_path = name + "_{:02d}".format(idx) + ext
+    if os.path.isfile(new_path):
+        return make_path(path, idx + 1)
+    else:
+        return new_path
 
 def scan_command(nxsfilepath):
     command = h5py.File(nxsfilepath, 'r')[NXS_PATH].attrs[COMMAND_PATH]
@@ -85,4 +99,56 @@ def find_reduced(vectors, basis):
     prod = vectors.dot(basis.T)
     mask = 2 * np.abs(prod) < (basis * basis).sum(axis=1)
     return np.where(mask.all(axis=1))
-    
+
+class INIParser():
+    """
+    INI files parser class
+    """
+    section = None
+    data_dict = {}
+
+    @staticmethod
+    def get_int_array(string):
+        """
+        Integer numpy.ndarray converter
+        """
+        return np.array([int(coord) for coord in string.strip('[]').split()])
+
+    @staticmethod
+    def get_float_array(string):
+        """
+        Float numpy.ndarray converter
+        """
+        return np.array([float(coord) for coord in string.strip('[]').split()])
+
+    @classmethod
+    def ini_parser(cls):
+        """
+        Return config parser
+        """
+        return configparser.ConfigParser(converters={'intarr': cls.get_int_array,
+                                                     'floatarr': cls.get_float_array})
+
+    @classmethod
+    def read_ini(cls, ini_file):
+        """
+        Read ini file
+        """
+        if not os.path.isfile(ini_file):
+            raise ValueError("File {:s} doesn't exist".format(ini_file))
+        ini_parser = cls.ini_parser()
+        ini_parser.read(ini_file)
+        return ini_parser
+
+    def __getattr__(self, attr):
+        if attr in self.data_dict:
+            return self.data_dict[attr]
+
+    def save_ini(self, filename):
+        """
+        Save experiment settings to an ini file
+        """
+        ini_parser = self.ini_parser()
+        ini_parser[self.section] = self.data_dict
+        with open(filename, 'w') as ini_file:
+            ini_parser.write(ini_file)

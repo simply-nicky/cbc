@@ -1,3 +1,3 @@
-from .run_index import main
+from .index import main
 
 main()

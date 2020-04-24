@@ -4,41 +4,61 @@ feat_detect.py - feature detection on convergent diffraction pattern module
 from abc import ABCMeta, abstractmethod
 import numpy as np
 from skimage.transform import probabilistic_hough_line
-import configparser
 from cv2 import createLineSegmentDetector
-from . import utils
+from .utils import INIParser, scan_eul_ang, rotation_matrix, hl_refiner, lsd_refiner, arraytoimg
 from .indexer import FrameStreaks, ScanStreaks
 
-class FrameSetup():
+class ScanSetup(INIParser):
     """
-    Detector frame experimental setup class
+    Detector tilt scan experimental setup class
 
     pix_size - detector pixel size [mm]
     smp_pos - sample position relative to the detector [mm]
-    z_f - distance between the focus and the detector [mm]
-    pupil - pupil outline at the detector plane [pixels]
-    beam_pos - unfocussed beam position at the detector plane [pixels]
+    f_pos - focus position relative to the detector [mm]
+    pupil - pupil outline at the detector plane for every frame [pixels]
+    axis - axis of rotation
+    thetas - angles of rotation
     """
-    def __init__(self, pix_size, smp_pos, z_f, pupil, beam_pos):
-        self.pix_size, self.smp_pos = pix_size, smp_pos
-        self.z_f, self.pupil, self.beam_pos = z_f, pupil * pix_size, beam_pos * pix_size
-        self.kin = (self.pupil - self.beam_pos) / self.z_f
+    section = 'exp_geom'
+
+    def __init__(self, pix_size, smp_pos, f_pos, pupil, axis, thetas):
+        self.data_dict = {'pix_size': pix_size, 'smp_pos': smp_pos, 'f_pos': f_pos,
+                          'axis': axis, 'pupil': pupil.ravel(), 'thetas': thetas}
+        self.eul_ang = scan_eul_ang(axis, -thetas)
+
+    @classmethod
+    def from_frame_setup(cls, frame_setup, pupil, axis, thetas):
+        """
+        Return ScanSetup object initialized with a FrameSetup object
+
+        frame_setup - FrameSetup object
+        pupil - pupil outline at the detector plane for every frame [pixels]
+        axis - axis of rotation
+        thetas - angles of rotation
+        """
+        return cls(pix_size=frame_setup.pix_size, smp_pos=frame_setup.smp_pos, 
+                   f_pos=frame_setup.f_pos, pupil=pupil, axis=axis, thetas=thetas)
 
     @classmethod
     def import_ini(cls, geom_file):
         """
-        Import FrameSetup class object from an ini file
+        Import ScanSetup class object from an ini file
 
         geom_file - path to a file
         """
-        config = configparser.ConfigParser()
-        config.read(geom_file)
-        pix_size = config.getfloat('exp_geom', 'pix_size')
-        smp_pos = np.array([float(coord) for coord in config.get('exp_geom', 'sample_pos').split()])
-        z_f = config.getfloat('exp_geom', 'focus_z')
-        pupil = np.array([int(bound) for bound in config.get('exp_geom', 'pupil_bounds').split()]).reshape((2, 2))
-        beam_pos = np.array([int(coord) for coord in config.get('exp_geom', 'beam_pos').split()])
-        return cls(pix_size=pix_size, smp_pos=smp_pos, z_f=z_f, pupil=pupil, beam_pos=beam_pos)
+        ini_parser = cls.read_ini(geom_file)
+        pix_size = ini_parser.getfloat(cls.section, 'pix_size')
+        smp_pos = ini_parser.getfloatarr(cls.section, 'smp_pos')
+        f_pos = ini_parser.getfloatarr(cls.section, 'f_pos')
+        pupil = ini_parser.getintarr(cls.section, 'pupil')
+        axis = ini_parser.getfloatarr(cls.section, 'axis')
+        thetas = ini_parser.getfloatarr(cls.section, 'thetas')
+        return cls(pix_size=pix_size, smp_pos=smp_pos, f_pos=f_pos,
+                   pupil=pupil, axis=axis, thetas=thetas)
+
+    @property
+    def scan_size(self):
+        return self.thetas.size
 
     def pixtoq(self, pixels):
         """
@@ -52,17 +72,17 @@ class FrameSetup():
 
         streaks - detector points [pixels]
         """
-        dx = streaks[..., 0] * self.pix_size - self.smp_pos[0]
-        dy = streaks[..., 1] * self.pix_size - self.smp_pos[1]
-        phis = np.arctan2(dy, dx)
-        thetas = np.arctan(np.sqrt(dx**2 + dy**2) / self.smp_pos[2])
+        delta_x = streaks[..., 0] * self.pix_size - self.smp_pos[0]
+        delta_y = streaks[..., 1] * self.pix_size - self.smp_pos[1]
+        phis = np.arctan2(delta_y, delta_x)
+        thetas = np.arctan(np.sqrt(delta_x**2 + delta_y**2) / self.smp_pos[2])
         return np.stack((np.sin(thetas) * np.cos(phis),
                          np.sin(thetas) * np.sin(phis),
                          np.cos(thetas)), axis=-1)
 
-    def det_pts(self, k_out):
+    def det_kout(self, k_out):
         """
-        Return diffraction streaks locations at the detector plane
+        Return outcoming wavevector's corresponding locations at the detector plane
 
         k_out - outcoming wavevectors
         """
@@ -71,100 +91,35 @@ class FrameSetup():
         det_y = self.smp_pos[2] * np.tan(theta) * np.sin(phi)
         return (np.stack((det_x, det_y), axis=-1) + self.smp_pos[:2]) / self.pix_size
 
-    def save(self, out_file):
+    def det_kin(self, k_in):
         """
-        Save experiment settings to an HDF5 file
+        Return incoming wavevector's corresponding locations at the detector plane
 
-        out_file - h5py File object
+        k_in - incoming wavevectors
         """
-        out_group = out_file.create_group("experiment_settings")
-        out_group.create_dataset('pix_size', data=self.pix_size)
-        out_group.create_dataset('sample_pos', data=self.smp_pos)
-        out_group.create_dataset('z_f', data=self.z_f)
-        out_group.create_dataset('pupil', data=self.pupil)
-        out_group.create_dataset('beam_pos', data=self.beam_pos)
-
-class ScanSetup(FrameSetup):
-    """
-    Detector tilt scan experimental setup class
-
-    pix_size - detector pixel size [mm]
-    smp_pos - sample position relative to the detector [mm]
-    z_f - distance between the focus and the detector [mm]
-    pupil - pupil outline at the detector plane [pixels]
-    beam_pos - unfocussed beam position at the detector plane [pixels]
-    axis - axis of rotation
-    thetas - angles of rotation
-    """
-    def __init__(self, pix_size, smp_pos, z_f, pupil, beam_pos, axis, thetas):
-        super(ScanSetup, self).__init__(pix_size, smp_pos, z_f, pupil, beam_pos)
-        self.axis, self.thetas = axis, thetas
-        self.eul_ang = utils.scan_eul_ang(self.axis, -self.thetas)
-
-    @classmethod
-    def from_frame_setup(cls, frame_setup, axis, thetas):
+        theta, phi = np.arccos(k_in[..., 2]), np.arctan2(k_in[..., 1], k_in[..., 0])
+        det_x = self.f_pos[2] * np.tan(theta) * np.cos(phi)
+        det_y = self.f_pos[2] * np.tan(theta) * np.sin(phi)
+        return (np.stack((det_x, det_y), axis=-1) + self.f_pos[:2]) / self.pix_size
+    
+    def pupil_bounds(self, frame_idx):
         """
-        Return ScanSetup object initialized with a FrameSetup object
-
-        frame_setup - FrameSetup object
-        axis - axis of rotation
-        thetas - angles of rotation
+        Return pupil bounds at the detector
         """
-        return cls(pix_size=frame_setup.pix_size, smp_pos=frame_setup.smp_pos, thetas=thetas,
-                   z_f=frame_setup.z_f, pupil=frame_setup.pupil / frame_setup.pix_size,
-                   beam_pos=frame_setup.beam_pos / frame_setup.pix_size, axis=axis)
-
-    @classmethod
-    def import_ini(cls, geom_file):
-        """
-        Import ScanSetup class object from an ini file
-
-        geom_file - path to a file
-        """
-        config = configparser.ConfigParser()
-        config.read(geom_file)
-        pix_size = config.getfloat('exp_geom', 'pix_size')
-        smp_pos = np.array([float(coord) for coord in config.get('exp_geom', 'sample_pos').split()])
-        z_f = config.getfloat('exp_geom', 'focus_z')
-        pupil = np.array([int(bound) for bound in config.get('exp_geom', 'pupil_bounds').split()]).reshape((2, 2))
-        beam_pos = np.array([int(coord) for coord in config.get('exp_geom', 'beam_pos').split()])
-        axis = np.array([float(coord) for coord in config.get('exp_geom', 'rot_axis').split()])
-        th_min = config.getfloat('exp_geom', 'theta_min')
-        th_max = config.getfloat('exp_geom', 'theta_max')
-        return cls(pix_size=pix_size, smp_pos=smp_pos, z_f=z_f, pupil=pupil, beam_pos=beam_pos,
-                   axis=axis, thetas=np.radians(np.arange(th_min, th_max)))
-
-    @property
-    def scan_size(self):
-        return self.thetas.size
+        return self.pupil[4 * frame_idx:4 * frame_idx + 4].reshape((2, 2)) * self.pix_size
 
     def rotation_matrix(self, frame_idx, inverse=False):
         """
         Return roational matrix for a given frame index
         """
         theta = -self.thetas[frame_idx] if inverse else self.thetas[frame_idx]
-        return utils.rotation_matrix(self.axis, theta)
+        return rotation_matrix(self.axis, theta)
 
     def euler_angles(self, frame_idx):
         """
         Return Euler angles for a given frame index of the inversed rotation
         """
         return self.eul_ang[frame_idx]
-
-    def save(self, out_file):
-        """
-        Save experiment settings to an HDF5 file
-
-        out_file - h5py File object
-        """
-        out_group = out_file.create_group("experiment_settings")
-        out_group.create_dataset('pix_size', data=self.pix_size)
-        out_group.create_dataset('sample_pos', data=self.smp_pos)
-        out_group.create_dataset('z_f', data=self.z_f)
-        out_group.create_dataset('pupil', data=self.pupil)
-        out_group.create_dataset('beam_pos', data=self.beam_pos)
-        out_group.create_dataset('rot_axis', data=self.axis)
-        out_group.create_dataset('thetas', data=self.thetas)
 
 class LineDetector(metaclass=ABCMeta):
     """
@@ -224,7 +179,7 @@ class HoughLineDetector(LineDetector):
         self.threshold, self.line_length, self.line_gap = threshold, line_length, line_gap
         self.thetas = np.linspace(-np.pi / 2, np.pi / 2, int(np.pi / dth), endpoint=True)
 
-    _refiner = staticmethod(utils.hl_refiner)
+    _refiner = staticmethod(hl_refiner)
 
     def _detector(self, frame):
         return probabilistic_hough_line(frame,
@@ -249,10 +204,10 @@ class LineSegmentDetector(LineDetector):
                                                   _sigma_scale=sigma_scale,
                                                   _log_eps=log_eps)
 
-    _refiner = staticmethod(utils.lsd_refiner)
+    _refiner = staticmethod(lsd_refiner)
 
     def _detector(self, frame):
         cap = np.mean(frame[frame != 0]) + np.std(frame[frame != 0])
-        img = utils.arraytoimg(np.clip(frame, 0, cap))
+        img = arraytoimg(np.clip(frame, 0, cap))
         return self.detector.detect(img)[0][:, 0].reshape((-1, 2, 2)).astype(np.float64)
     

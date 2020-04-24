@@ -135,61 +135,61 @@ cdef void rotate_matrix(float_t[:, ::1] mat, float_t[:, ::1] rot_mat, float_t[:,
     rotate_vector(mat[1], rot_mat, output[1])
     rotate_vector(mat[2], rot_mat, output[2])
 
-def rcbi_rb(float_t[:, ::1] or_mat, float_t[::1] vec):
+def rcbi_rb(float_t[:, ::1] or_mat, float_t[::1] rb_sizes, float_t[::1] eul_ang):
     """
     Return reciprocal lattice basis vectors
 
-    or_mat - orientation
-    vec - indexer vector
+    or_mat - orientation matrix
+    rb_sizes - reciprocal lattice vector lengths
+    eul_ang - orientation matrix Euler angles
     """
     cdef:
         float_t[:, ::1] rb = np.empty((3, 3), dtype=np.float64)
         float_t[:, ::1] rot_mat = np.empty((3, 3), dtype=np.float64)
-    euler_mat_c(rot_mat, vec[6], vec[7], vec[8])
+    euler_mat_c(rot_mat, eul_ang[0], eul_ang[1], eul_ang[2])
     rotate_matrix(or_mat, rot_mat, rb)
-    rb[0, 0] *= vec[3]; rb[0, 1] *= vec[3]; rb[0, 2] *= vec[3]
-    rb[1, 0] *= vec[4]; rb[1, 1] *= vec[4]; rb[1, 2] *= vec[4]
-    rb[2, 0] *= vec[5]; rb[2, 1] *= vec[5]; rb[2, 2] *= vec[5]
+    rb[0, 0] *= rb_sizes[0]; rb[0, 1] *= rb_sizes[0]; rb[0, 2] *= rb_sizes[0]
+    rb[1, 0] *= rb_sizes[1]; rb[1, 1] *= rb_sizes[1]; rb[1, 2] *= rb_sizes[1]
+    rb[2, 0] *= rb_sizes[2]; rb[2, 1] *= rb_sizes[2]; rb[2, 2] *= rb_sizes[2]
     return np.asarray(rb)
 
-def fcbi_rb(float_t[:, ::1] or_mat, float_t[::1] vec):
+def fcbi_rb(float_t[:, ::1] or_mat, float_t[::1] rb_sizes, float_t[::1] eul_ang):
     """
     Return reciprocal lattice basis vectors
 
-    or_mat - orientation
-    vec - indexer vector
+    rb_sizes - reciprocal lattice vector lengths
+    eul_ang - basis vectors Euler angles
     """
     cdef:
         float_t[:, ::1] rb = np.empty((3, 3), dtype=np.float64)
         float_t[:, ::1] rot_mat = np.empty((3, 3), dtype=np.float64)
-    euler_mat_c(rot_mat, vec[6], vec[7], vec[8])
+    euler_mat_c(rot_mat, eul_ang[0], eul_ang[1], eul_ang[2])
     rotate_vector(or_mat[0], rot_mat, rb[0])
-    euler_mat_c(rot_mat, vec[9], vec[10], vec[11])
+    euler_mat_c(rot_mat, eul_ang[3], eul_ang[4], eul_ang[5])
     rotate_vector(or_mat[1], rot_mat, rb[1])
-    euler_mat_c(rot_mat, vec[12], vec[13], vec[14])
+    euler_mat_c(rot_mat, eul_ang[6], eul_ang[7], eul_ang[8])
     rotate_vector(or_mat[2], rot_mat, rb[2])
-    rb[0, 0] *= vec[3]; rb[0, 1] *= vec[3]; rb[0, 2] *= vec[3]
-    rb[1, 0] *= vec[4]; rb[1, 1] *= vec[4]; rb[1, 2] *= vec[4]
-    rb[2, 0] *= vec[5]; rb[2, 1] *= vec[5]; rb[2, 2] *= vec[5]
+    rb[0, 0] *= rb_sizes[0]; rb[0, 1] *= rb_sizes[0]; rb[0, 2] *= rb_sizes[0]
+    rb[1, 0] *= rb_sizes[1]; rb[1, 1] *= rb_sizes[1]; rb[1, 2] *= rb_sizes[1]
+    rb[2, 0] *= rb_sizes[2]; rb[2, 1] *= rb_sizes[2]; rb[2, 2] *= rb_sizes[2]
     return np.asarray(rb)
 
-def scan_rb(float_t[::1] vec, int_t[::1] frames):
+def scan_rb(float_t[::1] rb_mat, float_t[::1] eul_ang, int_t[::1] frames):
     """
     Return reciprocal lattice basis vectors
 
-    vec - refinement problem vector
-    frames - array of frames
-    scan_size - full scan size
+    rb_mat - reciprocal lattice basis vectors matrix
+    eul_ang - Euler angles
+    frames - frame indices
     """
     cdef:
-        int_t a = frames.shape[0], i, ind
+        int_t a = frames.shape[0], i
         float_t[:, ::1] rot_mat = np.empty((3, 3), dtype=np.float64)
         float_t[:, ::1] rb0 = np.empty((3, 3), dtype=np.float64)
         float_t[:, :, ::1] rec_basis = np.empty((a, 3, 3), dtype=np.float64)
-    rb0[0] = vec[:3]; rb0[1] = vec[3:6]; rb0[2] = vec[6:9]
+    rb0[0] = rb_mat[:3]; rb0[1] = rb_mat[3:6]; rb0[2] = rb_mat[6:9]
     for i in range(a):
-        ind = 9 + 3 * (a + i)
-        euler_mat_c(rot_mat, vec[ind], vec[ind + 1], vec[ind + 2])
+        euler_mat_c(rot_mat, eul_ang[3 * i], eul_ang[3 * i + 1], eul_ang[3 * i + 2])
         rotate_matrix(rb0, rot_mat, rec_basis[i])
     return np.asarray(rec_basis)
 
@@ -292,6 +292,49 @@ def model_source_lines(float_t[:, ::1] source, float_t[:, ::1] rec_vec, float_t[
                 break
     return np.asarray(source_lines[:ii]), np.asarray(mask).astype(bool)
 
+cdef void kin_pupil(float_t[:, ::1] pupil, float_t[::1] f_pos, float_t[:, ::1] output) nogil:
+    """
+    Return kin bounds
+
+    pupil - pupil bounds at the detector plane [mm]
+    f_pos - focus position relative to the detector [mm]
+    """
+    cdef:
+        int_t j
+        float_t dx, dy, phi, theta
+    for j in range(2):
+        dx = pupil[j, 0] - f_pos[0]
+        dy = pupil[j, 1] - f_pos[1]
+        phi = atan2(dy, dx)
+        theta = atan(sqrt(dx**2 + dy**2) / f_pos[2])
+        output[j, 0] = sin(theta) * cos(phi)
+        output[j, 1] = sin(theta) * sin(phi)
+
+def kin_frame(float_t[:, ::1] pupil, float_t[::1] f_pos):
+    """
+    Return kin bounds for a frame
+
+    pupil - pupil bounds at the detector plane [mm]
+    f_pos - focus position relative to the detector [mm]
+    """
+    cdef float_t[:, ::1] kin = np.empty((2, 2), dtype=np.float64)
+    kin_pupil(pupil, f_pos, kin)
+    return np.asarray(kin)
+
+def kin_scan(float_t[:, :, ::1] pupil, float_t[::1] f_pos):
+    """
+    Return kin bounds for a scan
+
+    pupil - pupil bounds at the detector plane [mm]
+    f_pos - focus position relative to the detector [mm]
+    """
+    cdef:
+        int_t a = pupil.shape[0], i
+        float_t[:, :, ::1] kin = np.empty((a, 2, 2), dtype=np.float64)
+    for i in range(a):
+        kin_pupil(pupil[i], f_pos, kin[i])
+    return np.asarray(kin)
+
 cdef void kout_streak(float_t[:, ::1] streak, float_t[::1] pt0, float_t[:, ::1] kout) nogil:
     """
     Return outcoming wavevectors of a streak
@@ -325,21 +368,20 @@ def kout_frame(float_t[:, :, ::1] streaks, float_t[::1] pt0):
         kout_streak(streaks[i], pt0, kout[i])
     return np.asarray(kout)
 
-def kout_scan(float_t[:, :, ::1] streaks, float_t[::1] vec, int_t[::1] idxs):
+def kout_scan(float_t[:, :, ::1] streaks, float_t[::1] pts0, int_t[::1] idxs):
     """
     Return outcoming wavevectors of a pattern
     
     streaks - detected diffraction streaks at the detector [mm]
-    vec - refinement problem vector
+    pts0 - sample positions relative to the detector [mm]
     frame_idxs - streaks' frame indices
     """
     cdef:
-        int_t a = idxs.shape[0] - 1, aa = streaks.shape[0], i, ii, ind
+        int_t a = idxs.shape[0] - 1, aa = streaks.shape[0], i, ii
         float_t[:, :, ::1] kout = np.empty((aa, 2, 3), dtype=np.float64)
     for i in range(a):
         for ii in range(idxs[i], idxs[i + 1]):
-            ind = 3 * i + 9
-            kout_streak(streaks[ii], vec[ind:ind + 3], kout[ii])
+            kout_streak(streaks[ii], pts0[3 * i:3 * (i + 1)], kout[ii])
     return np.asarray(kout)
 
 cdef void vot_vec_c(float_t[:, :, ::1] output, float_t[:, ::1] kout_exp, float_t[:, ::1] rec_basis,
@@ -525,36 +567,39 @@ cdef float_t frame_distance(float_t x, float_t y, float_t[:, ::1] frame) nogil:
         dy += (frame[0, 1] - y)
     return sqrt(dx**2 + dy**2)
 
-cdef float_t fit_streak(float_t[::1] vot_vec, float_t[:, ::1] kout_exp, float_t[:, ::1] kin,
-                        float_t tau_x, float_t tau_y, float_t pen_coeff) nogil:
+cdef float_t fit_streak(float_t[::1] vot_vec, float_t[:, ::1] kout_exp,
+                        float_t[:, ::1] kin, float_t pen_coeff) nogil:
     """
     Return fitness value for a streak
 
     vot_vec - voting reciprocal lattice vectors
     kout_exp - experimental outcoming wavevectors
     kin = [[kin_x_min, kin_y_min], [kin_x_max, kin_y_max]] - lens' pupil bounds
-    [tau_x, tau_y] - diffraction streak orientation vector
     pen_coeff - penalty coefficient
     """
     cdef:
-        float_t rec_abs, source_th, source_phi, source_x, source_y
-        float_t dk_x, dk_y, fit_x, fit_y, fit, d0, d1
-    rec_abs = sqrt(vot_vec[0]**2 + vot_vec[1]**2 + vot_vec[2]**2)
+        float_t rec_abs = sqrt(vot_vec[0]**2 + vot_vec[1]**2 + vot_vec[2]**2)
+        float_t k0_x = kout_exp[0, 0] - vot_vec[0], k1_x = kout_exp[1, 0] - vot_vec[0]
+        float_t k0_y = kout_exp[0, 1] - vot_vec[1], k1_y = kout_exp[1, 1] - vot_vec[1]
+        float_t k0_z = kout_exp[0, 2] - vot_vec[2], k1_z = kout_exp[1, 2] - vot_vec[2]
+        float_t n_x, n_y, n_z, 
+        float_t src_th, src_phi, prod
+        float_t fit_x, fit_y, fit, d0, d1
     if rec_abs != 0:
-        source_th = acos(-vot_vec[2] / rec_abs) - acos(rec_abs / 2)
-        source_phi = atan2(vot_vec[1], vot_vec[0])
-        source_x = vot_vec[0] - sin(source_th) * cos(source_phi)
-        source_y = vot_vec[1] - sin(source_th) * sin(source_phi)
-        dk_x = source_x - (kout_exp[0, 0] + kout_exp[1, 0]) / 2
-        dk_y = source_y - (kout_exp[0, 1] + kout_exp[1, 1]) / 2
-        fit_x = (dk_x * tau_y**2 - dk_y * tau_y * tau_x) / (tau_x**2 + tau_y**2)
-        fit_y = (dk_y * tau_y**2 - dk_x * tau_x * tau_y) / (tau_x**2 + tau_y**2)
+        src_th = acos(-vot_vec[2] / rec_abs) - acos(rec_abs / 2)
+        src_phi = atan2(vot_vec[1], vot_vec[0])
+        n_x = k0_y * k1_z - k0_z * k1_y
+        n_y = k0_z * k1_x - k0_x * k1_z
+        n_z = k0_x * k1_y - k0_y * k1_x
+        prod = (k0_x * n_x + k0_y * n_y + (k0_z - 1) * n_z) / (n_x**2 + n_y**2 + n_z**2)
+        fit_x = prod * n_x + sin(src_th) * cos(src_phi)
+        fit_y = prod * n_y + sin(src_th) * sin(src_phi)
         fit = sqrt(fit_x**2 + fit_y**2)
     else:
         fit = 0
 
-    d0 = frame_distance(kout_exp[0, 0] - vot_vec[0], kout_exp[0, 1] - vot_vec[1], kin)
-    d1 = frame_distance(kout_exp[1, 0] - vot_vec[0], kout_exp[1, 1] - vot_vec[1], kin)
+    d0 = frame_distance(k0_x, k0_y, kin)
+    d1 = frame_distance(k1_x, k1_y, kin)
     fit += pen_coeff * (d0 + d1)
     return fit
 
@@ -569,14 +614,12 @@ cpdef float_t fit_frame(float_t[:, :, ::1] vot_vec, float_t[:, :, ::1] kout_exp,
     """
     cdef:
         int a = vot_vec.shape[0], b = vot_vec.shape[1], i, j
-        float_t fit = 0.0, min_fit, pt_fit, tau_x, tau_y
+        float_t fit = 0.0, min_fit, pt_fit
     with nogil:
         for i in range(a):
-            tau_x = kout_exp[i, 1, 0] - kout_exp[i, 0, 0]
-            tau_y = kout_exp[i, 1, 1] - kout_exp[i, 0, 1]
-            min_fit = fit_streak(vot_vec[i, 0], kout_exp[i], kin, tau_x, tau_y, pen_coeff)
+            min_fit = fit_streak(vot_vec[i, 0], kout_exp[i], kin, pen_coeff)
             for j in range(1, b):
-                pt_fit = fit_streak(vot_vec[i, j], kout_exp[i], kin, tau_x, tau_y, pen_coeff)
+                pt_fit = fit_streak(vot_vec[i, j], kout_exp[i], kin, pen_coeff)
                 if pt_fit < min_fit:
                     min_fit = pt_fit
             fit += min_fit
@@ -613,15 +656,13 @@ def fit_idxs(float_t[:, :, ::1] vot_vec, float_t[:, :, ::1] kout_exp, float_t[:,
     """
     cdef:
         int a = vot_vec.shape[0], b = vot_vec.shape[1], i, j
-        float_t min_fit, pt_fit, tau_x, tau_y
+        float_t min_fit, pt_fit
         int_t[::1] idxs = np.empty(a, dtype=np.int64)
     for i in range(a):
-        tau_x = kout_exp[i, 1, 0] - kout_exp[i, 0, 0]
-        tau_y = kout_exp[i, 1, 1] - kout_exp[i, 0, 1]
-        min_fit = fit_streak(vot_vec[i, 0], kout_exp[i], kin, tau_x, tau_y, pen_coeff)
+        min_fit = fit_streak(vot_vec[i, 0], kout_exp[i], kin, pen_coeff)
         idxs[i] = 0
         for j in range(1, b):
-            pt_fit = fit_streak(vot_vec[i, j], kout_exp[i], kin, tau_x, tau_y, pen_coeff)
+            pt_fit = fit_streak(vot_vec[i, j], kout_exp[i], kin, pen_coeff)
             if pt_fit < min_fit:
                 min_fit = pt_fit; idxs[i] = j
     return (np.arange(a), np.asarray(idxs))

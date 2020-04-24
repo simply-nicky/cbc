@@ -2,18 +2,20 @@
 model.py - convergent beam diffraction forward model
 """
 from abc import ABCMeta, abstractmethod
-import configparser
 import numpy as np
-from . import utils
+from .utils import INIParser, inverse_matrix, init_source, model_source_lines
 
-class RecBasis():
+class RecBasis(INIParser):
     """
     Reciprocal lattice basis vectors class
 
     rb_mat - basis vectors matrix
     """
+    section = 'rec_basis'
+
     def __init__(self, rb_mat):
-        self.rb_mat, self.inv_mat = rb_mat, utils.inverse_matrix(rb_mat)
+        self.data_dict = {'a_rec': rb_mat[0], 'b_rec': rb_mat[1], 'c_rec': rb_mat[2]}
+        self.rb_mat, self.inv_mat = rb_mat, inverse_matrix(rb_mat)
         self.sizes = np.sqrt((rb_mat**2).sum(axis=-1))
         self.or_mat = rb_mat / self.sizes[:, None]
 
@@ -22,35 +24,11 @@ class RecBasis():
         """
         Import RecBasis class object from an ini file
         """
-        config = configparser.ConfigParser()
-        config.read(ini_file)
-        a_vec = np.array([config.getfloat('rec_basis', 'ax'),
-                          config.getfloat('rec_basis', 'ay'),
-                          config.getfloat('rec_basis', 'az')])
-        b_vec = np.array([config.getfloat('rec_basis', 'bx'),
-                          config.getfloat('rec_basis', 'by'),
-                          config.getfloat('rec_basis', 'bz')])
-        c_vec = np.array([config.getfloat('rec_basis', 'cx'),
-                          config.getfloat('rec_basis', 'cy'),
-                          config.getfloat('rec_basis', 'cz')])
-        return cls(rb_mat=np.stack((a_vec, b_vec, c_vec)))
-
-    def save_ini(self, out_path):
-        """
-        Save reciprocal basis to an ini file
-        """
-        config = configparser.ConfigParser()
-        config['rec_basis'] = {'ax': self.rb_mat[0, 0],
-                               'ay': self.rb_mat[0, 1],
-                               'az': self.rb_mat[0, 2],
-                               'bx': self.rb_mat[1, 0],
-                               'by': self.rb_mat[1, 1],
-                               'bz': self.rb_mat[1, 2],
-                               'cx': self.rb_mat[2, 0],
-                               'cy': self.rb_mat[2, 1],
-                               'cz': self.rb_mat[2, 2]}
-        with open(out_path, 'w') as ini_file:
-            config.write(ini_file)
+        ini_parser = cls.read_ini(ini_file)
+        a_rec = ini_parser.getfloatarr(cls.section, 'a_rec')
+        b_rec = ini_parser.getfloatarr(cls.section, 'b_rec')
+        c_rec = ini_parser.getfloatarr(cls.section, 'c_rec')
+        return cls(rb_mat=np.stack((a_rec, b_rec, c_rec)))
 
 class ABCLattice(metaclass=ABCMeta):
     """
@@ -63,7 +41,7 @@ class ABCLattice(metaclass=ABCMeta):
     def __init__(self, rec_basis):
         self.rec_basis = rec_basis
         self._init_rec_vec()
-        self.rec_abs, self.rec_th, self.rec_phi, self.source = utils.init_source(self.rec_vec)
+        self.rec_abs, self.rec_th, self.rec_phi, self.source = init_source(self.rec_vec)
 
     @abstractmethod
     def _init_rec_vec(self):
@@ -219,9 +197,9 @@ class RectModel(ABCModel):
         super(RectModel, self).__init__(rec_lat)
 
     def _init_mask(self):
-        self._source_lines, self.mask = utils.model_source_lines(source=self.rec_lat.source,
-                                                                 rec_vec=self.rec_lat.rec_vec,
-                                                                 kin=self.kin)
+        self._source_lines, self.mask = model_source_lines(source=self.rec_lat.source,
+                                                           rec_vec=self.rec_lat.rec_vec,
+                                                           kin=self.kin)
 
     def source_lines(self):
         """

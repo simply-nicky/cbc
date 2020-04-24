@@ -9,7 +9,9 @@ from scipy.ndimage import median_filter, label
 from scipy import constants
 import numpy as np
 import h5py
-from . import utils
+from .utils import HOTMASK, RAW_PATH, PREFIXES, MEAS_PATH, EIGER_PATH, ENERGY_PATH, OUT_PATH
+from .utils import scan_command, DATA_FILENAME, DATA_PATH, FILENAME, COMMANDS, DET_DIST, STRUCT
+from .utils import background_filter, streaks_mask, normalize_frame
 from .feat_detect import LineSegmentDetector
 
 class Measurement(metaclass=ABCMeta):
@@ -19,7 +21,7 @@ class Measurement(metaclass=ABCMeta):
     prefix - experiment prefix ('b12_1', 'b12_2', 'opal', 'imaging', 'alignment')
     scan_num - scan number
     """
-    mask = utils.HOTMASK
+    mask = HOTMASK
 
     def __init__(self, prefix, scan_num):
         self.prefix, self.scan_num = prefix, scan_num
@@ -44,9 +46,9 @@ class Measurement(metaclass=ABCMeta):
 
     @property
     def path(self):
-        return os.path.join(utils.RAW_PATH,
-                            utils.PREFIXES[self.prefix],
-                            utils.MEAS_PATH[self.mode].format(self.scan_num))
+        return os.path.join(RAW_PATH,
+                            PREFIXES[self.prefix],
+                            MEAS_PATH[self.mode].format(self.scan_num))
 
     @property
     def nxsfilepath(self):
@@ -54,15 +56,15 @@ class Measurement(metaclass=ABCMeta):
 
     @property
     def command(self):
-        return utils.scan_command(self.nxsfilepath)
+        return scan_command(self.nxsfilepath)
 
     @property
     def data_path(self):
-        return os.path.join(self.path, utils.EIGER_PATH)
+        return os.path.join(self.path, EIGER_PATH)
 
     @property
     def energy(self):
-        return h5py.File(self.nxsfilepath, 'r')[utils.ENERGY_PATH][0] * constants.e
+        return h5py.File(self.nxsfilepath, 'r')[ENERGY_PATH][0] * constants.e
 
     @property
     def exposure(self):
@@ -75,10 +77,10 @@ class Measurement(metaclass=ABCMeta):
 
     @property
     def out_path(self):
-        return utils.OUT_PATH[self.mode].format(self.scan_num)
+        return OUT_PATH[self.mode].format(scan_num=self.scan_num)
 
     def filename(self, tag, ext):
-        return utils.FILENAME[self.mode].format(tag, self.scan_num, ext)
+        return FILENAME[self.mode].format(tag=tag, scan_num=self.scan_num, ext=ext)
 
     def _create_outfile(self, tag, ext='h5'):
         os.makedirs(self.out_path, exist_ok=True)
@@ -110,13 +112,13 @@ def open_scan(prefix, scan_num, good_frames=None):
     prefix - experiment prefix ('b12_1', 'b12_2', 'opal', 'imaging', 'alignment')
     scan_num - scan number
     """
-    path = os.path.join(os.path.join(utils.RAW_PATH,
-                                     utils.PREFIXES[prefix],
-                                     utils.MEAS_PATH['scan'].format(scan_num)))
-    command = utils.scan_command(path + '.nxs')
-    if command.startswith(utils.COMMANDS['scan1d']):
+    path = os.path.join(os.path.join(RAW_PATH,
+                                     PREFIXES[prefix],
+                                     MEAS_PATH['scan'].format(scan_num)))
+    command = scan_command(path + '.nxs')
+    if command.startswith(COMMANDS['scan1d']):
         return Scan1D(prefix, scan_num, good_frames)
-    elif command.startswith(utils.COMMANDS['scan2d']):
+    elif command.startswith(COMMANDS['scan2d']):
         return Scan2D(prefix, scan_num, good_frames)
     else:
         raise ValueError('Unknown scan type')
@@ -138,11 +140,11 @@ class Frame(Measurement):
 
     @property
     def data_filename(self):
-        return utils.DATA_FILENAME[self.mode].format(self.scan_num, 1)
+        return DATA_FILENAME[self.mode].format(scan_num=self.scan_num)
 
     def _init_raw(self):
         raw_file = h5py.File(os.path.join(self.data_path, self.data_filename), 'r')
-        return raw_file[utils.DATA_PATH][:].sum(axis=0, dtype=np.uint64)
+        return raw_file[DATA_PATH][:].sum(axis=0, dtype=np.uint64)
 
     def _save_data(self, outfile):
         datagroup = outfile.create_group('data')
@@ -222,7 +224,7 @@ class Scan1D(ABCScan, metaclass=ABCMeta):
         for path in paths:
             with h5py.File(path, 'r') as datafile:
                 try:
-                    data_list.append(datafile[utils.DATA_PATH][:].sum(axis=0, dtype=np.uint64))
+                    data_list.append(datafile[DATA_PATH][:].sum(axis=0, dtype=np.uint64))
                 except KeyError:
                     continue
         if not data_list:
@@ -335,7 +337,7 @@ class ScanST(ABCScan):
 
     @property
     def detector_distance(self):
-        return utils.DET_DIST[self.prefix]
+        return DET_DIST[self.prefix]
 
     @property
     def x_pixel_size(self):
@@ -368,7 +370,7 @@ class ScanST(ABCScan):
         for path in paths:
             with h5py.File(path, 'r') as datafile:
                 try:
-                    data_list.append(datafile[utils.DATA_PATH][:])
+                    data_list.append(datafile[DATA_PATH][:])
                 except KeyError:
                     continue
         return None if not data_list else np.concatenate(data_list, axis=0)
@@ -449,7 +451,7 @@ class CorrectedData():
 
     @classmethod
     def _background_worker(cls, data, bgd, bad_mask):
-        return utils.background_filter(data=data, bgd=bgd, bad_mask=bad_mask,
+        return background_filter(data=data, bgd=bgd, bad_mask=bad_mask,
                                        k_max=cls.bgd_kmax, sigma=cls.bgd_sigma)
 
     @classmethod
@@ -457,11 +459,9 @@ class CorrectedData():
         frame = median_filter(frame_data, 3)
         frame = np.clip(frame, cls.det_thr, frame.max())
         streaks = cls.line_detector.det_frame_raw(frame)
-        streaks_mask = utils.streaks_mask(lines=streaks, width=cls.streak_width,
-                                          structure=utils.STRUCT,
-                                          shape_x=frame_data.shape[0],
-                                          shape_y=frame_data.shape[1])
-        return streaks_mask
+        mask = streaks_mask(lines=streaks, width=cls.streak_width, structure=STRUCT,
+                            shape_x=frame_data.shape[0], shape_y=frame_data.shape[1])
+        return mask
 
     def normalize_data(self):
         """
@@ -505,7 +505,7 @@ class NormalizedData():
     @classmethod
     def _norm_frame(cls, data, mask):
         labels, lbl_num = label(mask)
-        norm_data = utils.normalize_frame(data=data, labels=labels, structure=cls.struct,
+        norm_data = normalize_frame(data=data, labels=labels, structure=cls.struct,
                                           lbl_num=lbl_num, threshold=cls.threshold)
         return median_filter(norm_data, 3)
 
