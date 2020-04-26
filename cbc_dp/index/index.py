@@ -208,6 +208,8 @@ class Batcher():
         shell_params = [params['geom_file'], params['rb_file'], params['mode']]
         for key, item in params.items():
             if item is not None:
+                if key in ['geom_file', 'rb_file']:
+                    shell_params.append(str(item))
                 if key in ['f_tol', 'smp_tol', 'frames']:
                     shell_params.extend(['--' + key, str(item).strip('[]')])
                 else:
