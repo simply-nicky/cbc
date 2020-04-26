@@ -533,7 +533,7 @@ class ScanCBI(AbcCBI):
 
     def __init__(self, streaks, rec_basis, f_tol, smp_tol, rb_tol, ang_tol, pen_coeff=1.):
         super(ScanCBI, self).__init__(streaks, pen_coeff)
-        self.pupil = streaks.exp_set.pupil.reshapes((-1, 2, 2)) * self.pix_size
+        self.pupil = streaks.exp_set.pupil.reshape((-1, 2, 2)) * self.pix_size
         self.frames, self.idxs = streaks.frames, streaks.idxs
         tol = (f_tol, smp_tol, rb_tol, ang_tol)
         eul_ang = streaks.exp_set.eul_ang[self.frames].ravel()
@@ -544,11 +544,11 @@ class ScanCBI(AbcCBI):
         pt0_lb = np.tile((1 - np.array(tol[1])) * smp_pos, self.frames.size)
         pt0_ub = np.tile((1 + np.array(tol[1])) * smp_pos, self.frames.size)
         self.lower_b = np.concatenate(((1 - np.array(tol[0])) * f_pos,
-                                       rec_basis.rb_mat.ravel() - tol[1],
-                                       pt0_lb, eul_ang - tol[2]))
+                                       rec_basis.rb_mat.ravel() - tol[2],
+                                       pt0_lb, eul_ang - tol[3]))
         self.upper_b = np.concatenate(((1 + np.array(tol[0])) * f_pos,
-                                       rec_basis.rb_mat.ravel() + tol[1],
-                                       pt0_ub, eul_ang + tol[2]))
+                                       rec_basis.rb_mat.ravel() + tol[2],
+                                       pt0_ub, eul_ang + tol[3]))
 
     @property
     def info_text(self):
