@@ -33,8 +33,8 @@ class IndexJob(INIParser):
 
     def __init__(self, **kwargs):
         self.data_dict = kwargs
-        out_dir = os.path.join(PROJECT_PATH, OUT_PATH['scan'].format(scan_num=kwargs['scan_num']), 'index')
-        os.makedirs(out_dir, exist_ok=True)
+        self.out_dir = os.path.join(PROJECT_PATH, OUT_PATH['scan'].format(scan_num=kwargs['scan_num']), 'index')
+        os.makedirs(self.out_dir, exist_ok=True)
         if kwargs['filename']:
             self.out_path = os.path.join(self.out_dir, kwargs['filename'])
         else:
