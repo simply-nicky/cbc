@@ -210,7 +210,7 @@ class Batcher():
             if item is not None:
                 if key in ['geom_file', 'rb_file']:
                     shell_params.append(str(item))
-                if key in ['f_tol', 'smp_tol', 'frames']:
+                elif key in ['f_tol', 'smp_tol', 'frames']:
                     shell_params.extend(['--' + key, str(item).strip('[]')])
                 else:
                     shell_params.extend(['--' + key, str(item)])
