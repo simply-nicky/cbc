@@ -517,6 +517,15 @@ class FrameCBI(AbcCBI):
         det_y = vec[5] * np.tan(theta) * np.sin(phi)
         return (np.stack((det_x, det_y), axis=-1) + vec[3:5]) / self.pix_size
 
+    def det_kin(self, kin_x, kin_y, vec):
+        """
+        Return diffraction streaks locations at the detector plane
+        """
+        theta, phi = np.arccos(np.sqrt(1 - kin_x**2 - kin_y**2)), np.arctan2(kin_y, kin_x)
+        det_x = vec[2] * np.tan(theta) * np.cos(phi)
+        det_y = vec[2] * np.tan(theta) * np.sin(phi)
+        return (np.stack((det_x, det_y), axis=-1) + vec[:2]) / self.pix_size
+
 class ScanCBI(AbcCBI):
     """
     Abstract scan refinement class (incomplete)
