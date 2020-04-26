@@ -36,8 +36,7 @@ class IndexJob(INIParser):
         out_dir = os.path.join(PROJECT_PATH, OUT_PATH['scan'].format(scan_num=kwargs['scan_num']), 'index')
         os.makedirs(out_dir, exist_ok=True)
         if kwargs['filename']:
-            filename = kwargs['filename']
-            self.out_path = os.path.join(self.out_dir, filename)
+            self.out_path = os.path.join(self.out_dir, kwargs['filename'])
         else:
             filename = self.fn_str.format(scan_num=kwargs['scan_num'],
                                           mode=kwargs['mode']) + '.h5'
@@ -178,8 +177,7 @@ class Batcher():
         self.sb_dir = os.path.join(PROJECT_PATH, OUT_PATH['scan'].format(scan_num=kwargs['scan_num']), 'sbatch_out')
         os.makedirs(self.sb_dir, exist_ok=True)
         if kwargs['filename']:
-            filename = kwargs['filename']
-            self.out_path = os.path.join(self.out_dir, filename)
+            self.out_path = os.path.join(self.out_dir, kwargs['filename'])
         else:
             filename = self.fn_str.format(scan_num=kwargs['scan_num'],
                                           mode=kwargs['mode']) + '.h5'
