@@ -403,15 +403,6 @@ class AbcCBI(metaclass=ABCMeta):
         """
         return RecBasis(rb_mat=self.rb_mat(vec))
 
-    def det_pts(self, kout_x, kout_y, vec):
-        """
-        Return diffraction streaks locations at the detector plane
-        """
-        theta, phi = np.arccos(np.sqrt(1 - kout_x**2 - kout_y**2)), np.arctan2(kout_y, kout_x)
-        det_x = vec[2] * np.tan(theta) * np.cos(phi)
-        det_y = vec[2] * np.tan(theta) * np.sin(phi)
-        return (np.stack((det_x, det_y), axis=-1) + vec[:2]) / self.pix_size
-
     def idxs(self, vec, vot_vec, kout_exp):
         """
         Return the indices of the optimal reciprocal lattice voting vectors
@@ -516,6 +507,15 @@ class FrameCBI(AbcCBI):
         """
         return [fit_frame(vot_vec=vot_vec, kout_exp=kout_exp, kin=self.kin_bounds(vec),
                           pen_coeff=self.pen_coeff)]
+
+    def det_kout(self, kout_x, kout_y, vec):
+        """
+        Return diffraction streaks locations at the detector plane
+        """
+        theta, phi = np.arccos(np.sqrt(1 - kout_x**2 - kout_y**2)), np.arctan2(kout_y, kout_x)
+        det_x = vec[5] * np.tan(theta) * np.cos(phi)
+        det_y = vec[5] * np.tan(theta) * np.sin(phi)
+        return (np.stack((det_x, det_y), axis=-1) + vec[3:5]) / self.pix_size
 
 class ScanCBI(AbcCBI):
     """

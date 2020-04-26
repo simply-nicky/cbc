@@ -59,7 +59,7 @@ class ABCLattice(metaclass=ABCMeta):
 
         exp_set - FrameSetup class object
         """
-        return exp_set.det_pts(self.kout())
+        return exp_set.det_kout(self.kout())
 
 class BallLattice(ABCLattice):
     """
@@ -140,7 +140,7 @@ class ABCModel():
 
         exp_set - FrameSetup class object
         """
-        return exp_set.det_pts(self.kout())
+        return exp_set.det_kout(self.kout())
 
     def kout_lines(self):
         """
@@ -154,7 +154,7 @@ class ABCModel():
 
         exp_set - FrameSetup class object
         """
-        return exp_set.det_pts(self.kout_lines())
+        return exp_set.det_kout(self.kout_lines())
 
 class CircModel(ABCModel):
     """
