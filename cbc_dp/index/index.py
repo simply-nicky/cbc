@@ -240,7 +240,7 @@ class Batcher():
         """
         command = [self.batch_cmd]
         command.extend(self.sbatch_parameters(job_name))
-        command.extend(['--mail-type', 'END,FAIL', self.index_script])
+        command.append(self.index_script)
         command.extend(self.shell_parameters(params))
         return command
 
@@ -252,6 +252,7 @@ class Batcher():
         command.extend(self.sbatch_parameters('combine'))
         command.extend(['--dependency',
                         'afterok:{:s}'.format(':'.join(job_nums)),
+                        '--mail-type', 'END,FAIL',
                         self.combine_script])
         command.extend([os.path.join(self.out_dir, params['filename'])
                         for params in self.pool_job.values()])
