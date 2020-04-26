@@ -206,11 +206,12 @@ class Batcher():
         Return shell paramseters for a job
         """
         shell_params = [params['geom_file'], params['rb_file'], params['mode']]
-        for key in params:
-            if key in ['f_tol', 'smp_tol', 'frames']:
-                shell_params.extend(['--' + key, str(params[key]).strip('[]')])
-            else:
-                shell_params.extend(['--' + key, str(params[key])])
+        for key, item in params.items():
+            if item != None:
+                if key in ['f_tol', 'smp_tol', 'frames']:
+                    shell_params.extend(['--' + key, str(item).strip('[]')])
+                else:
+                    shell_params.extend(['--' + key, str(item)])
         return shell_params
 
     def __getattr__(self, attr):
