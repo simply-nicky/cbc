@@ -205,11 +205,11 @@ class Batcher():
         """
         Return shell paramseters for a job
         """
-        shell_params = [params['geom_file'], params['rb_file'], params['mode']]
+        shell_params = [params['geom_file'], params['rb_file']]
         for key, item in params.items():
             if item is not None:
                 if key in ['geom_file', 'rb_file']:
-                    shell_params.append(str(item))
+                    continue
                 elif key in ['f_tol', 'smp_tol', 'frames']:
                     shell_params.extend(['--' + key, str(item).strip('[]')])
                 else:
