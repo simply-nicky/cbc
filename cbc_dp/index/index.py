@@ -37,10 +37,11 @@ class IndexJob(INIParser):
         os.makedirs(out_dir, exist_ok=True)
         if kwargs['filename']:
             filename = kwargs['filename']
+            self.out_path = os.path.join(self.out_dir, filename)
         else:
             filename = self.fn_str.format(scan_num=kwargs['scan_num'],
-                                                mode=kwargs['mode']) + '.h5'
-        self.out_path = make_path(os.path.join(out_dir, filename))
+                                          mode=kwargs['mode']) + '.h5'
+            self.out_path = make_path(os.path.join(self.out_dir, filename))
         self.setup = ScanSetup.import_ini(kwargs['geom_file'])
         self.scan_path = os.path.join(OUT_PATH['scan'].format(scan_num=kwargs['scan_num']),
                                       FILENAME['scan'].format(tag='streaks', ext='h5',
@@ -178,10 +179,11 @@ class Batcher():
         os.makedirs(self.sb_dir, exist_ok=True)
         if kwargs['filename']:
             filename = kwargs['filename']
+            self.out_path = os.path.join(self.out_dir, filename)
         else:
             filename = self.fn_str.format(scan_num=kwargs['scan_num'],
                                           mode=kwargs['mode']) + '.h5'
-        self.out_path = make_path(os.path.join(self.out_dir, filename))
+            self.out_path = make_path(os.path.join(self.out_dir, filename))
         self._init_pool()
 
     def _init_pool(self):
