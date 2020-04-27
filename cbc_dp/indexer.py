@@ -106,6 +106,8 @@ class ScanStreaks(FrameStreaks):
     exp_set - ScanSetup class object
     frame_idxs - frame indices
     """
+    err_str = 'Only integers, slice, integer arrays, and list of integers are valid indices'
+
     def __init__(self, raw_lines, exp_set, frame_idxs):
         self.frame_idxs = frame_idxs
         self.frames, self.idxs = np.unique(self.frame_idxs, return_index=True)
@@ -134,14 +136,18 @@ class ScanStreaks(FrameStreaks):
         if isinstance(frame_idx, int):
             return FrameStreaks(self.raw_lines[self.idxs[frame_idx]:self.idxs[frame_idx + 1]],
                                 self.exp_set)
-        elif isinstance(frame_idx, slice) or (isinstance(frame_idx, np.ndarray) and np.issubdtype(frame_idx.dtype, np.integer)):
+        elif isinstance(frame_idx, (slice, np.ndarray, list)):
+            try:
+                start_idxs, stop_idxs = self.idxs[frame_idx], self.idxs[1:][frame_idx]
+            except IndexError as err:
+                raise IndexError(self.err_str) from err
             streaks, frame_idxs = [], []
-            for start, stop in zip(self.idxs[frame_idx], self.idxs[1:][frame_idx]):
+            for start, stop in zip(start_idxs, stop_idxs):
                 streaks.append(self.raw_lines[start:stop])
                 frame_idxs.append(self.frame_idxs[start:stop])
             return ScanStreaks(np.concatenate(streaks), self.exp_set, np.concatenate(frame_idxs))
         else:
-            raise IndexError('Only integers, slice, and integer arrays are valid indices')
+            raise IndexError(self.err_str)
 
     def __iter__(self):
         for start, stop in zip(self.idxs[:-1], self.idxs[1:]):

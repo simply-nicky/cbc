@@ -5,7 +5,17 @@ import os
 import argparse
 import h5py
 import numpy as np
-from ..utils import make_path
+
+def make_path(path, idx=0):
+    """
+    Return a nonexistant path to write a file
+    """
+    name, ext = os.path.splitext(path)
+    new_path = name + "_{:02d}".format(idx) + ext
+    if os.path.isfile(new_path):
+        return make_path(path, idx + 1)
+    else:
+        return new_path
 
 class HDFData(object):
     """
