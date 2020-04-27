@@ -5,6 +5,7 @@ import os
 import argparse
 import h5py
 import numpy as np
+from ..utils import make_path
 
 class HDFData(object):
     """
@@ -46,6 +47,7 @@ def write_data(files, out_path):
     out_path - output file name
     """
     print("Reading data files: {}".format(files))
+    out_path = make_path(out_path)
     data_list = []
     for path in files:
         with h5py.File(path, 'r') as data_file:

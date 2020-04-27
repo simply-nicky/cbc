@@ -183,7 +183,7 @@ class Batcher():
         else:
             filename = self.fn_str.format(scan_num=kwargs['scan_num'],
                                           mode=kwargs['mode']) + '.h5'
-            self.out_path = make_path(os.path.join(self.out_dir, filename))
+            self.out_path = os.path.join(self.out_dir, filename)
         self._init_pool()
 
     def _init_pool(self):
