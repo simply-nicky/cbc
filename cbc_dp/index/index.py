@@ -33,7 +33,7 @@ class IndexJob(INIParser):
 
     def __init__(self, **kwargs):
         self.data_dict = kwargs
-        self.out_dir = os.path.join(PROJECT_PATH, OUT_PATH['scan'].format(scan_num=kwargs['scan_num']), 'index')
+        self.out_dir = os.path.join(OUT_PATH['scan'].format(scan_num=kwargs['scan_num']), 'index')
         os.makedirs(self.out_dir, exist_ok=True)
         if kwargs['filename']:
             self.out_path = os.path.join(self.out_dir, kwargs['filename'])
@@ -161,7 +161,8 @@ class Batcher():
     batch_cmd, frmt = "sbatch", '%m-%d-%y_%H-%M-%S'
     index_script = os.path.join(PROJECT_PATH, "cbc_dp/index/index.sh")
     combine_script = os.path.join(PROJECT_PATH, "cbc_dp/index/combine.sh")
-    job_name = "{scan_num:03d}_{mode:s}_{now:s}_part{idx:02d}"
+    job_name = "{scan_num:03d}_{mode:s}_part{idx:02d}"
+    td_str = ".temp_{now:s}"
     fn_str = "{scan_num:03d}_{mode:s}_index"
     out_file = "{job_name:s}_{now:s}.out"
     err_file = "{job_name:s}_{now:s}.err"
@@ -172,9 +173,10 @@ class Batcher():
 
     def __init__(self, **kwargs):
         self.params = kwargs
-        self.out_dir = os.path.join(PROJECT_PATH, OUT_PATH['scan'].format(scan_num=kwargs['scan_num']), 'index')
+        self.now = datetime.now().strftime(self.frmt)
+        self.out_dir = os.path.join(OUT_PATH['scan'].format(scan_num=kwargs['scan_num']), 'index')
         os.makedirs(self.out_dir, exist_ok=True)
-        self.sb_dir = os.path.join(PROJECT_PATH, OUT_PATH['scan'].format(scan_num=kwargs['scan_num']), 'sbatch_out')
+        self.sb_dir = os.path.join(OUT_PATH['scan'].format(scan_num=kwargs['scan_num']), 'sbatch_out')
         os.makedirs(self.sb_dir, exist_ok=True)
         if kwargs['filename']:
             self.out_path = os.path.join(self.out_dir, kwargs['filename'])
@@ -185,20 +187,15 @@ class Batcher():
         self._init_pool()
 
     def _init_pool(self):
+        temp_dir = os.path.join(OUT_PATH['scan'].format(scan_num=self.scan_num), self.td_str.format(now=self.now))
+        os.makedirs(temp_dir)
         self.pool_job = {}
         for idx, n_isl in enumerate(chunkify(self.n_isl, self.job_size)):
             job_name = self.job_name.format(scan_num=self.scan_num, mode=self.mode, idx=idx)
             params = {key:self.params[key] for key in self.job_keys if key in self.params}
-            params['filename'] = job_name + '.h5'
+            params['filename'] = os.path.join(temp_dir, job_name + '.h5')
             params['n_isl'] = n_isl
             self.pool_job[job_name] = params
-
-    @classmethod
-    def now(cls):
-        """
-        Return current date and time string at the particular format
-        """
-        return datetime.now().strftime(cls.frmt)
 
     @staticmethod
     def shell_parameters(params):
@@ -228,10 +225,10 @@ class Batcher():
                          '--time', '4-00:00:00',
                          '--output', os.path.join(self.sb_dir,
                                                   self.out_file.format(job_name=job_name,
-                                                                       now=self.now())),
+                                                                       now=self.now)),
                          '--error', os.path.join(self.sb_dir,
                                                  self.err_file.format(job_name=job_name,
-                                                                      now=self.now()))]
+                                                                      now=self.now))]
         return sbatch_params
 
     def index_command(self, job_name, params):

@@ -65,6 +65,7 @@ def write_data(files, out_path):
     print("Deleting old files...")
     for filename in files:
         os.remove(filename)
+    os.rmdir(os.path.dirname(files[0]))
     print('Done!')
 
 def main():
