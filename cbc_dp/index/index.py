@@ -161,7 +161,7 @@ class Batcher():
     batch_cmd, frmt = "sbatch", '%m-%d-%y_%H-%M-%S'
     index_script = os.path.join(PROJECT_PATH, "cbc_dp/index/index.sh")
     combine_script = os.path.join(PROJECT_PATH, "cbc_dp/index/combine.sh")
-    job_name = "{scan_num:03d}_{mode:s}_index_part{idx:02d}"
+    job_name = "{scan_num:03d}_{mode:s}_{now:s}_part{idx:02d}"
     fn_str = "{scan_num:03d}_{mode:s}_index"
     out_file = "{job_name:s}_{now:s}.out"
     err_file = "{job_name:s}_{now:s}.err"
