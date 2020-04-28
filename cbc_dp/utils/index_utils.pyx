@@ -619,6 +619,28 @@ cpdef float_t fit_frame(float_t[:, :, ::1] vot_vec, float_t[:, :, ::1] kout_exp,
             fit += min_fit
     return fit / a
 
+def fit_idxs_frame(float_t[:, :, ::1] vot_vec, float_t[:, :, ::1] kout_exp, float_t[:, ::1] kin, float_t pen_coeff):
+    """
+    Return indices of the best lattice vectors of a frame
+
+    vot_vec - voting reciprocal lattice vectors
+    kout_exp - experimental outcoming wavevectors
+    kin = [[kin_x_min, kin_y_min], [kin_x_max, kin_y_max]] - lens' pupil bounds
+    pen_coeff - penalty coefficient
+    """
+    cdef:
+        int a = vot_vec.shape[0], b = vot_vec.shape[1], i, j
+        float_t min_fit, pt_fit
+        int_t[::1] fit_idxs = np.empty(a, dtype=np.int64)
+    for i in range(a):
+        min_fit = fit_streak(vot_vec[i, 0], kout_exp[i], kin, pen_coeff)
+        fit_idxs[i] = 0
+        for j in range(1, b):
+            pt_fit = fit_streak(vot_vec[i, j], kout_exp[i], kin, pen_coeff)
+            if pt_fit < min_fit:
+                min_fit = pt_fit; fit_idxs[i] = j
+    return (np.arange(a), np.asarray(fit_idxs))
+
 def fit_scan(float_t[:, :, ::1] vot_vec, float_t[:, :, ::1] kout_exp, float_t[:, :, ::1] kin,
               int_t[::1] idxs, float_t pen_coeff):
     """
@@ -639,90 +661,27 @@ def fit_scan(float_t[:, :, ::1] vot_vec, float_t[:, :, ::1] kout_exp, float_t[:,
                            kin[i], pen_coeff)
     return np.asarray(fit)
 
-def fit_idxs(float_t[:, :, ::1] vot_vec, float_t[:, :, ::1] kout_exp, float_t[:, ::1] kin, float_t pen_coeff):
+def fit_idxs_scan(float_t[:, :, ::1] vot_vec, float_t[:, :, ::1] kout_exp, float_t[:, :, ::1] kin,
+                  int_t[::1] idxs, float_t pen_coeff):
     """
-    Return indices of the best lattice vectors of a frame
+    Return indices of the best lattice vectors of a scan
 
     vot_vec - voting reciprocal lattice vectors
     kout_exp - experimental outcoming wavevectors
     kin = [[kin_x_min, kin_y_min], [kin_x_max, kin_y_max]] - lens' pupil bounds
+    idxs - streaks unique indices
     pen_coeff - penalty coefficient
     """
     cdef:
-        int a = vot_vec.shape[0], b = vot_vec.shape[1], i, j
+        int aa = kout_exp.shape[0], a = idxs.shape[0] - 1, b = vot_vec.shape[1], ii, i, j
         float_t min_fit, pt_fit
-        int_t[::1] idxs = np.empty(a, dtype=np.int64)
+        int_t[::1] fit_idxs = np.empty(aa, dtype=np.int64)
     for i in range(a):
-        min_fit = fit_streak(vot_vec[i, 0], kout_exp[i], kin, pen_coeff)
-        idxs[i] = 0
-        for j in range(1, b):
-            pt_fit = fit_streak(vot_vec[i, j], kout_exp[i], kin, pen_coeff)
-            if pt_fit < min_fit:
-                min_fit = pt_fit; idxs[i] = j
-    return (np.arange(a), np.asarray(idxs))
-
-def reduce_streaks(float_t[:, :, ::1] kout_exp, int_t[:, ::1] hkl_idxs, float_t[:, ::1] rec_basis,
-                   float_t na_x, float_t na_y, float_t na_ext_x, float_t na_ext_y, float_t pen_coeff):
-    """
-    Exclude multiple streaks in a frame with the same hkl index
-
-    kout_exp - experimental outcoming wavevectors
-    hkl_idxs - the hkl indices of the diffraction reflections
-    rec_basis - reciprocal lattice basis vectors
-    na_x, na_y - x- and y-coordinates of the incoming beam numerical aperture
-    na_ext_x, na_ext_y - upper bounds of the incoming beam numerical aperture
-    pen_coeff - penalty coefficient
-    """
-    cdef:
-        int_t a = kout_exp.shape[0], ii = 0, i, j
-        float_t tau_x, tau_y, q_x, q_y, q_z, q_abs, source_x, source_y, source_th, source_phi
-        float_t dk_x, dk_y, fit_x, fit_y, fit, kin_x, kin_y, new_fit
-        int_t[::1] idxs_arr = np.empty(a, dtype=np.int64)
-        uint8_t[::1] mask = np.zeros(a, dtype=np.uint8)
-    for i in range(a):
-        if not mask[i]:
-            mask[i] = 1
-            tau_x = kout_exp[i, 1, 0] - kout_exp[i, 0, 0]
-            tau_y = kout_exp[i, 1, 1] - kout_exp[i, 0, 1]
-            q_x = hkl_idxs[i, 0] * rec_basis[0, 0] + hkl_idxs[i, 1] * rec_basis[1, 0] + hkl_idxs[i, 2] * rec_basis[2, 0]
-            q_y = hkl_idxs[i, 0] * rec_basis[0, 1] + hkl_idxs[i, 1] * rec_basis[1, 1] + hkl_idxs[i, 2] * rec_basis[2, 1]
-            q_z = hkl_idxs[i, 0] * rec_basis[0, 2] + hkl_idxs[i, 1] * rec_basis[1, 2] + hkl_idxs[i, 2] * rec_basis[2, 2]
-            kin_x = max(abs(q_x - kout_exp[i, 0, 0]), abs(q_x - kout_exp[i, 1, 0]))
-            kin_y = max(abs(q_y - kout_exp[i, 0, 1]), abs(q_y - kout_exp[i, 1, 1]))
-            if kin_x < na_ext_x and kin_y < na_ext_y:
-                idxs_arr[ii] = i
-                q_abs = sqrt(q_x**2 + q_y**2 + q_z**2)
-                source_th = acos(-q_z / q_abs) - acos(q_abs / 2)
-                source_phi = atan2(q_y, q_x)
-                source_x = q_x - sin(source_th) * cos(source_phi)
-                source_y = q_y - sin(source_th) * sin(source_phi)
-                dk_x = source_x - (kout_exp[i, 0, 0] + kout_exp[i, 1, 0]) / 2
-                dk_y = source_y - (kout_exp[i, 0, 1] + kout_exp[i, 1, 1]) / 2
-                fit_x = (dk_x * tau_y**2 - dk_y * tau_y * tau_x) / (tau_x**2 + tau_y**2)
-                fit_y = (dk_y * tau_y**2 - dk_x * tau_x * tau_y) / (tau_x**2 + tau_y**2)
-                fit = sqrt(fit_x**2 + fit_y**2)
-                if kin_x > na_x:
-                    fit += pen_coeff * (kin_x - na_x)
-                if kin_y > na_y:
-                    fit += pen_coeff * (kin_y - na_y)
-                for j in range(a):
-                    if j != i and hkl_idxs[j, 0] == hkl_idxs[i, 0] and hkl_idxs[j, 1] == hkl_idxs[i, 1] and hkl_idxs[j, 2] == hkl_idxs[i, 2]:
-                        mask[j] = 1
-                        kin_x = max(abs(q_x - kout_exp[j, 0, 0]), abs(q_x - kout_exp[j, 1, 0]))
-                        kin_y = max(abs(q_y - kout_exp[j, 0, 1]), abs(q_y - kout_exp[j, 1, 1]))
-                        if kin_x < na_ext_x and kin_y < na_ext_y:
-                            tau_x = kout_exp[j, 1, 0] - kout_exp[j, 0, 0]
-                            tau_y = kout_exp[j, 1, 1] - kout_exp[j, 0, 1]
-                            dk_x = source_x - (kout_exp[i, 0, 0] + kout_exp[i, 1, 0]) / 2
-                            dk_y = source_y - (kout_exp[i, 0, 1] + kout_exp[i, 1, 1]) / 2
-                            fit_x = (dk_x * tau_y**2 - dk_y * tau_y * tau_x) / (tau_x**2 + tau_y**2)
-                            fit_y = (dk_y * tau_y**2 - dk_x * tau_x * tau_y) / (tau_x**2 + tau_y**2)
-                            new_fit = sqrt(fit_x**2 + fit_y**2)
-                            if kin_x > na_x:
-                                new_fit += pen_coeff * (kin_x - na_x)
-                            if kin_y > na_y:
-                                new_fit += pen_coeff * (kin_y - na_y)
-                            if new_fit < fit:
-                                idxs_arr[ii] = j; fit = new_fit
-                ii += 1
-    return np.asarray(idxs_arr[:ii])
+        for ii in range(idxs[i], idxs[i + 1]):
+            min_fit = fit_streak(vot_vec[ii, 0], kout_exp[ii], kin[i], pen_coeff)
+            fit_idxs[ii] = 0
+            for j in range(1, b):
+                pt_fit = fit_streak(vot_vec[ii, j], kout_exp[ii], kin[i], pen_coeff)
+                if pt_fit < min_fit:
+                    min_fit = pt_fit; fit_idxs[ii] = j
+    return (np.arange(aa), np.asarray(fit_idxs))

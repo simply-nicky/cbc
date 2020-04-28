@@ -5,8 +5,9 @@ from abc import ABCMeta, abstractmethod
 import numpy as np
 import pygmo
 from scipy.ndimage import gaussian_filter, label, maximum_position
-from .utils import find_reduced, make_grid, fit_idxs, kout_frame, vot_vec_frame, vot_idxs_frame, fit_frame, scan_ps
-from .utils import kin_frame, kin_scan, scan_rb, kout_scan, vot_vec_scan, vot_idxs_scan, fit_scan, fcbi_rb, rcbi_rb
+from .utils import find_reduced, make_grid, scan_ps, scan_rb, fcbi_rb, rcbi_rb
+from .utils import kout_frame, kin_frame, vot_vec_frame, vot_idxs_frame, fit_frame, fit_idxs_frame
+from .utils import kout_scan, kin_scan, vot_vec_scan, vot_idxs_scan, fit_scan, fit_idxs_scan
 from .grouper import TiltGroups
 from .model import RecBasis
 
@@ -133,7 +134,7 @@ class ScanStreaks(FrameStreaks):
         return ScanStreaks(self.raw_lines[idxs], self.exp_set, self.frame_idxs[idxs])
 
     def __getitem__(self, frame_idx):
-        if isinstance(frame_idx, int):
+        if isinstance(frame_idx, (int, np.uint8, np.uint16, np.uint32, np.uint64, np.int8, np.int16, np.int32, np.int64)):
             return FrameStreaks(self.raw_lines[self.idxs[frame_idx]:self.idxs[frame_idx + 1]],
                                 self.exp_set)
         elif isinstance(frame_idx, (slice, np.ndarray, list)):
@@ -403,18 +404,9 @@ class AbcCBI(metaclass=ABCMeta):
     def kin_bounds(self, vec):
         pass
 
-    def rec_basis(self, vec):
-        """
-        Return RecBasis class object
-        """
-        return RecBasis(rb_mat=self.rb_mat(vec))
-
-    def idxs(self, vec, vot_vec, kout_exp):
-        """
-        Return the indices of the optimal reciprocal lattice voting vectors
-        """
-        return fit_idxs(vot_vec=vot_vec, kout_exp=kout_exp,
-                        kin=self.kin_bounds(vec), pen_coeff=self.pen_coeff)
+    @abstractmethod
+    def fit_idxs(self, vec, vot_vec, kout_exp):
+        pass
 
     def get_bounds(self):
         """
@@ -437,7 +429,7 @@ class AbcCBI(metaclass=ABCMeta):
         kout_exp = self.kout_exp(vec)
         vot_vec = self.voting_vectors(vec, kout_exp)
         hkl_idxs = self.voting_hkl(vec, kout_exp)
-        return hkl_idxs[self.idxs(vec, vot_vec, kout_exp)]
+        return hkl_idxs[self.fit_idxs(vec, vot_vec, kout_exp)]
 
     def rec_vectors(self, vec):
         """
@@ -450,6 +442,15 @@ class AbcCBI(metaclass=ABCMeta):
         Return the target function gradient value
         """
         return pygmo.estimate_gradient(self.fitness, d_vec)
+
+    def det_kin(self, kin_x, kin_y, vec):
+        """
+        Return diffraction streaks locations at the detector plane
+        """
+        theta, phi = np.arccos(np.sqrt(1 - kin_x**2 - kin_y**2)), np.arctan2(kin_y, kin_x)
+        det_x = vec[2] * np.tan(theta) * np.cos(phi)
+        det_y = vec[2] * np.tan(theta) * np.sin(phi)
+        return (np.stack((det_x, det_y), axis=-1) + vec[:2]) / self.pix_size
 
     def get_name(self):
         return "A convergent beam indexing problem"
@@ -477,6 +478,12 @@ class FrameCBI(AbcCBI):
     @abstractmethod
     def _init_bounds(self, smp_pos, f_pos, rec_basis, eul_ang, tol):
         pass
+
+    def rec_basis(self, vec):
+        """
+        Return RecBasis class object
+        """
+        return RecBasis(rb_mat=self.rb_mat(vec))
 
     def kin_bounds(self, vec):
         """
@@ -514,6 +521,13 @@ class FrameCBI(AbcCBI):
         return [fit_frame(vot_vec=vot_vec, kout_exp=kout_exp, kin=self.kin_bounds(vec),
                           pen_coeff=self.pen_coeff)]
 
+    def fit_idxs(self, vec, vot_vec, kout_exp):
+        """
+        Return the indices of the optimal reciprocal lattice voting vectors
+        """
+        return fit_idxs_frame(vot_vec=vot_vec, kout_exp=kout_exp,
+                              kin=self.kin_bounds(vec), pen_coeff=self.pen_coeff)
+
     def det_kout(self, kout_x, kout_y, vec):
         """
         Return diffraction streaks locations at the detector plane
@@ -522,15 +536,6 @@ class FrameCBI(AbcCBI):
         det_x = vec[5] * np.tan(theta) * np.cos(phi)
         det_y = vec[5] * np.tan(theta) * np.sin(phi)
         return (np.stack((det_x, det_y), axis=-1) + vec[3:5]) / self.pix_size
-
-    def det_kin(self, kin_x, kin_y, vec):
-        """
-        Return diffraction streaks locations at the detector plane
-        """
-        theta, phi = np.arccos(np.sqrt(1 - kin_x**2 - kin_y**2)), np.arctan2(kin_y, kin_x)
-        det_x = vec[2] * np.tan(theta) * np.cos(phi)
-        det_y = vec[2] * np.tan(theta) * np.sin(phi)
-        return (np.stack((det_x, det_y), axis=-1) + vec[:2]) / self.pix_size
 
 class ScanCBI(AbcCBI):
     """
@@ -548,7 +553,7 @@ class ScanCBI(AbcCBI):
 
     def __init__(self, streaks, rec_basis, f_tol, smp_tol, rb_tol, ang_tol, pen_coeff=1.):
         super(ScanCBI, self).__init__(streaks, pen_coeff)
-        self.pupil = streaks.exp_set.pupil.reshape((-1, 2, 2)) * self.pix_size
+        self.pupil = (streaks.exp_set.pupil.reshape((-1, 2, 2)) * self.pix_size)[streaks.frames]
         self.frames, self.idxs = streaks.frames, streaks.idxs
         tol = (f_tol, smp_tol, rb_tol, ang_tol)
         eul_ang = streaks.exp_set.eul_ang[self.frames].ravel()
@@ -579,7 +584,13 @@ class ScanCBI(AbcCBI):
 
     def rb_mat(self, vec):
         """
-        Return rectangular lattice basis vectors for a vector
+        Return rectangular lattice basis vectors matrix
+        """
+        return vec[3:12].reshape(self.mat_shape)
+
+    def rb_scan(self, vec):
+        """
+        Return rectangular lattice basis matrices vectors of a scan
         """
         return scan_rb(eul_ang=vec[12 + 3 * self.frames.size:],
                        frames=self.frames, rb_mat=vec[3:12])
@@ -595,7 +606,7 @@ class ScanCBI(AbcCBI):
         Return the reciprocal lattice voting points for the given experimental outcoming
         wavevectors kout_exp
         """
-        return vot_vec_scan(kout_exp=kout_exp.mean(axis=1), rec_basis=self.rb_mat(vec),
+        return vot_vec_scan(kout_exp=kout_exp.mean(axis=1), rec_basis=self.rb_scan(vec),
                             kin=self.kin_bounds(vec), idxs=self.idxs)
 
     def voting_hkl(self, vec, kout_exp):
@@ -603,7 +614,7 @@ class ScanCBI(AbcCBI):
         Return the reciprocal lattice voting hkl indices for the given experimental outcoming
         wavevectors kout_exp
         """
-        return vot_idxs_scan(kout_exp=kout_exp.mean(axis=1), rec_basis=self.rb_mat(vec),
+        return vot_idxs_scan(kout_exp=kout_exp.mean(axis=1), rec_basis=self.rb_scan(vec),
                              kin=self.kin_bounds(vec), idxs=self.idxs)
 
     def fit(self, vec, vot_vec, kout_exp):
@@ -614,11 +625,27 @@ class ScanCBI(AbcCBI):
         return fit_scan(vot_vec=vot_vec, kout_exp=kout_exp, kin=self.kin_bounds(vec),
                         idxs=self.idxs, pen_coeff=self.pen_coeff)
 
+    def fit_idxs(self, vec, vot_vec, kout_exp):
+        """
+        Return the indices of the optimal reciprocal lattice voting vectors
+        """
+        return fit_idxs_scan(vot_vec=vot_vec, kout_exp=kout_exp, kin=self.kin_bounds(vec),
+                             idxs=self.idxs, pen_coeff=self.pen_coeff)
+
     def get_nobj(self):
         """
         Return fitness vector dimension
         """
         return self.frames.size
+
+    def det_kout(self, idx, kout_x, kout_y, vec):
+        """
+        Return diffraction streaks locations at the detector plane
+        """
+        theta, phi = np.arccos(np.sqrt(1 - kout_x**2 - kout_y**2)), np.arctan2(kout_y, kout_x)
+        det_x = vec[12 + 3 * idx + 2] * np.tan(theta) * np.cos(phi)
+        det_y = vec[12 + 3 * idx + 2] * np.tan(theta) * np.sin(phi)
+        return (np.stack((det_x, det_y), axis=-1) + vec[12 + 3 * idx:12 + 3 * idx + 2]) / self.pix_size
 
 class FCBI(FrameCBI):
     """
