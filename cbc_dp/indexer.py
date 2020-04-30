@@ -431,12 +431,6 @@ class AbcCBI(metaclass=ABCMeta):
         hkl_idxs = self.voting_hkl(vec, kout_exp)
         return hkl_idxs[self.fit_idxs(vec, vot_vec, kout_exp)]
 
-    def rec_vectors(self, vec):
-        """
-        Return optimal reciprocal lattice vectors
-        """
-        return self.hkl_idxs(vec).dot(self.rb_mat(vec))
-
     def gradient(self, d_vec):
         """
         Return the target function gradient value
@@ -527,6 +521,12 @@ class FrameCBI(AbcCBI):
         """
         return fit_idxs_frame(vot_vec=vot_vec, kout_exp=kout_exp,
                               kin=self.kin_bounds(vec), pen_coeff=self.pen_coeff)
+
+    def rec_vectors(self, vec):
+        """
+        Return optimal reciprocal lattice vectors
+        """
+        return self.hkl_idxs(vec).dot(self.rb_mat(vec))
 
     def det_kout(self, kout_x, kout_y, vec):
         """

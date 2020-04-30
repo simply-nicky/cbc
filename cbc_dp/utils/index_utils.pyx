@@ -119,7 +119,7 @@ def rotation_matrix(float_t[::1] axis, float_t theta):
     rot_mat_c(rot_mat, alpha, betta, theta)
     return np.asarray(rot_mat)
 
-cdef void rotate_vector(float_t[::1] vec, float_t[:, ::1] rot_mat, float_t[::1] output) nogil:
+cdef void dot_vector(float_t[::1] vec, float_t[:, ::1] rot_mat, float_t[::1] output) nogil:
     """
     Rotate a 3d vector by the rotation matrix and write it to output vector
     """
@@ -127,13 +127,13 @@ cdef void rotate_vector(float_t[::1] vec, float_t[:, ::1] rot_mat, float_t[::1] 
     output[1] = rot_mat[1, 0] * vec[0] + rot_mat[1, 1] * vec[1] + rot_mat[1, 2] * vec[2]
     output[2] = rot_mat[2, 0] * vec[0] + rot_mat[2, 1] * vec[1] + rot_mat[2, 2] * vec[2]
     
-cdef void rotate_matrix(float_t[:, ::1] mat, float_t[:, ::1] rot_mat, float_t[:, ::1] output) nogil:
+cdef void dot_matrix(float_t[:, ::1] mat, float_t[:, ::1] rot_mat, float_t[:, ::1] output) nogil:
     """
     Rotate a 3x3 matrix by the rotation matrix and write it to output vector
     """
-    rotate_vector(mat[0], rot_mat, output[0])
-    rotate_vector(mat[1], rot_mat, output[1])
-    rotate_vector(mat[2], rot_mat, output[2])
+    dot_vector(mat[0], rot_mat, output[0])
+    dot_vector(mat[1], rot_mat, output[1])
+    dot_vector(mat[2], rot_mat, output[2])
 
 def rcbi_rb(float_t[:, ::1] or_mat, float_t[::1] rb_sizes, float_t[::1] eul_ang):
     """
@@ -147,7 +147,7 @@ def rcbi_rb(float_t[:, ::1] or_mat, float_t[::1] rb_sizes, float_t[::1] eul_ang)
         float_t[:, ::1] rb = np.empty((3, 3), dtype=np.float64)
         float_t[:, ::1] rot_mat = np.empty((3, 3), dtype=np.float64)
     euler_mat_c(rot_mat, eul_ang[0], eul_ang[1], eul_ang[2])
-    rotate_matrix(or_mat, rot_mat, rb)
+    dot_matrix(or_mat, rot_mat, rb)
     rb[0, 0] *= rb_sizes[0]; rb[0, 1] *= rb_sizes[0]; rb[0, 2] *= rb_sizes[0]
     rb[1, 0] *= rb_sizes[1]; rb[1, 1] *= rb_sizes[1]; rb[1, 2] *= rb_sizes[1]
     rb[2, 0] *= rb_sizes[2]; rb[2, 1] *= rb_sizes[2]; rb[2, 2] *= rb_sizes[2]
@@ -164,11 +164,11 @@ def fcbi_rb(float_t[:, ::1] or_mat, float_t[::1] rb_sizes, float_t[::1] eul_ang)
         float_t[:, ::1] rb = np.empty((3, 3), dtype=np.float64)
         float_t[:, ::1] rot_mat = np.empty((3, 3), dtype=np.float64)
     euler_mat_c(rot_mat, eul_ang[0], eul_ang[1], eul_ang[2])
-    rotate_vector(or_mat[0], rot_mat, rb[0])
+    dot_vector(or_mat[0], rot_mat, rb[0])
     euler_mat_c(rot_mat, eul_ang[3], eul_ang[4], eul_ang[5])
-    rotate_vector(or_mat[1], rot_mat, rb[1])
+    dot_vector(or_mat[1], rot_mat, rb[1])
     euler_mat_c(rot_mat, eul_ang[6], eul_ang[7], eul_ang[8])
-    rotate_vector(or_mat[2], rot_mat, rb[2])
+    dot_vector(or_mat[2], rot_mat, rb[2])
     rb[0, 0] *= rb_sizes[0]; rb[0, 1] *= rb_sizes[0]; rb[0, 2] *= rb_sizes[0]
     rb[1, 0] *= rb_sizes[1]; rb[1, 1] *= rb_sizes[1]; rb[1, 2] *= rb_sizes[1]
     rb[2, 0] *= rb_sizes[2]; rb[2, 1] *= rb_sizes[2]; rb[2, 2] *= rb_sizes[2]
@@ -190,7 +190,7 @@ def scan_rb(float_t[::1] rb_mat, float_t[::1] eul_ang, int_t[::1] frames):
     rb0[0] = rb_mat[:3]; rb0[1] = rb_mat[3:6]; rb0[2] = rb_mat[6:9]
     for i in range(a):
         euler_mat_c(rot_mat, eul_ang[3 * i], eul_ang[3 * i + 1], eul_ang[3 * i + 2])
-        rotate_matrix(rb0, rot_mat, rec_basis[i])
+        dot_matrix(rb0, rot_mat, rec_basis[i])
     return np.asarray(rec_basis)
 
 cdef void inverse_mat_c(float_t[:, ::1] mat, float_t[:, ::1] output) nogil:

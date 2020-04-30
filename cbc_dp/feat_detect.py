@@ -101,7 +101,7 @@ class ScanSetup(INIParser):
         det_x = self.f_pos[2] * np.tan(theta) * np.cos(phi)
         det_y = self.f_pos[2] * np.tan(theta) * np.sin(phi)
         return (np.stack((det_x, det_y), axis=-1) + self.f_pos[:2]) / self.pix_size
-    
+
     def pupil_bounds(self, frame_idx):
         """
         Return pupil bounds at the detector
