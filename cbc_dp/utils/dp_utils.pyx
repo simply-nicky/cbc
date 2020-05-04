@@ -360,10 +360,43 @@ def lsd_refiner(float_t[:, :, ::1] lines, float_t w):
             ii += 1
     return np.array(ll)[:ii]
 
-def i_sigma_frame(float_t[:, :, ::1] streaks, float_t[:, :, ::1] source_streaks, int_t[:, ::1] cor_data,
+def i_sigma(float_t[:, :, ::1] streaks, int_t[:, ::1] cor_data, uint_t[:, ::1] background,
+            uint8_t[:, ::1] structure, int_t width):
+    """
+    Return streak's intensity and Poisson noise
+
+    streaks - detected diffraction streaks at the detector plane
+    cor_data - background subtracted diffraction data
+    background - background image
+    structure - binary structure for binary dilation
+    width - diffraction streaks width
+    """
+    cdef:
+        int_t aa = streaks.shape[0], a = cor_data.shape[0], b = cor_data.shape[1], cnt, I, ii, i, j
+        float_t bgd_mean, bgd_var, bgd_sigma, delta
+        uint8_t[:, ::1] mask = np.empty((a, b), dtype=np.uint8)
+        float_t[:, ::1] i_sigma = np.empty((aa, 2), dtype=np.float64)
+    for ii in range(aa):
+        mask[...] = 0
+        streak_mask(streaks[ii], structure, width, mask)
+        cnt = 0; bgd_mean = 0; bgd_var = 0; I = 0
+        for i in range(a):
+            for j in range(b):
+                if mask[i, j]:
+                    cnt += 1
+                    delta = (background[i, j] - bgd_mean)
+                    bgd_mean += delta / cnt
+                    bgd_var += (background[i, j] - bgd_mean) * delta
+                    I += cor_data[i, j]
+        bgd_sigma = max(bgd_mean * cnt, bgd_var)
+        i_sigma[ii, 0] = I
+        i_sigma[ii, 1] = sqrt(I + bgd_sigma)
+    return np.asarray(i_sigma)
+
+def i_sigma_norm(float_t[:, :, ::1] streaks, float_t[:, :, ::1] source_streaks, int_t[:, ::1] cor_data,
                   uint_t[:, ::1] background, uint8_t[:, ::1] structure, int_t width):
     """
-    Return diffraction reflection's intensity and Poisson noise of a frame
+    Return normalized diffraction reflection's intensity and Poisson noise of a frame
 
     streaks - detected diffraction streaks at the detector plane
     source_streaks - source streaks at the detector plane

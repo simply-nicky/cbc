@@ -685,3 +685,34 @@ def fit_idxs_scan(float_t[:, :, ::1] vot_vec, float_t[:, :, ::1] kout_exp, float
                 if pt_fit < min_fit:
                     min_fit = pt_fit; fit_idxs[ii] = j
     return (np.arange(aa), np.asarray(fit_idxs))
+
+def reduce_frame(float_t[:, :, ::1] kout_exp, float_t[:, ::1] hkl, float_t[:, ::1] rb_mat,
+                 float_t[:, ::1] kin, float_t pen_coeff):
+    """
+    Exclude multiple streaks in a frame with the same hkl index
+    kout_exp - experimental outcoming wavevectors
+    hkl - the hkl indices of the diffraction reflections
+    rb_mat - reciprocal lattice basis vectors matrix
+    kin = [[kin_x_min, kin_y_min], [kin_x_max, kin_y_max]] - lens' pupil bounds
+    pen_coeff - penalty coefficient
+    """
+    cdef:
+        int_t a = kout_exp.shape[0], idx = 0, i, j
+        float_t fit, new_fit
+        float_t[::1] rec_vec = np.empty(3, dtype=np.float64)
+        int_t[::1] ri = np.empty(a, dtype=np.int64)
+        uint8_t[::1] mask = np.zeros(a, dtype=np.uint8)
+    for i in range(a):
+        if not mask[i]:
+            mask[i] = 1; ri[idx] = i
+            dot_vector(hkl[i], rb_mat, rec_vec)
+            fit = fit_streak(rec_vec, kout_exp[i], kin, pen_coeff)
+            for j in range(a):
+                if j != i and hkl[j, 0] == hkl[i, 0] and hkl[j, 1] == hkl[i, 1] and hkl[j, 2] == hkl[i, 2]:
+                    mask[j] = 1
+                    dot_vector(hkl[j], rb_mat, rec_vec)
+                    new_fit = fit_streak(rec_vec, kout_exp[j], kin, pen_coeff)
+                    if new_fit < fit:
+                        ri[idx] = j; fit = new_fit
+            idx += 1
+    return np.asarray(ri[:idx])
