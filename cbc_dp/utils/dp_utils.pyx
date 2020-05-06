@@ -373,7 +373,7 @@ def i_sigma(float_t[:, :, ::1] streaks, int_t[:, ::1] cor_data, uint_t[:, ::1] b
     """
     cdef:
         int_t aa = streaks.shape[0], a = cor_data.shape[0], b = cor_data.shape[1], cnt, I, ii, i, j
-        float_t bgd_mean, bgd_var, bgd_sigma, delta
+        float_t bgd_mean, bgd_var, delta
         uint8_t[:, ::1] mask = np.empty((a, b), dtype=np.uint8)
         float_t[:, ::1] i_sigma = np.empty((aa, 2), dtype=np.float64)
     for ii in range(aa):
@@ -387,10 +387,11 @@ def i_sigma(float_t[:, :, ::1] streaks, int_t[:, ::1] cor_data, uint_t[:, ::1] b
                     delta = (background[i, j] - bgd_mean)
                     bgd_mean += delta / cnt
                     bgd_var += (background[i, j] - bgd_mean) * delta
-                    I += cor_data[i, j]
-        bgd_sigma = max(bgd_mean * cnt, bgd_var)
+                    if cor_data[i, j] > 0:
+                        I += cor_data[i, j]
+        bgd_var = max(bgd_mean * cnt, bgd_var)
         i_sigma[ii, 0] = I
-        i_sigma[ii, 1] = sqrt(I + bgd_sigma)
+        i_sigma[ii, 1] = sqrt(I + bgd_var)
     return np.asarray(i_sigma)
 
 def i_sigma_norm(float_t[:, :, ::1] streaks, float_t[:, :, ::1] source_streaks, int_t[:, ::1] cor_data,
@@ -408,7 +409,7 @@ def i_sigma_norm(float_t[:, :, ::1] streaks, float_t[:, :, ::1] source_streaks, 
     cdef:
         int_t aa = streaks.shape[0], a = cor_data.shape[0], b = cor_data.shape[1]
         int_t cnt = 0, s_cnt = 0, ii, i, j
-        float_t bgd_mean, bgd_var, s_mean, s_var, I, bgd_sigma, delta
+        float_t bgd_mean, bgd_var, s_mean, s_var, I, delta
         uint8_t[:, ::1] mask = np.empty((a, b), dtype=np.uint8)
         uint8_t[:, ::1] s_mask = np.empty((a, b), dtype=np.uint8)
         float_t[:, ::1] i_sigma = np.empty((aa, 2), dtype=np.float64)
@@ -425,13 +426,94 @@ def i_sigma_norm(float_t[:, :, ::1] streaks, float_t[:, :, ::1] source_streaks, 
                     delta = (background[i, j] - bgd_mean)
                     bgd_mean += delta / cnt
                     bgd_var += (background[i, j] - bgd_mean) * delta
-                    I += cor_data[i, j]
+                    if cor_data[i, j] > 0:
+                        I += cor_data[i, j]
                 if s_mask[i, j]:
                     s_cnt += 1
                     delta = (background[i, j] - s_mean)
                     s_mean += delta / s_cnt
                     s_var += (background[i, j] - s_mean) * delta
-        bgd_sigma = max(bgd_mean * cnt, bgd_var)
+        bgd_var = max(bgd_mean * cnt, bgd_var)
         i_sigma[ii, 0] = I / (s_mean * s_cnt)
-        i_sigma[ii, 1] = sqrt(I + bgd_sigma + s_var)
+        i_sigma[ii, 1] = i_sigma[ii, 0] * sqrt((I + bgd_var) / I**2 + s_var / (s_mean * s_cnt)**2)
     return np.asarray(i_sigma)
+
+def merge(int_t[:, ::1] hkl_arr, float_t[:, ::1] is_arr):
+    """
+    Merge individual intensities together to form a single array of reflection intensities
+
+    hkl_arr - hkl indices
+    is_arr - intensities and sigmas
+    """
+    cdef:
+        int_t a = hkl_arr.shape[0], ii = 0, i, j, k, cnt, flag
+        float_t i_mean, i_var, delta, w, w2
+        uint8_t[::1] mask = np.zeros(a, dtype=np.uint8)
+        int_t[:, ::1] hkl_m = np.empty((a, 4), dtype=np.int64)
+        float_t[:, ::1] is_m = np.empty((a, 2), dtype=np.float64)
+    for i in range(a):
+        if not mask[i]:
+            hkl_m[ii, :3] = hkl_arr[i]; mask[i] = 1; cnt = 1
+            i_mean = is_arr[i, 0]; i_var = 0; w = is_arr[i, 1]**-2; w2 = is_arr[i, 1]**-4
+            for k in range(a):
+                if k != i and hkl_arr[k, 0] == hkl_m[ii, 0] and hkl_arr[k, 1] == hkl_m[ii, 1] and hkl_arr[k, 2] == hkl_m[ii, 2]:
+                    mask[k] = 1; cnt += 1; w += is_arr[k, 1]**-2; w2 += is_arr[k, 1]**-4
+                    delta = is_arr[k, 0] - i_mean
+                    i_mean += delta * is_arr[k, 1]**-2 / w
+                    i_var += is_arr[k, 1]**-2 * delta * (is_arr[k, 0] - i_mean)
+            is_m[ii, 0] = i_mean; hkl_m[ii, 3] = cnt
+            if cnt > 1:
+                is_m[ii, 1] = sqrt(i_var / (w - w2 / w))
+            else:
+                is_m[ii, 1] = is_arr[i, 1]
+            ii += 1
+    return np.asarray(hkl_m[:ii]), np.asarray(is_m[:ii])
+
+def symmetry_merge(int_t[:, :, ::1] sym_ops, int_t[:, ::1] hkl_arr, float_t[:, ::1] is_arr):
+    """
+    Merge individual intensities together according to symmetry operators to form a single array of reflection intensities
+
+    sym_ops - symmetry operators
+    hkl_arr - hkl indices
+    is_arr - intensities and sigmas
+    """
+    cdef:
+        int_t a = hkl_arr.shape[0], b = sym_ops.shape[0], ii = 0, i, j, k, cnt, flag
+        float_t i_mean, i_var, delta, w, w2
+        uint8_t[::1] mask = np.zeros(a, dtype=np.uint8)
+        int_t[:, ::1] sym_hkls = np.empty((b, 3), dtype=np.int64)
+        int_t[:, ::1] hkl_m = np.empty((a, 4), dtype=np.int64)
+        float_t[:, ::1] is_m = np.empty((a, 2), dtype=np.float64)
+    for i in range(a):
+        if not mask[i]:
+            hkl_m[ii, :3] = hkl_arr[i]; mask[i] = 1; cnt = 1
+            i_mean = is_arr[i, 0]; i_var = 0; w = is_arr[i, 1]**-2; w2 = is_arr[i, 1]**-4
+            for j in range(b):
+                sym_hkls[j, 0] = (hkl_m[ii, 0] * sym_ops[j, 0, 0] +
+                                  hkl_m[ii, 1] * sym_ops[j, 0, 1] +
+                                  hkl_m[ii, 2] * sym_ops[j, 0, 2])
+                sym_hkls[j, 1] = (hkl_m[ii, 0] * sym_ops[j, 1, 0] +
+                                  hkl_m[ii, 1] * sym_ops[j, 1, 1] +
+                                  hkl_m[ii, 2] * sym_ops[j, 1, 2])
+                sym_hkls[j, 2] = (hkl_m[ii, 0] * sym_ops[j, 2, 0] +
+                                  hkl_m[ii, 1] * sym_ops[j, 2, 1] +
+                                  hkl_m[ii, 2] * sym_ops[j, 2, 2])
+            for k in range(a):
+                if k != i:
+                    flag = 0
+                    for j in range(b):
+                        flag += (sym_hkls[j, 0] == hkl_arr[k, 0] and
+                                 sym_hkls[j, 1] == hkl_arr[k, 1] and
+                                 sym_hkls[j, 2] == hkl_arr[k, 2])
+                    if flag:
+                        mask[k] = 1; cnt += 1; w += is_arr[k, 1]**-2; w2 += is_arr[k, 1]**-4
+                        delta = is_arr[k, 0] - i_mean
+                        i_mean += delta * is_arr[k, 1]**-2 / w
+                        i_var += is_arr[k, 1]**-2 * delta * (is_arr[k, 0] - i_mean)
+            is_m[ii, 0] = i_mean; hkl_m[ii, 3] = cnt
+            if cnt > 1:
+                is_m[ii, 1] = sqrt(i_var / (w - w2 / w));
+            else:
+                is_m[ii, 1] = is_arr[i, 1]
+            ii += 1
+    return np.asarray(hkl_m[:ii]), np.asarray(is_m[:ii])
