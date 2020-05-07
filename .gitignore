@@ -6,6 +6,7 @@ movies/
 figures/
 exp_results/
 movies/
+config/
 *.hdf5
 *.png
 *.eps

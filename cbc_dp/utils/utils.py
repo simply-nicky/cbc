@@ -46,14 +46,14 @@ class HKLList():
     is_arr - intensity and sigma
     """
     hkl_str = '{0[0]:-5d}{0[1]:-4d}{0[2]:-4d}{1[0]:-12.2f}{2:-12.2f}{1[1]:-11.2f}{0[3]:-9d}\n'
-    hkl_header = 'Symmetry: mmm\n\th\tk\tl\t\t\tI\t\tphase\tsigma(I)\tnmeas\n'
+    hkl_header = 'CrystFEL reflection list version 2.0\nSymmetry: mmm\n\th\tk\tl\t\t\tI\t\tphase\tsigma(I)\tnmeas\n'
     hkl_footer = 'End of reflections'
 
     def __init__(self, hkl_arr, is_arr):
         self.hkl_arr, self.is_arr = hkl_arr, is_arr
         self.phase = np.zeros(hkl_arr.shape[0])
 
-    def save_txt(self, out_path):
+    def save(self, out_path):
         """
         Save to a text file
         """
